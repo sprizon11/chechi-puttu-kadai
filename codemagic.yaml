@@ -3,21 +3,32 @@ workflows:
     name: Chechi Puttu iOS
     max_build_duration: 60
     instance_type: mac_mini_m2
-    # In Codemagic: Team settings → Integrations → Developer Portal → add API key
-    # Name it exactly "chechi-puttu" (or change the name below to match yours).
+  # Team settings → Integrations → Developer Portal → API key named "chechi-puttu"
     integrations:
       app_store_connect: chechi-puttu
     environment:
       flutter: stable
       xcode: latest
       cocoapods: default
-      ios_signing:
-        distribution_type: ad_hoc
-        bundle_identifier: com.example.chechiPuttuApp
+      vars:
+        BUNDLE_ID: com.example.chechiPuttuApp
     working_directory: chechi_puttu_app
     scripts:
       - name: Get Flutter packages
         script: flutter pub get
+      - name: Set up keychain
+        script: keychain initialize
+      - name: Fetch or create iOS signing files
+        script: |
+          if [ -z "${CERTIFICATE_PRIVATE_KEY:-}" ]; then
+            openssl genrsa -out /tmp/ios_distribution_private_key.pem 2048
+            export CERTIFICATE_PRIVATE_KEY="$(cat /tmp/ios_distribution_private_key.pem)"
+          fi
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_ADHOC \
+            --create
+      - name: Add certificates to keychain
+        script: keychain add-certificates
       - name: Set up code signing settings on Xcode project
         script: xcode-project use-profiles
       - name: Build IPA
