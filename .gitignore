@@ -1,0 +1,29 @@
+# Dependencies
+functions/node_modules/
+
+# Flutter / Dart (app lives in chechi_puttu_app/)
+chechi_puttu_app/.dart_tool/
+chechi_puttu_app/.pub-cache/
+chechi_puttu_app/.pub/
+chechi_puttu_app/build/
+chechi_puttu_app/**/build/
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Firebase / logs
+firebase-debug.log
+firebase-debug.*.log
+*.log
+
+# Secrets (never commit)
+.env
+.env.*
+**/serviceAccount*.json
+**/*-firebase-adminsdk-*.json
+
+# Local tooling
+.cursor/

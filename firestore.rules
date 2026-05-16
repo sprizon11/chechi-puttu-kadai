@@ -1,0 +1,107 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && (
+          (request.auth.token.email != null
+            && request.auth.token.email.lower() == 'sprizon1311@gmail.com')
+          || request.auth.token.admin == true
+        );
+    }
+
+    match /orders/{orderId} {
+      allow read: if isSignedIn()
+        && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.payment_mode == 'cash_on_delivery'
+        && request.resource.data.status == 'placed';
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /checkout_sessions/{sessionId} {
+      allow read: if isSignedIn()
+        && resource.data.uid == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /rzp_order_map/{orderId} {
+      allow read, write: if false;
+    }
+
+    match /push_tokens/{docId} {
+      allow create, update: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid;
+      allow read, delete: if isSignedIn()
+        && resource.data.uid == request.auth.uid;
+    }
+
+    // Public menu overrides (admin edits for dish text/image/availability).
+    // Customers read this to see latest menu card content across devices.
+    match /admin_public/{docId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+    }
+    match /admin_public/{docId}/snapshots/{snapshotId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+    }
+    match /admin_public/{docId}/section_snapshots/{snapshotId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+    }
+
+    // Customer profile (phone / Google sign-in). Owner read/write only.
+    // Path requires userId == request.auth.uid so users cannot touch other docs.
+    // Do not require request.resource.data.uid here: merge updates can make that
+    // check fail in some clients even though the app always sends uid correctly.
+    match /users/{userId} {
+      allow read: if isSignedIn()
+        && (request.auth.uid == userId || isAdmin());
+      allow create, update: if isSignedIn() && request.auth.uid == userId;
+      allow delete: if isAdmin();
+    }
+
+    // Chat thread summary doc used by admin/customer chat list.
+    match /support_inbox/{customerUid} {
+      allow read: if isAdmin()
+        || (isSignedIn() && request.auth.uid == customerUid);
+
+      allow create, update: if
+        isSignedIn()
+        && (isAdmin() || request.auth.uid == customerUid)
+        && request.resource.data.customer_uid == customerUid;
+
+      allow delete: if isAdmin();
+    }
+
+    // Customer support chat threads (per customer uid). Admin can read/write all;
+    // the signed-in customer can read/write only their own thread messages.
+    match /support_inbox/{customerUid}/messages/{msgId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && request.auth.uid == customerUid);
+
+      allow create: if
+        (isAdmin()
+          && request.resource.data.sender == 'admin'
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 4000)
+        || (isSignedIn()
+          && request.auth.uid == customerUid
+          && request.resource.data.sender == 'customer'
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 4000);
+
+      allow update, delete: if false;
+    }
+  }
+}
