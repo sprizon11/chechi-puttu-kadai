@@ -3,7 +3,6 @@ workflows:
     name: Chechi Puttu iOS
     max_build_duration: 60
     instance_type: mac_mini_m2
-  # Team settings → Integrations → Developer Portal → API key named "chechi-puttu"
     integrations:
       app_store_connect: chechi-puttu
     environment:
