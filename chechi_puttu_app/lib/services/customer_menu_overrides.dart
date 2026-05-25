@@ -18,6 +18,8 @@ class CustomerMenuOverrides extends ChangeNotifier {
   Map<String, AdminDishEditSnapshot> _map = {};
   Map<String, AdminDishEditSnapshot> _localCache = {};
   bool _cloudSyncStarted = false;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _cloudSub;
+  Timer? _cloudRetryTimer;
 
   AdminDishEditSnapshot? snapshotFor(
     String sectionTitle,
@@ -35,7 +37,18 @@ class CustomerMenuOverrides extends ChangeNotifier {
     _map = Map<String, AdminDishEditSnapshot>.from(local);
     notifyListeners();
     CustomerMenuSectionOverrides.instance.rebuildFromDishOverrides();
+    unawaited(_refreshFromCloudOnce());
     unawaited(_ensureCloudSyncStarted());
+  }
+
+  Future<void> _refreshFromCloudOnce() async {
+    final cloud = await _readCloudSnapshotsOnce();
+    if (cloud == null) return;
+    _localCache = Map<String, AdminDishEditSnapshot>.from(cloud);
+    _map = Map<String, AdminDishEditSnapshot>.from(cloud);
+    notifyListeners();
+    CustomerMenuSectionOverrides.instance.rebuildFromDishOverrides();
+    await _persistLocalSnapshots(cloud);
   }
 
   Future<Map<String, AdminDishEditSnapshot>> _readLocalSnapshots() async {
@@ -56,14 +69,50 @@ class CustomerMenuOverrides extends ChangeNotifier {
     }
   }
 
+  Future<Map<String, AdminDishEditSnapshot>?> _readCloudSnapshotsOnce() async {
+    try {
+      final root = FirebaseFirestore.instance
+          .collection(_cloudMenuOverridesCollection)
+          .doc(_cloudMenuOverridesDoc);
+      final snapDocs = await root.collection(_cloudSnapshotsSubcollection).get();
+      final out = <String, AdminDishEditSnapshot>{};
+      for (final d in snapDocs.docs) {
+        final m = d.data();
+        final key = (m['key'] as String?)?.trim();
+        final data = m['data'];
+        if (key == null || key.isEmpty || data is! Map) continue;
+        out[key] = AdminDishEditSnapshot.fromJson(Map<String, dynamic>.from(data));
+      }
+
+      if (out.isNotEmpty) return out;
+
+      // Backward-compatible fallback for legacy single-document map.
+      final legacyDoc = await root.get();
+      final raw = legacyDoc.data()?['snapshots'];
+      if (raw is! Map) return out;
+      for (final e in raw.entries) {
+        final key = e.key.toString();
+        final val = e.value;
+        if (val is! Map) continue;
+        out[key] = AdminDishEditSnapshot.fromJson(Map<String, dynamic>.from(val));
+      }
+      return out;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _ensureCloudSyncStarted() async {
     if (_cloudSyncStarted) return;
     _cloudSyncStarted = true;
+    _cloudRetryTimer?.cancel();
     final root = FirebaseFirestore.instance
         .collection(_cloudMenuOverridesCollection)
         .doc(_cloudMenuOverridesDoc);
-    root.collection(_cloudSnapshotsSubcollection).snapshots().listen((snap) async {
+    _cloudSub?.cancel();
+    _cloudSub = root.collection(_cloudSnapshotsSubcollection).snapshots().listen((snap) async {
           final out = <String, AdminDishEditSnapshot>{};
+          var legacyReadFailed = false;
           for (final d in snap.docs) {
             final m = d.data();
             final key = (m['key'] as String?)?.trim();
@@ -89,18 +138,37 @@ class CustomerMenuOverrides extends ChangeNotifier {
                   );
                 }
               }
-            } catch (_) {}
+            } catch (_) {
+              legacyReadFailed = true;
+            }
           }
 
-          final merged = <String, AdminDishEditSnapshot>{
-            ..._localCache,
-            ...out,
-          };
-          _map = merged;
+          // Prefer cloud as source of truth whenever we can read it.
+          // If cloud read fails, keep local cache so UI still has data offline.
+          final next = (out.isEmpty && legacyReadFailed)
+              ? Map<String, AdminDishEditSnapshot>.from(_localCache)
+              : out;
+          _localCache = Map<String, AdminDishEditSnapshot>.from(next);
+          _map = Map<String, AdminDishEditSnapshot>.from(next);
           notifyListeners();
           CustomerMenuSectionOverrides.instance.rebuildFromDishOverrides();
-          await _persistLocalSnapshots(merged);
-        }, onError: (_) {});
+          await _persistLocalSnapshots(next);
+        }, onError: (_) {
+          _scheduleCloudResubscribe();
+        }, onDone: () {
+          _scheduleCloudResubscribe();
+        });
+  }
+
+  void _scheduleCloudResubscribe() {
+    _cloudSub?.cancel();
+    _cloudSub = null;
+    _cloudSyncStarted = false;
+    _cloudRetryTimer?.cancel();
+    // Auto-reconnect so customer devices continue receiving admin image updates.
+    _cloudRetryTimer = Timer(const Duration(seconds: 5), () {
+      unawaited(_ensureCloudSyncStarted());
+    });
   }
 
   Future<void> _persistLocalSnapshots(

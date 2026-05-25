@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' show ImageFilter;
 
+import 'package:chechi_puttu_app/admin/admin_auth.dart';
 import 'package:chechi_puttu_app/admin/admin_dashboard_screen.dart';
 import 'package:chechi_puttu_app/admin/admin_dish_models.dart';
 import 'package:chechi_puttu_app/customer/customer_chat_screen.dart';
@@ -15,6 +17,7 @@ import 'package:chechi_puttu_app/services/menu_deleted_dishes.dart';
 import 'package:chechi_puttu_app/services/user_profile_service.dart';
 import 'package:chechi_puttu_app/services/birthday_chat_wish_service.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
+import 'package:chechi_puttu_app/theme/chechi_premium.dart';
 import 'package:chechi_puttu_app/widgets/birthday_home_banner.dart';
 import 'package:chechi_puttu_app/services/notifications_service.dart';
 import 'package:chechi_puttu_app/services/orders_service.dart';
@@ -73,24 +76,328 @@ class _ChechiPuttuAppState extends State<ChechiPuttuApp> {
         if (child == null) return const SizedBox.shrink();
         return child;
       },
-      home: widget.firebaseInitError != null
-          ? _FirebaseInitErrorBody(error: widget.firebaseInitError!)
-          : _AuthGateHome(
-              isDark: _isDark,
-              onToggleTheme: () {},
-            ),
+      home: _StartupSplashGate(
+        firebaseInitError: widget.firebaseInitError,
+        isDark: _isDark,
+        onToggleTheme: () {},
+      ),
     );
   }
 }
 
-/// Full-bleed illustrated backdrop (cream + maroon band + food art) for auth flows.
+class _StartupSplashGate extends StatefulWidget {
+  const _StartupSplashGate({
+    required this.firebaseInitError,
+    required this.isDark,
+    required this.onToggleTheme,
+  });
+
+  final Object? firebaseInitError;
+  final bool isDark;
+  final VoidCallback onToggleTheme;
+
+  @override
+  State<_StartupSplashGate> createState() => _StartupSplashGateState();
+}
+
+class _StartupSplashGateState extends State<_StartupSplashGate> {
+  bool _done = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future<void>.delayed(const Duration(milliseconds: 4000), () {
+      if (!mounted) return;
+      setState(() => _done = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_done) return const _AnimatedStartupSplash();
+    if (widget.firebaseInitError != null) {
+      return _FirebaseInitErrorBody(error: widget.firebaseInitError!);
+    }
+    return _AuthGateHome(
+      isDark: widget.isDark,
+      onToggleTheme: widget.onToggleTheme,
+    );
+  }
+}
+
+class _AnimatedStartupSplash extends StatefulWidget {
+  const _AnimatedStartupSplash();
+
+  @override
+  State<_AnimatedStartupSplash> createState() => _AnimatedStartupSplashState();
+}
+
+class _AnimatedStartupSplashState extends State<_AnimatedStartupSplash>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _logoScale;
+  late final Animation<double> _logoOpacity;
+  late final Animation<double> _haloScale;
+  late final Animation<double> _haloOpacity;
+  late final Animation<Offset> _titleSlide;
+  late final Animation<double> _titleOpacity;
+  late final Animation<double> _subtitleOpacity;
+  late final Animation<double> _progress;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3400),
+    )..forward();
+    _logoScale = Tween<double>(begin: 0.72, end: 1).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.05, 0.54, curve: Curves.easeOutBack),
+      ),
+    );
+    _logoOpacity = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.04, 0.45, curve: Curves.easeOut),
+      ),
+    );
+    _haloScale = Tween<double>(begin: 0.8, end: 1.18).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.08, 0.72, curve: Curves.easeOutCubic),
+      ),
+    );
+    _haloOpacity = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.05, 0.4, curve: Curves.easeOut),
+      ),
+    );
+    _titleSlide = Tween<Offset>(
+      begin: const Offset(0, 0.18),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.35, 0.8, curve: Curves.easeOutCubic),
+      ),
+    );
+    _titleOpacity = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.32, 0.72, curve: Curves.easeOut),
+      ),
+    );
+    _subtitleOpacity = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.56, 0.9, curve: Curves.easeOut),
+      ),
+    );
+    _progress = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.08, 1, curve: Curves.easeInOutCubic),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const _GlobalAppBackgroundLayer(
+            assetPath: _GlobalAppBackgroundLayer.profileAssetPath,
+          ),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.black.withValues(alpha: 0.22),
+                  Colors.black.withValues(alpha: 0.64),
+                ],
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Stack(
+              children: [
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      FadeTransition(
+                        opacity: _haloOpacity,
+                        child: ScaleTransition(
+                          scale: _haloScale,
+                          child: Container(
+                            width: 148,
+                            height: 148,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: RadialGradient(
+                                colors: [
+                                  const Color(0xFFF4C06A).withValues(alpha: 0.42),
+                                  const Color(0xFF7C1D1B).withValues(alpha: 0),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      FadeTransition(
+                        opacity: _logoOpacity,
+                        child: ScaleTransition(
+                          scale: _logoScale,
+                          child: Container(
+                            padding: const EdgeInsets.all(11),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.5),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF7C1D1B).withValues(
+                                    alpha: 0.28,
+                                  ),
+                                  blurRadius: 24,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(18),
+                              child: Image.asset(
+                                'assets/images/app_icon.png',
+                                width: 96,
+                                height: 96,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      SlideTransition(
+                        position: _titleSlide,
+                        child: FadeTransition(
+                          opacity: _titleOpacity,
+                          child: Column(
+                            children: [
+                              Text(
+                                "Sai Logabala's",
+                                style: GoogleFonts.poppins(
+                                  color: const Color(0xFFF6D5A1),
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 1.1,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Chechi Puttu Kadai',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.playfairDisplay(
+                                  color: Colors.white,
+                                  fontSize: 33,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.45,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      FadeTransition(
+                        opacity: _subtitleOpacity,
+                        child: Text(
+                          'Authentic Kerala Delights',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 0.9,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  left: 28,
+                  right: 28,
+                  bottom: 30,
+                  child: FadeTransition(
+                    opacity: _subtitleOpacity,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: Container(
+                        height: 4,
+                        color: Colors.white.withValues(alpha: 0.2),
+                        child: AnimatedBuilder(
+                          animation: _progress,
+                          builder: (context, _) => Align(
+                            alignment: Alignment.centerLeft,
+                            child: FractionallySizedBox(
+                              widthFactor: _progress.value,
+                              child: Container(
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Color(0xFFF9D08A),
+                                      Color(0xFFD88A2A),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Full-bleed illustrated backdrop for auth flows (login, profile setup).
 class _GlobalAppBackgroundLayer extends StatelessWidget {
-  const _GlobalAppBackgroundLayer({this.imageAlignment = Alignment.center});
+  const _GlobalAppBackgroundLayer({
+    this.imageAlignment = Alignment.center,
+    this.assetPath = _GlobalAppBackgroundLayer.loginAssetPath,
+  });
+
+  /// Login / OTP screen — replace `assets/images/login_background.png` to change.
+  static const loginAssetPath = 'assets/images/login_background.png';
+
+  /// Profile completion & other auth steps.
+  static const profileAssetPath = 'assets/images/app_background.png';
 
   /// For [BoxFit.cover], biases which part of the bitmap stays visible when cropped.
   final Alignment imageAlignment;
-
-  static const assetPath = 'assets/images/app_background.png';
+  final String assetPath;
 
   @override
   Widget build(BuildContext context) {
@@ -104,9 +411,19 @@ class _GlobalAppBackgroundLayer extends StatelessWidget {
               assetPath,
               fit: BoxFit.cover,
               alignment: imageAlignment,
-              filterQuality: FilterQuality.medium,
-              errorBuilder: (context, error, stackTrace) =>
-                  const SizedBox.shrink(),
+              filterQuality: FilterQuality.high,
+              errorBuilder: (context, error, stackTrace) {
+                // Fallback if login_background.png is missing.
+                if (assetPath != profileAssetPath) {
+                  return Image.asset(
+                    profileAssetPath,
+                    fit: BoxFit.cover,
+                    alignment: imageAlignment,
+                    filterQuality: FilterQuality.high,
+                  );
+                }
+                return const SizedBox.shrink();
+              },
             ),
           ),
         ],
@@ -368,14 +685,66 @@ ThemeData _buildLightTheme() {
     colorScheme: ColorScheme.fromSeed(seedColor: _AppColors.primary),
   );
 
+  final scheme = base.colorScheme.copyWith(
+    primary: _AppColors.primary,
+    onPrimary: Colors.white,
+    secondary: ChechiBrand.accent,
+    surface: ChechiBrand.creamCard,
+  );
+
   return base.copyWith(
+    colorScheme: scheme,
     scaffoldBackgroundColor: _AppColors.appBackdrop,
     dividerColor: _AppColors.border,
     textTheme: GoogleFonts.poppinsTextTheme(base.textTheme),
     pageTransitionsTheme: _appPageTransitionsTheme(),
-    splashFactory: NoSplash.splashFactory,
-    highlightColor: Colors.transparent,
-    hoverColor: Colors.transparent,
+    cardTheme: CardThemeData(
+      elevation: 0,
+      color: ChechiBrand.creamCard,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: _AppColors.border),
+      ),
+      margin: EdgeInsets.zero,
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: _AppColors.primary,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        textStyle: GoogleFonts.poppins(
+          fontWeight: FontWeight.w700,
+          fontSize: 14,
+        ),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: _AppColors.primary,
+        side: const BorderSide(color: _AppColors.border, width: 1.2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+      ),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: _AppColors.border),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: _AppColors.border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: _AppColors.primary, width: 1.5),
+      ),
+    ),
   );
 }
 
@@ -918,7 +1287,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
 
   double _profileSignupArtPadR(BuildContext context) {
     final w = MediaQuery.sizeOf(context).width;
-    return (w * 0.40).clamp(108.0, 152.0);
+    return (w * 0.46).clamp(130.0, 190.0);
   }
 
   /// First signup step — matches “Create your account” marketing layout.
@@ -931,8 +1300,10 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     final w = MediaQuery.sizeOf(context).width;
     final padR = _profileSignupArtPadR(context);
     final subtitleMax = (w * 0.52).clamp(156.0, 198.0);
+    final createSize = (w * 0.095).clamp(34.0, 40.0);
+    final accountSize = (w * 0.075).clamp(26.0, 30.0);
     return Padding(
-      padding: EdgeInsets.fromLTRB(2, 0, padR, 0),
+      padding: EdgeInsets.fromLTRB(6, 6, padR, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -940,21 +1311,26 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             'Create',
             style: GoogleFonts.playfairDisplay(
               color: orange,
-              fontSize: 24,
-              height: 1.05,
-              fontWeight: FontWeight.w700,
+              fontSize: createSize,
+              height: 0.98,
+              letterSpacing: -0.3,
+              fontWeight: FontWeight.w800,
             ),
           ),
-          Text(
-            'Your Account',
-            style: GoogleFonts.playfairDisplay(
-              color: titleMaroon,
-              fontSize: 27,
-              height: 1.05,
-              fontWeight: FontWeight.w700,
+          Transform.translate(
+            offset: const Offset(0, -4),
+            child: Text(
+              'Your Account',
+              style: GoogleFonts.playfairDisplay(
+                color: titleMaroon,
+                fontSize: accountSize,
+                height: 1.06,
+                letterSpacing: -0.15,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: subtitleMax),
             child: Text(
@@ -965,7 +1341,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
               softWrap: true,
               style: GoogleFonts.poppins(
                 color: bodyMuted,
-                fontSize: 11.5,
+                fontSize: 13,
                 height: 1.45,
                 fontWeight: FontWeight.w500,
               ),
@@ -1024,16 +1400,16 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     }
   }
 
-  /// Compact Next / FINISH used on all signup steps (under the field).
+  /// Next / FINISH on simplified signup — fixed width for bottom-right placement.
   Widget _profileSimplifiedSignupPrimary(Color btnBg) {
     final last = _step >= _kStepCount - 1;
     return SizedBox(
-      width: 168,
-      height: 36,
+      width: 172,
+      height: 44,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: btnBg,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: Colors.white.withValues(alpha: 0.35),
             width: 1,
@@ -1043,16 +1419,16 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
           style: FilledButton.styleFrom(
             backgroundColor: Colors.transparent,
             shadowColor: Colors.transparent,
-            padding: EdgeInsets.zero,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
             ),
           ),
           onPressed: _busy ? null : _onPrimary,
           child: _busy
               ? const SizedBox(
-                  height: 20,
-                  width: 20,
+                  height: 22,
+                  width: 22,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     color: Colors.white,
@@ -1063,9 +1439,9 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                   'FINISH',
                   style: GoogleFonts.poppins(
                     fontWeight: FontWeight.w800,
-                    letterSpacing: 0.65,
+                    letterSpacing: 0.9,
                     color: Colors.white,
-                    fontSize: 12,
+                    fontSize: 14,
                   ),
                 )
               : Row(
@@ -1076,16 +1452,16 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                       'Next',
                       style: GoogleFonts.poppins(
                         fontWeight: FontWeight.w800,
-                        letterSpacing: 0.4,
+                        letterSpacing: 0.5,
                         color: Colors.white,
-                        fontSize: 12,
+                        fontSize: 14,
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 8),
                     const Icon(
                       Icons.arrow_forward_rounded,
                       color: Colors.white,
-                      size: 18,
+                      size: 20,
                     ),
                   ],
                 ),
@@ -1097,7 +1473,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   Widget _profileSimplifiedSignupBackField(Color titleMaroon, Color fieldBr) {
     return SizedBox(
       width: 88,
-      height: 36,
+      height: 48,
       child: OutlinedButton(
         onPressed: _busy ? null : _onBack,
         style: OutlinedButton.styleFrom(
@@ -1136,7 +1512,9 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     const gapAboveMaroon = 34.0;
     final profileActionBottom =
         maroonFooterBottom + viewBottom + maroonFooterHeight + gapAboveMaroon;
-    final profileContentBottom = profileActionBottom + 48 + 32;
+    final profileContentBottom = simplifiedSignup
+        ? maroonFooterBottom + viewBottom + 12
+        : profileActionBottom + 48 + 32;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
@@ -1147,6 +1525,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
           fit: StackFit.expand,
           children: [
             _GlobalAppBackgroundLayer(
+              assetPath: _GlobalAppBackgroundLayer.profileAssetPath,
               imageAlignment: widget.forProfileEdit
                   ? const Alignment(-0.55, 0.2)
                   : const Alignment(-0.72, -0.38),
@@ -1192,7 +1571,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                             ],
                           ),
                           if (!widget.forProfileEdit) ...[
-                            const SizedBox(height: 22),
+                            const SizedBox(height: 28),
                             _profileCreateSignupHeader(
                               context,
                               orange,
@@ -1298,7 +1677,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                                                   keyboardType:
                                                       TextInputType.phone,
                                                   style: GoogleFonts.poppins(
-                                                    fontSize: 12,
+                                                    fontSize: 14,
                                                     fontWeight: FontWeight.w600,
                                                     color: titleMaroon,
                                                   ),
@@ -1312,7 +1691,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                                                               .withValues(
                                                                 alpha: 0.85,
                                                               ),
-                                                          fontSize: 12,
+                                                          fontSize: 14,
                                                         ),
                                                   ),
                                                 ),
@@ -1485,7 +1864,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                                         'BACK',
                                         style: GoogleFonts.poppins(
                                           fontWeight: FontWeight.w800,
-                                          fontSize: 12,
+                                          fontSize: 14,
                                         ),
                                       ),
                                     ),
@@ -1568,7 +1947,6 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                             ],
                           ),
                   ),
-                  if (!widget.forProfileEdit) const _LoginMaroonFooter(),
                 ],
               ),
             ),
@@ -1605,7 +1983,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(
               color: bodyMuted,
-              fontSize: 11,
+              fontSize: 13,
               height: 1.35,
               fontWeight: FontWeight.w500,
             ),
@@ -1616,7 +1994,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             "Let's start with your",
             style: GoogleFonts.poppins(
               color: bodyMuted,
-              fontSize: 11,
+              fontSize: 13,
               height: 1.3,
               fontWeight: FontWeight.w600,
             ),
@@ -1633,83 +2011,92 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
           ),
           const SizedBox(height: 12),
         ],
-        _InputCard(
-          borderColor: fieldBr,
-          fillColor: fieldBg,
-          child: Row(
-            children: [
-              Icon(Icons.person_outline_rounded, size: 18, color: bodyMuted),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _nameCtrl,
-                  enabled: !_busy,
-                  textCapitalization: TextCapitalization.words,
-                  style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: titleMaroon,
-                  ),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    border: InputBorder.none,
-                    hintText: createStyle
-                        ? 'Enter your full name'
-                        : 'Full name',
-                    hintStyle: GoogleFonts.poppins(
-                      color: bodyMuted.withValues(alpha: 0.85),
+        createStyle
+            ? _AuthGlassInputCard(
+                icon: Icons.person_outline_rounded,
+                iconColor: bodyMuted,
+                child: Material(
+                  color: Colors.transparent,
+                  child: TextField(
+                    controller: _nameCtrl,
+                    enabled: !_busy,
+                    textCapitalization: TextCapitalization.words,
+                    style: GoogleFonts.poppins(
                       fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: titleMaroon,
+                    ),
+                    decoration: authGlassFieldDecoration(
+                      hintText: 'Enter your full name',
                     ),
                   ),
                 ),
+              )
+            : _InputCard(
+                borderColor: fieldBr,
+                fillColor: fieldBg,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.person_outline_rounded,
+                      size: 18,
+                      color: bodyMuted,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _nameCtrl,
+                        enabled: !_busy,
+                        textCapitalization: TextCapitalization.words,
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: titleMaroon,
+                        ),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          border: InputBorder.none,
+                          hintText: 'Full name',
+                          hintStyle: GoogleFonts.poppins(
+                            color: bodyMuted.withValues(alpha: 0.85),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
-        ),
         if (createStyle && !_lockVerifiedMobile) ...[
           const SizedBox(height: 14),
           Text(
             'Mobile number',
             style: GoogleFonts.poppins(
               color: bodyMuted,
-              fontSize: 11,
+              fontSize: 13,
               height: 1.3,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 4),
-          _InputCard(
-            height: 44,
-            horizontalPadding: 10,
-            radius: 10,
-            borderColor: fieldBr,
-            fillColor: fieldBg,
-            child: Row(
-              children: [
-                Icon(Icons.phone_outlined, size: 18, color: bodyMuted),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _mobileCtrl,
-                    enabled: !_busy,
-                    keyboardType: TextInputType.phone,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: titleMaroon,
-                    ),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      border: InputBorder.none,
-                      hintText: '10-digit mobile number',
-                      hintStyle: GoogleFonts.poppins(
-                        color: bodyMuted.withValues(alpha: 0.85),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
+          _AuthGlassInputCard(
+            icon: Icons.phone_outlined,
+            iconColor: bodyMuted,
+            child: Material(
+              color: Colors.transparent,
+              child: TextField(
+                controller: _mobileCtrl,
+                enabled: !_busy,
+                keyboardType: TextInputType.phone,
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: titleMaroon,
                 ),
-              ],
+                decoration: authGlassFieldDecoration(
+                  hintText: '10-digit mobile number',
+                ),
+              ),
             ),
           ),
         ],
@@ -1725,6 +2112,21 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     return Align(
       alignment: Alignment.topCenter,
       child: SizedBox(width: double.infinity, child: inner),
+    );
+  }
+
+  Widget _profileSimplifiedSignupActions(
+    Color titleMaroon,
+    Color fieldBr,
+    Color btnBg,
+  ) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (_step > 0) _profileSimplifiedSignupBackField(titleMaroon, fieldBr),
+        const Spacer(),
+        _profileSimplifiedSignupPrimary(btnBg),
+      ],
     );
   }
 
@@ -1755,7 +2157,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(
               color: bodyMuted,
-              fontSize: 11,
+              fontSize: 13,
               height: 1.35,
               fontWeight: FontWeight.w500,
             ),
@@ -1766,7 +2168,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             'Next, enter your',
             style: GoogleFonts.poppins(
               color: bodyMuted,
-              fontSize: 11,
+              fontSize: 13,
               height: 1.3,
               fontWeight: FontWeight.w600,
             ),
@@ -1783,49 +2185,66 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
           ),
           const SizedBox(height: 12),
         ],
-        _InputCard(
-          borderColor: fieldBr,
-          fillColor: fieldBg,
-          child: Row(
-            children: [
-              Icon(Icons.email_outlined, size: 18, color: bodyMuted),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _emailCtrl,
-                  enabled: !_busy,
-                  keyboardType: TextInputType.emailAddress,
-                  autocorrect: false,
-                  style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: titleMaroon,
-                  ),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    border: InputBorder.none,
-                    hintText: signupAlign
-                        ? 'Enter your email address'
-                        : 'Email address',
-                    hintStyle: GoogleFonts.poppins(
-                      color: bodyMuted.withValues(alpha: 0.85),
+        signupAlign
+            ? _AuthGlassInputCard(
+                icon: Icons.email_outlined,
+                iconColor: bodyMuted,
+                child: Material(
+                  color: Colors.transparent,
+                  child: TextField(
+                    controller: _emailCtrl,
+                    enabled: !_busy,
+                    keyboardType: TextInputType.emailAddress,
+                    autocorrect: false,
+                    style: GoogleFonts.poppins(
                       fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: titleMaroon,
+                    ),
+                    decoration: authGlassFieldDecoration(
+                      hintText: 'Enter your email address',
                     ),
                   ),
                 ),
+              )
+            : _InputCard(
+                borderColor: fieldBr,
+                fillColor: fieldBg,
+                child: Row(
+                  children: [
+                    Icon(Icons.email_outlined, size: 18, color: bodyMuted),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _emailCtrl,
+                        enabled: !_busy,
+                        keyboardType: TextInputType.emailAddress,
+                        autocorrect: false,
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: titleMaroon,
+                        ),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          border: InputBorder.none,
+                          hintText: 'Email address',
+                          hintStyle: GoogleFonts.poppins(
+                            color: bodyMuted.withValues(alpha: 0.85),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
-        ),
         if (signupAlign) ...[
           const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              _profileSimplifiedSignupBackField(titleMaroon, fieldBr),
-              const Spacer(),
-              _profileSimplifiedSignupPrimary(const Color(0xFF5D1109)),
-            ],
+          _profileSimplifiedSignupActions(
+            titleMaroon,
+            fieldBr,
+            const Color(0xFF5D1109),
           ),
         ],
       ],
@@ -1863,7 +2282,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(
               color: bodyMuted,
-              fontSize: 11,
+              fontSize: 13,
               height: 1.35,
               fontWeight: FontWeight.w500,
             ),
@@ -1874,7 +2293,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             'Create a',
             style: GoogleFonts.poppins(
               color: bodyMuted,
-              fontSize: 11,
+              fontSize: 13,
               height: 1.3,
               fontWeight: FontWeight.w600,
             ),
@@ -1891,62 +2310,94 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
           ),
           const SizedBox(height: 12),
         ],
-        _InputCard(
-          borderColor: fieldBr,
-          fillColor: fieldBg,
-          child: Row(
-            children: [
-              Icon(Icons.lock_outline_rounded, size: 18, color: bodyMuted),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _passwordCtrl,
-                  enabled: !_busy,
-                  obscureText: _obscurePassword,
-                  autocorrect: false,
-                  style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: titleMaroon,
+        signupAlign
+            ? _AuthGlassInputCard(
+                icon: Icons.lock_outline_rounded,
+                iconColor: bodyMuted,
+                trailing: IconButton(
+                  onPressed: _busy
+                      ? null
+                      : () => setState(
+                          () => _obscurePassword = !_obscurePassword,
+                        ),
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    size: 20,
+                    color: bodyMuted,
                   ),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    border: InputBorder.none,
-                    hintText: signupAlign
-                        ? 'Enter password (min 6 characters)'
-                        : 'New password',
-                    hintStyle: GoogleFonts.poppins(
-                      color: bodyMuted.withValues(alpha: 0.85),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: TextField(
+                    controller: _passwordCtrl,
+                    enabled: !_busy,
+                    obscureText: _obscurePassword,
+                    autocorrect: false,
+                    style: GoogleFonts.poppins(
                       fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: titleMaroon,
+                    ),
+                    decoration: authGlassFieldDecoration(
+                      hintText: 'Enter password (min 6 characters)',
                     ),
                   ),
                 ),
-              ),
-              IconButton(
-                onPressed: _busy
-                    ? null
-                    : () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
-                icon: Icon(
-                  _obscurePassword
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined,
-                  size: 20,
-                  color: bodyMuted,
+              )
+            : _InputCard(
+                borderColor: fieldBr,
+                fillColor: fieldBg,
+                child: Row(
+                  children: [
+                    Icon(Icons.lock_outline_rounded, size: 18, color: bodyMuted),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _passwordCtrl,
+                        enabled: !_busy,
+                        obscureText: _obscurePassword,
+                        autocorrect: false,
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: titleMaroon,
+                        ),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          border: InputBorder.none,
+                          hintText: 'New password',
+                          hintStyle: GoogleFonts.poppins(
+                            color: bodyMuted.withValues(alpha: 0.85),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _busy
+                          ? null
+                          : () => setState(
+                              () => _obscurePassword = !_obscurePassword,
+                            ),
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        size: 20,
+                        color: bodyMuted,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
         if (signupAlign) ...[
           const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              _profileSimplifiedSignupBackField(titleMaroon, fieldBr),
-              const Spacer(),
-              _profileSimplifiedSignupPrimary(const Color(0xFF5D1109)),
-            ],
+          _profileSimplifiedSignupActions(
+            titleMaroon,
+            fieldBr,
+            const Color(0xFF5D1109),
           ),
         ],
       ],
@@ -1984,7 +2435,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(
               color: bodyMuted,
-              fontSize: 11,
+              fontSize: 13,
               height: 1.35,
               fontWeight: FontWeight.w500,
             ),
@@ -1994,7 +2445,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             'Almost done',
             style: GoogleFonts.poppins(
               color: bodyMuted,
-              fontSize: 11,
+              fontSize: 13,
               height: 1.25,
               fontWeight: FontWeight.w600,
             ),
@@ -2004,7 +2455,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             'Date of birth',
             style: GoogleFonts.playfairDisplay(
               color: titleMaroon,
-              fontSize: 24,
+              fontSize: 22,
               height: 1.05,
               fontWeight: FontWeight.w700,
             ),
@@ -2015,7 +2466,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             textAlign: TextAlign.left,
             style: GoogleFonts.poppins(
               color: bodyMuted,
-              fontSize: 11,
+              fontSize: 13,
               height: 1.35,
               fontWeight: FontWeight.w500,
             ),
@@ -2024,40 +2475,59 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         SizedBox(height: signupAlign ? 10 : 14),
         GestureDetector(
           onTap: _busy ? null : _pickDob,
-          child: _InputCard(
-            height: signupAlign ? 46 : 48,
-            borderColor: fieldBr,
-            fillColor: fieldBg,
-            child: Row(
-              children: [
-                Icon(Icons.cake_outlined, size: 18, color: bodyMuted),
-                const SizedBox(width: 10),
-                Expanded(
+          child: signupAlign
+              ? _AuthGlassInputCard(
+                  icon: Icons.cake_outlined,
+                  iconColor: bodyMuted,
+                  trailing: Icon(
+                    Icons.calendar_today_outlined,
+                    size: 16,
+                    color: bodyMuted,
+                  ),
                   child: Text(
                     _dobDisplayLabel(),
                     style: GoogleFonts.poppins(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: _dob == null
-                          ? bodyMuted.withValues(alpha: 0.85)
-                          : titleMaroon,
+                      color: _dob == null ? _kAuthGlassHint : titleMaroon,
                     ),
                   ),
+                )
+              : _InputCard(
+                  height: 48,
+                  borderColor: fieldBr,
+                  fillColor: fieldBg,
+                  child: Row(
+                    children: [
+                      Icon(Icons.cake_outlined, size: 18, color: bodyMuted),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _dobDisplayLabel(),
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: _dob == null
+                                ? bodyMuted.withValues(alpha: 0.85)
+                                : titleMaroon,
+                          ),
+                        ),
+                      ),
+                      Icon(
+                        Icons.calendar_today_outlined,
+                        size: 16,
+                        color: bodyMuted,
+                      ),
+                    ],
+                  ),
                 ),
-                Icon(Icons.calendar_today_outlined, size: 16, color: bodyMuted),
-              ],
-            ),
-          ),
         ),
         if (signupAlign) ...[
           const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              _profileSimplifiedSignupBackField(titleMaroon, fieldBr),
-              const Spacer(),
-              _profileSimplifiedSignupPrimary(const Color(0xFF5D1109)),
-            ],
+          _profileSimplifiedSignupActions(
+            titleMaroon,
+            fieldBr,
+            const Color(0xFF5D1109),
           ),
         ],
       ],
@@ -2322,20 +2792,24 @@ class _LoginScreenState extends State<LoginScreen>
     const bgText = Color(0xFF2E1E1A);
     const muted = Color(0xFF7F6F65);
     const border = Color(0xFFE4D7C7);
-    const hint = Color(0xFF9A8B81);
+    const loginGlassFill = _kAuthGlassFill;
+    const loginGlassBorder = _kAuthGlassBorder;
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final compactLogin = screenHeight < 900;
+    final tinyLogin = screenHeight < 760;
+    final formTopOffset = compactLogin ? 0.0 : 10.0;
     final labelBrown = _AppColors.primary;
-    const cardFill = Color(0xFFFAF5ED);
-    const cardBorder = Color(0xFFE0D5C1);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: Scaffold(
-        resizeToAvoidBottomInset: false,
+        resizeToAvoidBottomInset: true,
         backgroundColor: Colors.transparent,
         body: Stack(
           fit: StackFit.expand,
           children: [
             const _GlobalAppBackgroundLayer(
-              imageAlignment: Alignment(-0.82, -0.42),
+              assetPath: _GlobalAppBackgroundLayer.loginAssetPath,
+              imageAlignment: Alignment(-0.75, -0.35),
             ),
             SafeArea(
               child: Stack(
@@ -2345,14 +2819,15 @@ class _LoginScreenState extends State<LoginScreen>
                     child: SlideTransition(
                       position: _entrySlide,
                       child: Stack(
+                        clipBehavior: Clip.none,
                         fit: StackFit.expand,
                         children: [
                           Positioned.fill(
                             child: Padding(
                               padding: EdgeInsets.fromLTRB(
-                                8,
+                                10,
                                 20,
-                                8,
+                                10,
                                 _authScreenBottomGap(context) + 12,
                               ),
                               child: Column(
@@ -2360,9 +2835,12 @@ class _LoginScreenState extends State<LoginScreen>
                                 children: [
                                   SizedBox(
                                     height:
-                                        (MediaQuery.sizeOf(context).height *
-                                                0.062)
-                                            .clamp(28.0, 76.0),
+                                        (screenHeight * (compactLogin ? 0.032 : 0.062))
+                                            .clamp(
+                                              compactLogin ? 10.0 : 28.0,
+                                              compactLogin ? 44.0 : 76.0,
+                                            ) +
+                                        (compactLogin ? 6.0 : 12.0),
                                   ),
                                   Transform.scale(
                                     alignment: Alignment.centerLeft,
@@ -2375,77 +2853,86 @@ class _LoginScreenState extends State<LoginScreen>
                                         return SizedBox(
                                           width: brandW / scale,
                                           child: const Padding(
-                                            padding: EdgeInsets.only(right: 26),
+                                            padding: EdgeInsets.only(
+                                              top: 18,
+                                              right: 26,
+                                            ),
                                             child: _LoginLogoBlock(),
                                           ),
                                         );
                                       },
                                     ),
                                   ),
-                                  const SizedBox(height: 10),
+                                  SizedBox(height: compactLogin ? 8 : 12),
                                   Expanded(
                                     child: Padding(
-                                      padding: const EdgeInsets.only(bottom: 4),
+                                      padding: EdgeInsets.only(
+                                        top: formTopOffset,
+                                        bottom: compactLogin ? 0 : 4,
+                                      ),
                                       child: LayoutBuilder(
                                         builder: (context, constraints) {
-                                          return SizedBox(
+                                          final formContent = SizedBox(
                                             width: constraints.maxWidth,
-                                            height: constraints.maxHeight,
-                                            child: Align(
-                                              alignment: Alignment.topCenter,
-                                              child: Column(
+                                            child: Column(
                                                   crossAxisAlignment:
                                                       CrossAxisAlignment
                                                           .stretch,
                                                   mainAxisSize:
                                                       MainAxisSize.min,
                                                   children: [
-                                                    const SizedBox(height: 4),
+                                                    SizedBox(
+                                                      height: compactLogin ? 4 : 8,
+                                                    ),
                                                     Text(
                                                       'Welcome back',
                                                       style:
                                                           GoogleFonts.playfairDisplay(
                                                             color: labelBrown,
-                                                            fontSize: 22,
+                                                            fontSize:
+                                                                compactLogin ? 20 : 22,
                                                             fontWeight:
                                                                 FontWeight.w700,
                                                             height: 1.05,
                                                           ),
                                                     ),
-                                                    const SizedBox(height: 2),
+                                                    const SizedBox(height: 4),
                                                     Text(
-                                                      'Vanakkam — homely puttu, curries, and Kerala flavours await you. '
-                                                      'Sign in with mobile OTP, Google, or email.',
+                                                      'Vanakkam — homely puttu, curries, and Kerala flavours await you.',
                                                       maxLines: 2,
                                                       overflow:
                                                           TextOverflow.ellipsis,
                                                       style:
                                                           GoogleFonts.poppins(
                                                             color: muted,
-                                                            fontSize: 10.5,
-                                                            height: 1.18,
+                                                            fontSize: 13,
+                                                            height: 1.28,
                                                             fontWeight:
                                                                 FontWeight.w500,
                                                           ),
                                                     ),
-                                                    const SizedBox(height: 6),
+                                                    SizedBox(
+                                                      height: compactLogin ? 8 : 10,
+                                                    ),
                                                     Text(
                                                       'Mobile number',
                                                       style:
                                                           GoogleFonts.poppins(
                                                             color: labelBrown,
-                                                            fontSize: 11,
+                                                            fontSize: 13,
                                                             fontWeight:
                                                                 FontWeight.w700,
                                                           ),
                                                     ),
                                                     const SizedBox(height: 5),
                                                     _InputCard(
-                                                      height: 40,
-                                                      horizontalPadding: 10,
-                                                      radius: 12,
-                                                      borderColor: cardBorder,
-                                                      fillColor: cardFill,
+                                                      height: compactLogin ? 40 : 46,
+                                                      horizontalPadding: 12,
+                                                      radius: 15,
+                                                      borderColor:
+                                                          loginGlassBorder,
+                                                      fillColor: loginGlassFill,
+                                                      glass: true,
                                                       child: Row(
                                                         children: [
                                                           Icon(
@@ -2481,48 +2968,40 @@ class _LoginScreenState extends State<LoginScreen>
                                                             width: 4,
                                                           ),
                                                           Expanded(
-                                                            child: TextField(
-                                                              controller:
-                                                                  _phoneCtrl,
-                                                              enabled:
-                                                                  !_busy &&
-                                                                  !_otpSent,
-                                                              keyboardType:
-                                                                  TextInputType
-                                                                      .phone,
-                                                              autocorrect:
-                                                                  false,
-                                                              inputFormatters: [
-                                                                FilteringTextInputFormatter
-                                                                    .digitsOnly,
-                                                                LengthLimitingTextInputFormatter(
-                                                                  10,
+                                                            child: Material(
+                                                              color: Colors
+                                                                  .transparent,
+                                                              child: TextField(
+                                                                controller:
+                                                                    _phoneCtrl,
+                                                                enabled:
+                                                                    !_busy &&
+                                                                    !_otpSent,
+                                                                keyboardType:
+                                                                    TextInputType
+                                                                        .phone,
+                                                                autocorrect:
+                                                                    false,
+                                                                inputFormatters: [
+                                                                  FilteringTextInputFormatter
+                                                                      .digitsOnly,
+                                                                  LengthLimitingTextInputFormatter(
+                                                                    10,
+                                                                  ),
+                                                                ],
+                                                                decoration:
+                                                                    authGlassFieldDecoration(
+                                                                  hintText:
+                                                                      'Enter your mobile number',
                                                                 ),
-                                                              ],
-                                                              decoration: InputDecoration(
-                                                                isDense: true,
-                                                                border:
-                                                                    InputBorder
-                                                                        .none,
-                                                                contentPadding:
-                                                                    EdgeInsets
-                                                                        .zero,
-                                                                hintText:
-                                                                    'Enter your mobile number',
-                                                                hintStyle: GoogleFonts.poppins(
-                                                                  color: hint,
-                                                                  fontSize: 12,
+                                                                style: GoogleFonts
+                                                                    .poppins(
+                                                                  color: bgText,
+                                                                  fontSize: 13,
                                                                   fontWeight:
                                                                       FontWeight
-                                                                          .w500,
+                                                                          .w600,
                                                                 ),
-                                                              ),
-                                                              style: GoogleFonts.poppins(
-                                                                color: bgText,
-                                                                fontSize: 13,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w600,
                                                               ),
                                                             ),
                                                           ),
@@ -2545,7 +3024,7 @@ class _LoginScreenState extends State<LoginScreen>
                                                                   const Color(
                                                                     0xFFEA7A2C,
                                                                   ),
-                                                              fontSize: 11,
+                                                              fontSize: 13,
                                                               fontWeight:
                                                                   FontWeight
                                                                       .w700,
@@ -2560,18 +3039,20 @@ class _LoginScreenState extends State<LoginScreen>
                                                       style:
                                                           GoogleFonts.poppins(
                                                             color: labelBrown,
-                                                            fontSize: 11,
+                                                            fontSize: 13,
                                                             fontWeight:
                                                                 FontWeight.w700,
                                                           ),
                                                     ),
                                                     const SizedBox(height: 5),
                                                     _InputCard(
-                                                      height: 40,
-                                                      horizontalPadding: 10,
-                                                      radius: 12,
-                                                      borderColor: cardBorder,
-                                                      fillColor: cardFill,
+                                                      height: compactLogin ? 40 : 46,
+                                                      horizontalPadding: 12,
+                                                      radius: 15,
+                                                      borderColor:
+                                                          loginGlassBorder,
+                                                      fillColor: loginGlassFill,
+                                                      glass: true,
                                                       child: Row(
                                                         children: [
                                                           Icon(
@@ -2584,53 +3065,45 @@ class _LoginScreenState extends State<LoginScreen>
                                                             width: 8,
                                                           ),
                                                           Expanded(
-                                                            child: TextField(
-                                                              controller:
-                                                                  _otpCtrl,
-                                                              focusNode:
-                                                                  _otpFocus,
-                                                              keyboardType:
-                                                                  TextInputType
-                                                                      .number,
-                                                              autocorrect:
-                                                                  false,
-                                                              enabled: !_busy,
-                                                              inputFormatters: [
-                                                                FilteringTextInputFormatter
-                                                                    .digitsOnly,
-                                                                LengthLimitingTextInputFormatter(
-                                                                  _otpBoxCount,
+                                                            child: Material(
+                                                              color: Colors
+                                                                  .transparent,
+                                                              child: TextField(
+                                                                controller:
+                                                                    _otpCtrl,
+                                                                focusNode:
+                                                                    _otpFocus,
+                                                                keyboardType:
+                                                                    TextInputType
+                                                                        .number,
+                                                                autocorrect:
+                                                                    false,
+                                                                enabled: !_busy,
+                                                                inputFormatters: [
+                                                                  FilteringTextInputFormatter
+                                                                      .digitsOnly,
+                                                                  LengthLimitingTextInputFormatter(
+                                                                    _otpBoxCount,
+                                                                  ),
+                                                                ],
+                                                                decoration:
+                                                                    authGlassFieldDecoration(
+                                                                  hintText:
+                                                                      'Enter 6-digit OTP',
                                                                 ),
-                                                              ],
-                                                              decoration: InputDecoration(
-                                                                isDense: true,
-                                                                border:
-                                                                    InputBorder
-                                                                        .none,
-                                                                contentPadding:
-                                                                    EdgeInsets
-                                                                        .zero,
-                                                                hintText:
-                                                                    'Enter 6-digit OTP',
-                                                                hintStyle: GoogleFonts.poppins(
-                                                                  color: hint,
-                                                                  fontSize: 12,
+                                                                style: GoogleFonts
+                                                                    .poppins(
+                                                                  color: bgText,
+                                                                  fontSize: 13,
                                                                   fontWeight:
                                                                       FontWeight
-                                                                          .w500,
+                                                                          .w600,
                                                                 ),
+                                                                onChanged: (_) =>
+                                                                    setState(
+                                                                      () {},
+                                                                    ),
                                                               ),
-                                                              style: GoogleFonts.poppins(
-                                                                color: bgText,
-                                                                fontSize: 13,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w600,
-                                                              ),
-                                                              onChanged: (_) =>
-                                                                  setState(
-                                                                    () {},
-                                                                  ),
                                                             ),
                                                           ),
                                                           TextButton(
@@ -2680,7 +3153,7 @@ class _LoginScreenState extends State<LoginScreen>
                                                                     const Color(
                                                                       0xFFEA7A2C,
                                                                     ),
-                                                                fontSize: 11.5,
+                                                                fontSize: 13,
                                                                 fontWeight:
                                                                     FontWeight
                                                                         .w800,
@@ -2692,7 +3165,8 @@ class _LoginScreenState extends State<LoginScreen>
                                                     ),
                                                     const SizedBox(height: 8),
                                                     SizedBox(
-                                                      height: 40,
+                                                      height:
+                                                          compactLogin ? 36 : 40,
                                                       width: double.infinity,
                                                       child: Stack(
                                                         fit: StackFit.expand,
@@ -2805,10 +3279,10 @@ class _LoginScreenState extends State<LoginScreen>
                                                       ),
                                                     ),
                                                     Padding(
-                                                      padding:
-                                                          const EdgeInsets.only(
-                                                            bottom: 10,
-                                                          ),
+                                                      padding: EdgeInsets.only(
+                                                        bottom:
+                                                            compactLogin ? 0 : 6,
+                                                      ),
                                                       child: Column(
                                                         mainAxisSize:
                                                             MainAxisSize.min,
@@ -2864,7 +3338,10 @@ class _LoginScreenState extends State<LoginScreen>
                                                             ),
                                                           ),
                                                           SizedBox(
-                                                            height: 38,
+                                                            height:
+                                                                compactLogin
+                                                                    ? 36
+                                                                    : 40,
                                                             child: Row(
                                                               crossAxisAlignment:
                                                                   CrossAxisAlignment
@@ -2876,12 +3353,12 @@ class _LoginScreenState extends State<LoginScreen>
                                                                       foregroundColor:
                                                                           bgText,
                                                                       backgroundColor:
-                                                                          Colors.white.withValues(
-                                                                            alpha: 0.78,
-                                                                          ),
+                                                                          loginGlassFill,
                                                                       side: BorderSide(
                                                                         color:
-                                                                            border,
+                                                                            loginGlassBorder,
+                                                                        width:
+                                                                            1.25,
                                                                       ),
                                                                       padding: const EdgeInsets.symmetric(
                                                                         horizontal:
@@ -2909,14 +3386,14 @@ class _LoginScreenState extends State<LoginScreen>
                                                                               .center,
                                                                       decoration: BoxDecoration(
                                                                         color: Colors
-                                                                            .white,
+                                                                            .transparent,
                                                                         borderRadius:
                                                                             BorderRadius.circular(
                                                                               3,
                                                                             ),
                                                                         border: Border.all(
                                                                           color:
-                                                                              border,
+                                                                              loginGlassBorder,
                                                                         ),
                                                                       ),
                                                                       child: Text(
@@ -2943,7 +3420,7 @@ class _LoginScreenState extends State<LoginScreen>
                                                                             TextAlign.center,
                                                                         style: GoogleFonts.poppins(
                                                                           fontSize:
-                                                                              11.5,
+                                                                              11,
                                                                           fontWeight:
                                                                               FontWeight.w700,
                                                                         ),
@@ -2952,7 +3429,7 @@ class _LoginScreenState extends State<LoginScreen>
                                                                   ),
                                                                 ),
                                                                 const SizedBox(
-                                                                  width: 10,
+                                                                  width: 8,
                                                                 ),
                                                                 Expanded(
                                                                   child: OutlinedButton.icon(
@@ -2960,12 +3437,12 @@ class _LoginScreenState extends State<LoginScreen>
                                                                       foregroundColor:
                                                                           bgText,
                                                                       backgroundColor:
-                                                                          Colors.white.withValues(
-                                                                            alpha: 0.78,
-                                                                          ),
+                                                                          loginGlassFill,
                                                                       side: BorderSide(
                                                                         color:
-                                                                            border,
+                                                                            loginGlassBorder,
+                                                                        width:
+                                                                            1.25,
                                                                       ),
                                                                       padding: const EdgeInsets.symmetric(
                                                                         horizontal:
@@ -3002,7 +3479,7 @@ class _LoginScreenState extends State<LoginScreen>
                                                                             TextAlign.center,
                                                                         style: GoogleFonts.poppins(
                                                                           fontSize:
-                                                                              11.5,
+                                                                              11,
                                                                           fontWeight:
                                                                               FontWeight.w700,
                                                                         ),
@@ -3018,7 +3495,22 @@ class _LoginScreenState extends State<LoginScreen>
                                                     ),
                                                   ],
                                                 ),
-                                              ),
+                                          );
+                                          return SizedBox(
+                                            width: constraints.maxWidth,
+                                            height: constraints.maxHeight,
+                                            child: tinyLogin
+                                                ? FittedBox(
+                                                    fit: BoxFit.scaleDown,
+                                                    alignment:
+                                                        Alignment.topCenter,
+                                                    child: formContent,
+                                                  )
+                                                : Align(
+                                                    alignment:
+                                                        Alignment.topCenter,
+                                                    child: formContent,
+                                                  ),
                                           );
                                         },
                                       ),
@@ -3028,7 +3520,11 @@ class _LoginScreenState extends State<LoginScreen>
                               ),
                             ),
                           ),
-                          const _LoginMaroonFooter(),
+                          const Positioned(
+                            top: 0,
+                            left: -14,
+                            child: _LoginSlbLogoOverlay(),
+                          ),
                         ],
                       ),
                     ),
@@ -3043,65 +3539,21 @@ class _LoginScreenState extends State<LoginScreen>
   }
 }
 
-/// “Made with Love” — right side, vertically centered on the maroon band strip.
-class _LoginMaroonFooter extends StatelessWidget {
-  const _LoginMaroonFooter();
+/// SLB Kitchen mark — overlaid top-left; does not affect login layout.
+class _LoginSlbLogoOverlay extends StatelessWidget {
+  const _LoginSlbLogoOverlay();
 
-  static const _gold = Color(0xFFF1C16A);
-  static const _cream = Color(0xFFFFF8EF);
+  static const _asset = 'assets/images/slb_kitchen_logo.png';
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
-    return Positioned(
-      left: 0,
-      right: 0,
-      bottom: 32,
-      height: 132,
-      child: IgnorePointer(
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(88, 6, 4, bottomInset + 6),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: (MediaQuery.sizeOf(context).width * 0.62).clamp(
-                  168.0,
-                  300.0,
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Made with Love',
-                    textAlign: TextAlign.right,
-                    style: GoogleFonts.playfairDisplay(
-                      color: _gold,
-                      fontSize: 15,
-                      height: 1.12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Traditional recipes crafted with the finest ingredients.',
-                    textAlign: TextAlign.right,
-                    softWrap: true,
-                    style: GoogleFonts.poppins(
-                      color: _cream,
-                      fontSize: 11,
-                      height: 1.35,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+    return IgnorePointer(
+      child: Image.asset(
+        _asset,
+        width: 96,
+        fit: BoxFit.fitWidth,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
       ),
     );
   }
@@ -3117,6 +3569,7 @@ class _LoginLogoBlock extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const SizedBox(height: 10),
         Text(
           'Chechi',
           style: GoogleFonts.pacifico(
@@ -3127,7 +3580,7 @@ class _LoginLogoBlock extends StatelessWidget {
           ),
         ),
         Transform.translate(
-          offset: const Offset(0, -5),
+          offset: const Offset(0, -2),
           child: Text(
             'Puttu Kadai',
             style: GoogleFonts.playfairDisplay(
@@ -3158,10 +3611,74 @@ class _LoginTaglineFlourish extends StatelessWidget {
       textAlign: TextAlign.left,
       maxLines: 3,
       style: GoogleFonts.dancingScript(
-        fontSize: 12,
+        fontSize: 14,
         height: 1.28,
         color: _accent,
         fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+}
+
+const _kAuthGlassFill = Color(0x59FFF8F1);
+const _kAuthGlassBorder = Color(0x99FFFFFF);
+const _kAuthGlassHint = Color(0xFF9A8B81);
+
+InputDecoration authGlassFieldDecoration({
+  required String hintText,
+  Color hintColor = _kAuthGlassHint,
+  double hintSize = 14,
+}) {
+  return InputDecoration(
+    isDense: true,
+    filled: true,
+    fillColor: Colors.transparent,
+    hoverColor: Colors.transparent,
+    focusColor: Colors.transparent,
+    border: InputBorder.none,
+    enabledBorder: InputBorder.none,
+    focusedBorder: InputBorder.none,
+    disabledBorder: InputBorder.none,
+    contentPadding: EdgeInsets.zero,
+    hintText: hintText,
+    hintStyle: GoogleFonts.poppins(
+      color: hintColor,
+      fontSize: hintSize,
+      fontWeight: FontWeight.w500,
+    ),
+  );
+}
+
+/// Login / signup glass field shell (icon + child).
+class _AuthGlassInputCard extends StatelessWidget {
+  const _AuthGlassInputCard({
+    required this.icon,
+    required this.iconColor,
+    required this.child,
+    this.trailing,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final Widget child;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return _InputCard(
+      height: 48,
+      horizontalPadding: 12,
+      radius: 15,
+      borderColor: _kAuthGlassBorder,
+      fillColor: _kAuthGlassFill,
+      glass: true,
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: iconColor),
+          const SizedBox(width: 10),
+          Expanded(child: child),
+          if (trailing != null) trailing!,
+        ],
       ),
     );
   }
@@ -3175,6 +3692,7 @@ class _InputCard extends StatelessWidget {
     this.height = 44,
     this.horizontalPadding = 12,
     this.radius = 12,
+    this.glass = false,
   });
   final Widget child;
   final Color borderColor;
@@ -3182,18 +3700,54 @@ class _InputCard extends StatelessWidget {
   final double height;
   final double horizontalPadding;
   final double radius;
+  final bool glass;
 
   @override
   Widget build(BuildContext context) {
+    if (glass) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            width: double.infinity,
+            height: height,
+            alignment: Alignment.centerLeft,
+            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.white.withValues(alpha: 0.26),
+                  fillColor,
+                ],
+              ),
+              borderRadius: BorderRadius.circular(radius),
+              border: Border.all(color: borderColor, width: 1.25),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF5D1109).withValues(alpha: 0.09),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: child,
+          ),
+        ),
+      );
+    }
     return Container(
       width: double.infinity,
       height: height,
       alignment: Alignment.centerLeft,
       padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
       decoration: BoxDecoration(
-        color: fillColor,
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: borderColor),
+        color: Colors.transparent,
+        border: Border(
+          bottom: BorderSide(color: borderColor, width: 1.35),
+        ),
       ),
       child: child,
     );
@@ -3300,12 +3854,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
-  final _heroController = PageController(viewportFraction: 1);
   final _homeSearchController = TextEditingController();
 
   /// `null` = show all [customerMenuSections]; otherwise index of single section.
   int? _homeSectionFilter;
-  int _heroIndex = 0;
   late final AnimationController _tabAnim;
   late final VoidCallback _navListener;
   late int _lastNavIndex;
@@ -3525,10 +4077,13 @@ class _HomeScreenState extends State<HomeScreen>
 
   static const String _kPrefsNotifOrders = 'chechi_notif_orders';
   static const String _kPrefsNotifPromos = 'chechi_notif_promos';
-  static const String _kSupportWhatsAppDigits = '919876543210';
-  static final Uri _kSupportPhoneUri = Uri.parse('tel:+919876543210');
+  static const String _kSupportPhoneDisplay = '7538888437';
+  static final Uri _kSupportPhoneUri = Uri.parse('tel:+917538888437');
+  static final Uri _kSupportWhatsAppUri = Uri.parse(
+    'https://wa.me/917538888437?text=${Uri.encodeQueryComponent('Hi Chechi Puttu Kadai! I have a query.')}',
+  );
   static final Uri _kSupportEmailUri = Uri.parse(
-    'mailto:care@chechiputtu.in?subject=Help%20with%20Chechi%20Puttu',
+    'mailto:chechiputtukadai@gmail.com?subject=Chechi%20Puttu%20Kadai%20—%20Customer%20query',
   );
 
   Future<void> _launchUri(Uri uri) async {
@@ -3592,7 +4147,7 @@ class _HomeScreenState extends State<HomeScreen>
                         'Phone notifications are turned off for Chechi Puttu. '
                         'Allow them here (or in system App info) so order alerts can appear.',
                         style: GoogleFonts.poppins(
-                          fontSize: 12,
+                          fontSize: 14,
                           height: 1.35,
                           color: _Theme.muted(context),
                         ),
@@ -3622,7 +4177,7 @@ class _HomeScreenState extends State<HomeScreen>
                       subtitle: Text(
                         'Preparing, out for delivery, delivered',
                         style: GoogleFonts.poppins(
-                          fontSize: 12,
+                          fontSize: 14,
                           color: _Theme.muted(context),
                         ),
                       ),
@@ -3641,7 +4196,7 @@ class _HomeScreenState extends State<HomeScreen>
                       subtitle: Text(
                         'Discounts and festival specials',
                         style: GoogleFonts.poppins(
-                          fontSize: 12,
+                          fontSize: 14,
                           color: _Theme.muted(context),
                         ),
                       ),
@@ -3705,11 +4260,21 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'We are here 9 AM – 9 PM on weekdays. For order issues, mention your order number in chat or email.',
+                      'Please share your valuable feedback. For clarifications or queries, call or WhatsApp us.',
                       style: GoogleFonts.poppins(
                         fontSize: 13,
                         height: 1.4,
                         color: _Theme.muted(ctx),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Mobile: $_kSupportPhoneDisplay\nEmail: chechiputtukadai@gmail.com',
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        height: 1.5,
+                        fontWeight: FontWeight.w500,
+                        color: _Theme.text(ctx),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -3722,7 +4287,21 @@ class _HomeScreenState extends State<HomeScreen>
                       },
                       icon: const Icon(Icons.call_rounded, size: 20),
                       label: Text(
-                        'Call +91 98765 43210',
+                        'Call $_kSupportPhoneDisplay',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) _launchUri(_kSupportWhatsAppUri);
+                        });
+                      },
+                      icon: const Icon(Icons.chat_rounded, size: 20),
+                      label: Text(
+                        'WhatsApp $_kSupportPhoneDisplay',
                         style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                       ),
                     ),
@@ -3736,7 +4315,7 @@ class _HomeScreenState extends State<HomeScreen>
                       },
                       icon: const Icon(Icons.email_outlined, size: 20),
                       label: Text(
-                        'Email care@chechiputtu.in',
+                        'chechiputtukadai@gmail.com',
                         style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                       ),
                     ),
@@ -3802,6 +4381,9 @@ class _HomeScreenState extends State<HomeScreen>
       case 'About Us':
         _showChechiAboutDialog(menuContext);
         break;
+      case 'Contact Us':
+        _showChechiContactUsDialog(menuContext);
+        break;
     }
   }
 
@@ -3823,9 +4405,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildAppNavigationDrawer(BuildContext drawerContext) {
     final scheme = Theme.of(drawerContext).colorScheme;
-    final wa = Uri.parse(
-      'https://wa.me/$_kSupportWhatsAppDigits?text=${Uri.encodeQueryComponent('Hi Chechi! I have a question.')}',
-    );
+    final wa = _kSupportWhatsAppUri;
 
     void popDrawerThen(VoidCallback fn) {
       Navigator.pop(drawerContext);
@@ -3980,11 +4560,13 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _handlePullToRefresh() async {
-    await AppRefresh.refreshMenuData();
-    await _restoreDeliveryAddress();
-    await _restoreFavorites();
-    await _restoreSectionSchedules();
-    await _loadBirthdayBannerState();
+    await Future.wait([
+      AppRefresh.refreshMenuData(),
+      _restoreDeliveryAddress(),
+      _restoreFavorites(),
+      _restoreSectionSchedules(),
+      _loadBirthdayBannerState(),
+    ]);
     if (mounted) setState(() {});
   }
 
@@ -4005,7 +4587,6 @@ class _HomeScreenState extends State<HomeScreen>
     _homeSearchController.dispose();
     _ordersFilterNotifier.dispose();
     _tabAnim.dispose();
-    _heroController.dispose();
     super.dispose();
   }
 
@@ -4331,7 +4912,7 @@ class _HomeScreenState extends State<HomeScreen>
                       child: Text(
                         'Pick one menu or show all dishes on the home screen.',
                         style: GoogleFonts.poppins(
-                          fontSize: 12,
+                          fontSize: 14,
                           height: 1.35,
                           color: _Theme.muted(ctx),
                         ),
@@ -4356,7 +4937,7 @@ class _HomeScreenState extends State<HomeScreen>
                       subtitle: Text(
                         'All menus',
                         style: GoogleFonts.poppins(
-                          fontSize: 12,
+                          fontSize: 14,
                           color: _Theme.muted(ctx),
                         ),
                       ),
@@ -4394,7 +4975,7 @@ class _HomeScreenState extends State<HomeScreen>
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.poppins(
-                            fontSize: 12,
+                            fontSize: 14,
                             color: _Theme.muted(ctx),
                           ),
                         ),
@@ -4428,46 +5009,8 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   List<Widget> _buildHomeBrowseBody(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return [
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: _Theme.border(context)),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? [
-                      _Theme.surfaceLow(context),
-                      Theme.of(context).colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.22),
-                    ]
-                  : const [
-                      Color(0xFFFFFBF6),
-                      Color(0xFFFDF1E7),
-                    ],
-            ),
-            boxShadow: [
-              BoxShadow(
-                blurRadius: 14,
-                offset: const Offset(0, 6),
-                color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.06),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: _HeroCarousel(
-              controller: _heroController,
-              index: _heroIndex,
-              onPageChanged: (i) => setState(() => _heroIndex = i),
-            ),
-          ),
-        ),
-      ),
+      const _HeroCarousel(),
       const SizedBox(height: 8),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -4500,7 +5043,7 @@ class _HomeScreenState extends State<HomeScreen>
                         Text(
                           'Showing this menu',
                           style: GoogleFonts.poppins(
-                            fontSize: 11,
+                            fontSize: 13,
                             fontWeight: FontWeight.w600,
                             color: _Theme.muted(context),
                           ),
@@ -4536,10 +5079,12 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ),
       ] else ...[
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: _SectionHeader(
-            title: 'Explore Menus',
+        ChechiFadeIn(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _SectionHeader(
+              title: 'Explore Menus',
+            ),
           ),
         ),
         const SizedBox(height: 8),
@@ -4547,28 +5092,30 @@ class _HomeScreenState extends State<HomeScreen>
           listenable: CustomerMenuSectionOverrides.instance,
           builder: (context, _) {
             final catalogCount = kCustomerMenuSections.length;
-            final chips = <Widget>[];
-            for (var i = 0; i < catalogCount; i++) {
-              if (i > 0) chips.add(const SizedBox(width: 8));
-              final label = customerMenuSections[i].title;
-              final chipLabel = label.length > 14
-                  ? '${label.substring(0, 12).trim()}…'
-                  : label;
-              chips.add(
-                Expanded(
-                  child: _CategoryChip(
-                    label: chipLabel.replaceAll(' & ', ' &\n'),
-                    margin: EdgeInsets.zero,
-                    onTap: () => setState(() => _homeSectionFilter = i),
-                  ),
-                ),
-              );
-            }
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: SizedBox(
-                height: 94,
-                child: Row(children: chips),
+                height: 78,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: catalogCount,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, i) {
+                    final label = customerMenuSections[i].title;
+                    final chipLabel = label.length > 14
+                        ? '${label.substring(0, 12).trim()}…'
+                        : label;
+                    return SizedBox(
+                      width: 76,
+                      child: _CategoryChip(
+                        label: chipLabel.replaceAll(' & ', ' &\n'),
+                        icon: _exploreMenuChipIcon(label),
+                        margin: EdgeInsets.zero,
+                        onTap: () => setState(() => _homeSectionFilter = i),
+                      ),
+                    );
+                  },
+                ),
               ),
             );
           },
@@ -4576,11 +5123,6 @@ class _HomeScreenState extends State<HomeScreen>
       ],
       const SizedBox(height: 10),
       ..._buildHomeBrowseMenuSections(context),
-      const SizedBox(height: 10),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: _OfferBanner(code: 'SLB10', onOrderNow: () {}),
-      ),
     ];
   }
 
@@ -4595,31 +5137,20 @@ class _HomeScreenState extends State<HomeScreen>
       out.add(SizedBox(height: first ? 10 : 14));
       first = false;
       out.add(
-        KeyedSubtree(
-          key: _menuSectionKeys[i],
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _SectionHeader(
-              title: sec.title,
+        ChechiFadeIn(
+          delay: chechiStagger(i, staggerMs: 55),
+          child: KeyedSubtree(
+            key: _menuSectionKeys[i],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _SectionHeader(
+                title: sec.title,
+              ),
             ),
           ),
         ),
       );
-      out.add(
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-          child: Text(
-            sec.subtitle,
-            style: GoogleFonts.poppins(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w500,
-              color: _Theme.muted(context),
-              height: 1.25,
-            ),
-          ),
-        ),
-      );
-      out.add(const SizedBox(height: 8));
+      out.add(const SizedBox(height: 6));
       out.add(
         ListenableBuilder(
           listenable: Listenable.merge([
@@ -4630,7 +5161,7 @@ class _HomeScreenState extends State<HomeScreen>
           ]),
           builder: (context, _) {
             return SizedBox(
-              height: 174,
+              height: _kHomeDishCardHeight,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -4640,8 +5171,8 @@ class _HomeScreenState extends State<HomeScreen>
                     return Align(
                       alignment: Alignment.topCenter,
                       child: _ProductCard(
-                        width: 152,
-                        height: 174,
+                        width: 136,
+                        height: _kHomeDishCardHeight,
                         badge: m.badge,
                         title: m.title,
                         subtitle: m.subtitle,
@@ -4787,19 +5318,7 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-          child: Text(
-            s.subtitle,
-            style: GoogleFonts.poppins(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w500,
-              color: _Theme.muted(context),
-              height: 1.25,
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         ListenableBuilder(
           listenable: Listenable.merge([
             widget.cartLinesNotifier,
@@ -4809,7 +5328,7 @@ class _HomeScreenState extends State<HomeScreen>
           ]),
           builder: (context, _) {
             return SizedBox(
-              height: 174,
+              height: _kHomeDishCardHeight,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -4819,8 +5338,8 @@ class _HomeScreenState extends State<HomeScreen>
                     return Align(
                       alignment: Alignment.topCenter,
                       child: _ProductCard(
-                        width: 152,
-                        height: 174,
+                        width: 136,
+                        height: _kHomeDishCardHeight,
                         badge: m.badge,
                         title: m.title,
                         subtitle: m.subtitle,
@@ -5311,7 +5830,7 @@ void _showChechiCancellationPolicyDialog(BuildContext context) {
     context: context,
     builder: (c) => AlertDialog(
       title: Text(
-        'Cancellation policy',
+        'Cancellation Policy',
         style: GoogleFonts.poppins(
           fontWeight: FontWeight.w700,
           color: _ProfilePalette.titleOf(c),
@@ -5319,10 +5838,11 @@ void _showChechiCancellationPolicyDialog(BuildContext context) {
       ),
       content: SingleChildScrollView(
         child: Text(
-          '• You can cancel an order within 2 minutes if the kitchen has not started preparation.\n\n'
-          '• After preparation starts, cancellation may not be possible.\n\n'
-          '• Approved prepaid cancellations are refunded to the original payment method within 3-7 business days.\n\n'
-          '• For urgent help, use in-app support chat.',
+          '1) Orders can be cancelled within 30 minutes of confirmation.\n\n'
+          '2) Cancellation will not be accepted within 4 hours prior to the delivery time.\n\n'
+          '3) Bulk and customized orders are non-refundable.\n\n'
+          '4) Refunds, if applicable, will be processed within 12–24 hours.\n\n'
+          '5) In case of unforeseen situations from our side, the customer will be informed immediately and eligible refunds will be processed accordingly.',
           style: GoogleFonts.poppins(
             height: 1.45,
             fontSize: 13,
@@ -5343,25 +5863,159 @@ void _showChechiCancellationPolicyDialog(BuildContext context) {
   );
 }
 
-void _showChechiAboutDialog(BuildContext context) {
+void _showChechiContactUsDialog(BuildContext context) {
   showDialog<void>(
     context: context,
     builder: (c) => AlertDialog(
       title: Text(
-        'About Chechi Puttu',
+        'Contact Us',
         style: GoogleFonts.poppins(
           fontWeight: FontWeight.w700,
           color: _ProfilePalette.titleOf(c),
         ),
       ),
-      content: Text(
-        'Homestyle Kerala food — puttu, curries, and comfort meals made with care. '
-        'This app is a demo storefront UI (version 1.0.0).\n\n'
-        'Thank you for cooking with Chechi!',
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Please do share your valuable feedback. For any further clarifications or queries, call us or WhatsApp us.',
+              style: GoogleFonts.poppins(
+                height: 1.45,
+                fontSize: 13,
+                color: _ProfilePalette.mutedOf(c),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                Icons.phone_in_talk_rounded,
+                color: _ProfilePalette.titleOf(c),
+              ),
+              title: Text(
+                'Mobile',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  color: _ProfilePalette.mutedOf(c),
+                ),
+              ),
+              subtitle: Text(
+                '7538888437',
+                style: GoogleFonts.poppins(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: _ProfilePalette.titleOf(c),
+                ),
+              ),
+              onTap: () {
+                Navigator.pop(c);
+                launchUrl(
+                  Uri.parse('tel:+917538888437'),
+                  mode: LaunchMode.externalApplication,
+                );
+              },
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                Icons.chat_rounded,
+                color: _ProfilePalette.titleOf(c),
+              ),
+              title: Text(
+                'WhatsApp',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  color: _ProfilePalette.mutedOf(c),
+                ),
+              ),
+              subtitle: Text(
+                '7538888437',
+                style: GoogleFonts.poppins(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: _ProfilePalette.titleOf(c),
+                ),
+              ),
+              onTap: () {
+                Navigator.pop(c);
+                launchUrl(
+                  Uri.parse(
+                    'https://wa.me/917538888437?text=${Uri.encodeQueryComponent('Hi Chechi Puttu Kadai!')}',
+                  ),
+                  mode: LaunchMode.externalApplication,
+                );
+              },
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                Icons.email_outlined,
+                color: _ProfilePalette.titleOf(c),
+              ),
+              title: Text(
+                'Email',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  color: _ProfilePalette.mutedOf(c),
+                ),
+              ),
+              subtitle: Text(
+                'chechiputtukadai@gmail.com',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: _ProfilePalette.titleOf(c),
+                ),
+              ),
+              onTap: () {
+                Navigator.pop(c);
+                launchUrl(
+                  Uri.parse(
+                    'mailto:chechiputtukadai@gmail.com?subject=Chechi%20Puttu%20Kadai%20—%20Customer%20query',
+                  ),
+                  mode: LaunchMode.externalApplication,
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(c),
+          child: Text(
+            'Close',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+void _showChechiAboutDialog(BuildContext context) {
+  showDialog<void>(
+    context: context,
+    builder: (c) => AlertDialog(
+      title: Text(
+        'About Us',
         style: GoogleFonts.poppins(
-          height: 1.45,
-          fontSize: 13,
-          color: _ProfilePalette.mutedOf(c),
+          fontWeight: FontWeight.w700,
+          color: _ProfilePalette.titleOf(c),
+        ),
+      ),
+      content: SingleChildScrollView(
+        child: Text(
+          'Sai Logabala OPC Pvt. Ltd. proudly presents Chechi Puttu Kadai, a brand dedicated to bringing authentic Kerala traditional flavors to your plate. We specialize in a wide variety of puttu, homemade snacks, catering services, live counters, party orders, and doorstep delivery with quality, hygiene, and taste at heart.\n\n'
+          'We also extend our services to hospital in-patients, ensuring fresh, hygienic, and homely food delivered with care and comfort.\n\n'
+          'Our mission is to serve fresh, delicious food with a touch of tradition and homemade love.',
+          style: GoogleFonts.poppins(
+            height: 1.45,
+            fontSize: 13,
+            color: _ProfilePalette.mutedOf(c),
+          ),
         ),
       ),
       actions: [
@@ -5571,6 +6225,7 @@ class _ProfileTab extends StatelessWidget {
                   onItemTap: onSettingsTap,
                   items: const [
                     (Icons.headset_mic_outlined, 'Help & Support'),
+                    (Icons.contact_phone_outlined, 'Contact Us'),
                     (Icons.help_outline_rounded, 'FAQs'),
                     (Icons.description_outlined, 'Terms & Conditions'),
                     (Icons.policy_outlined, 'Cancellation Policy'),
@@ -5667,7 +6322,7 @@ class _ProfileUserCard extends StatelessWidget {
                 Text(
                   email,
                   style: GoogleFonts.poppins(
-                    fontSize: 11.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w500,
                     color: _ProfilePalette.mutedOf(context),
                   ),
@@ -5676,7 +6331,7 @@ class _ProfileUserCard extends StatelessWidget {
                 Text(
                   phone,
                   style: GoogleFonts.poppins(
-                    fontSize: 11.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w500,
                     color: _ProfilePalette.mutedOf(context),
                   ),
@@ -5697,7 +6352,7 @@ class _ProfileUserCard extends StatelessWidget {
                 label: Text(
                   'Edit Profile',
                   style: GoogleFonts.poppins(
-                    fontSize: 10.5,
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w700,
                     color: _ProfilePalette.titleOf(context),
                   ),
@@ -5767,7 +6422,7 @@ class _ProfileOrdersSummary extends StatelessWidget {
                     Text(
                       'View All Orders',
                       style: GoogleFonts.poppins(
-                        fontSize: 12,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: _ProfilePalette.orangeOf(context),
                       ),
@@ -6996,7 +7651,7 @@ class _CartDeliveryCard extends StatelessWidget {
                       'Delivering to',
                       style: GoogleFonts.poppins(
                         color: muted,
-                        fontSize: 12,
+                        fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -7212,7 +7867,7 @@ class _CartCouponCard extends StatelessWidget {
                   'Use code to get exciting offers',
                   style: GoogleFonts.poppins(
                     color: muted,
-                    fontSize: 12,
+                    fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -8137,7 +8792,7 @@ class _OrderListCard extends StatelessWidget {
                           Text(
                             '${order.itemCount} Items',
                             style: GoogleFonts.poppins(
-                              fontSize: 11,
+                              fontSize: 13,
                               fontWeight: FontWeight.w500,
                               color: _OrdersPalette.mutedOf(context),
                             ),
@@ -8159,7 +8814,7 @@ class _OrderListCard extends StatelessWidget {
                                 child: Text(
                                   order.placedAt,
                                   style: GoogleFonts.poppins(
-                                    fontSize: 10.5,
+                                    fontSize: 12.5,
                                     height: 1.35,
                                     fontWeight: FontWeight.w500,
                                     color: _OrdersPalette.mutedOf(context),
@@ -8178,7 +8833,7 @@ class _OrderListCard extends StatelessWidget {
                                 child: Text(
                                   order.statusLine,
                                   style: GoogleFonts.poppins(
-                                    fontSize: 10.5,
+                                    fontSize: 12.5,
                                     height: 1.35,
                                     fontWeight: FontWeight.w500,
                                     color: _OrdersPalette.mutedOf(context),
@@ -8226,7 +8881,7 @@ class _OrderListCard extends StatelessWidget {
                                 child: Text(
                                   order.actionLabel,
                                   style: GoogleFonts.poppins(
-                                    fontSize: 11,
+                                    fontSize: 13,
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
@@ -8255,7 +8910,7 @@ class _OrderListCard extends StatelessWidget {
                                   child: Text(
                                     'Rate',
                                     style: GoogleFonts.poppins(
-                                      fontSize: 11,
+                                      fontSize: 13,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
@@ -8285,7 +8940,7 @@ class _OrderListCard extends StatelessWidget {
                                   child: Text(
                                     'Invoice',
                                     style: GoogleFonts.poppins(
-                                      fontSize: 11,
+                                      fontSize: 13,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
@@ -8697,9 +9352,9 @@ class _CategoriesTab extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Chef Curated Menus',
+                    'Discover Our Kitchen',
                     style: GoogleFonts.playfairDisplay(
-                      fontSize: 28,
+                      fontSize: 27,
                       height: 1.05,
                       fontWeight: FontWeight.w700,
                       color: _CategoriesPalette.titleOf(context),
@@ -8707,7 +9362,7 @@ class _CategoriesTab extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Browse premium categories crafted fresh every day',
+                    'Homely Kerala flavours — puttu, curries & sweets made fresh',
                     style: GoogleFonts.poppins(
                       fontSize: 13,
                       height: 1.35,
@@ -8734,13 +9389,47 @@ class _CategoriesTab extends StatelessWidget {
                     return Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: _CategoriesHeroBanner(
-                          totalSections: sections.length,
-                          onTap: () {},
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+                        child: Row(
+                          children: [
+                            Text(
+                              'Explore Categories',
+                              style: GoogleFonts.playfairDisplay(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                color: _CategoriesPalette.titleOf(context),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Container(
+                                height: 1.2,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      _CategoriesPalette.accent.withValues(
+                                        alpha: 0.65,
+                                      ),
+                                      _CategoriesPalette.accent.withValues(
+                                        alpha: 0.06,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Icon(
+                              Icons.auto_awesome,
+                              size: 14,
+                              color: _CategoriesPalette.accent.withValues(
+                                alpha: 0.8,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 2),
                       Expanded(
                       child: sections.isEmpty
                           ? ListView(
@@ -8774,7 +9463,7 @@ class _CategoriesTab extends StatelessWidget {
                               ),
                               itemCount: sections.length,
                               separatorBuilder: (context, index) =>
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 14),
                               itemBuilder: (context, i) {
                                 final sec = sections[i];
                                 final sectionId = customerMenuSectionIdAt(i);
@@ -8788,7 +9477,7 @@ class _CategoriesTab extends StatelessWidget {
                                     ? kCustomerMenuSectionDefaultImageAssets[i]
                                     : null;
                                 return SizedBox(
-                                  height: 188,
+                                  height: 100,
                                   child: _CategoryGridCard(
                                     title: sec.title,
                                     subtitle: sec.subtitle,
@@ -8909,80 +9598,6 @@ class _CategoriesSearchRow extends StatelessWidget {
   }
 }
 
-class _CategoriesHeroBanner extends StatelessWidget {
-  const _CategoriesHeroBanner({required this.totalSections, required this.onTap});
-
-  final int totalSections;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Ink(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            colors: isDark
-                ? [
-                    cs.primaryContainer.withValues(alpha: 0.45),
-                    cs.surfaceContainerHighest.withValues(alpha: 0.7),
-                  ]
-                : const [Color(0xFFFFEFE6), Color(0xFFFFF8F4)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          border: Border.all(color: _CategoriesPalette.cardBorderOf(context)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _CategoriesPalette.accent.withValues(alpha: 0.15),
-              ),
-              child: const Icon(Icons.workspace_premium_rounded, size: 20),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '$totalSections menu sections live',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: _CategoriesPalette.titleOf(context),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Seasonal specials and chef picks updated by admin',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: _CategoriesPalette.mutedOf(context),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _CategoryGridCard extends StatelessWidget {
   const _CategoryGridCard({
     required this.title,
@@ -8998,134 +9613,122 @@ class _CategoryGridCard extends StatelessWidget {
   final String? imageAsset;
   final String? imageBase64;
 
+  Widget _buildCardImage() {
+    if (imageBase64 != null && imageBase64!.isNotEmpty) {
+      try {
+        final bytes = _MenuBase64ImageCache.read(imageBase64!);
+        if (bytes == null) return const SizedBox.shrink();
+        return Image.memory(
+          bytes,
+          key: ValueKey(imageBase64.hashCode),
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          filterQuality: FilterQuality.low,
+          cacheWidth: 420,
+          cacheHeight: 260,
+        );
+      } catch (_) {
+        // Fall through to asset/placeholder if admin image is malformed.
+      }
+    }
+    if (imageAsset != null) {
+      return Image.asset(imageAsset!, fit: BoxFit.cover);
+    }
+    return const SizedBox.shrink();
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = _CategoriesPalette.titleOf(context);
+    final subtitleColor = _CategoriesPalette.mutedOf(context);
+    final accent = _CategoriesPalette.accent;
+    final border = _CategoriesPalette.cardBorderOf(context);
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(16),
       elevation: 0,
       child: InkWell(
         onTap: onOpen,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         child: Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: _CategoriesPalette.cardBorderOf(context)),
-            gradient: LinearGradient(
-              colors: isDark
-                  ? [
-                      _CategoriesPalette.cardFillOf(context),
-                      Theme.of(context).colorScheme.surfaceContainerHighest,
-                    ]
-                  : const [Color(0xFFFFFFFF), Color(0xFFFFFAF7)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            borderRadius: BorderRadius.circular(16),
+            color: isDark
+                ? _CategoriesPalette.cardFillOf(context)
+                : const Color(0xFFFFFCF8),
+            border: Border.all(color: border),
+            boxShadow: [
+              if (!isDark)
+                BoxShadow(
+                  color: const Color(0xFF5D1109).withValues(alpha: 0.05),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+            ],
           ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          padding: const EdgeInsets.all(8),
+          child: Row(
             children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 84,
+                  height: double.infinity,
+                  child: ColoredBox(
+                    color: const Color(0xFFFFF3EA),
+                    child: _buildCardImage(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
               Expanded(
-                child: Stack(
-                  fit: StackFit.expand,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: _CategoriesPalette.thumbPlaceholderOf(context),
-                        border: Border(
-                          bottom: BorderSide(
-                            color: _CategoriesPalette.cardBorderOf(
-                              context,
-                            ).withValues(alpha: 0.7),
-                          ),
-                        ),
+                    Text(
+                      title,
+                      maxLines: 2,
+                      softWrap: true,
+                      overflow: TextOverflow.visible,
+                      style: GoogleFonts.playfairDisplay(
+                        fontSize: 15,
+                        height: 1.1,
+                        fontWeight: FontWeight.w700,
+                        color: titleColor,
                       ),
                     ),
-                    if (imageBase64 != null && imageBase64!.isNotEmpty)
-                      Image.memory(
-                        base64Decode(imageBase64!),
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true,
-                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                      )
-                    else if (imageAsset != null)
-                      Image.asset(imageAsset!, fit: BoxFit.cover),
-                    Align(
-                      alignment: Alignment.topLeft,
-                      child: Container(
-                        margin: const EdgeInsets.all(8),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.34),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          'Chef curated',
-                          style: GoogleFonts.poppins(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      softWrap: true,
+                      overflow: TextOverflow.visible,
+                      style: GoogleFonts.poppins(
+                        fontSize: 11.5,
+                        height: 1.2,
+                        fontWeight: FontWeight.w500,
+                        color: subtitleColor,
                       ),
                     ),
                   ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 9, 10, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.playfairDisplay(
-                              fontSize: 16,
-                              height: 1.15,
-                              fontWeight: FontWeight.w700,
-                              color: _CategoriesPalette.titleOf(context),
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            subtitle,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.poppins(
-                              fontSize: 11,
-                              height: 1.35,
-                              fontWeight: FontWeight.w500,
-                              color: _CategoriesPalette.mutedOf(context),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _CategoriesPalette.accent,
-                      ),
-                      child: Icon(
-                        Icons.chevron_right_rounded,
-                        size: 18,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
+              const SizedBox(width: 6),
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: accent.withValues(alpha: 0.12),
+                  border: Border.all(color: accent.withValues(alpha: 0.28)),
+                ),
+                child: Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 14,
+                  color: accent,
                 ),
               ),
             ],
@@ -9169,7 +9772,7 @@ class _AppMenuTile extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: GoogleFonts.poppins(
-                fontSize: 12,
+                fontSize: 14,
                 color: _Theme.muted(context),
                 height: 1.25,
               ),
@@ -9312,96 +9915,103 @@ class _HomeSearchBar extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: Container(
-            height: 40,
-            padding: const EdgeInsets.only(left: 4, right: 4),
-            decoration: BoxDecoration(
-              color: _Theme.surfaceLow(context),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: _Theme.border(context)),
-            ),
-            child: TextField(
-              controller: controller,
-              textAlignVertical: TextAlignVertical.center,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: _Theme.text(context),
-                fontWeight: FontWeight.w500,
-              ),
-              cursorColor: _Theme.primary(context),
-              decoration: InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                hintText: hintText,
-                hintStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: _Theme.muted(context),
-                  fontWeight: FontWeight.w500,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                height: 38,
+                padding: const EdgeInsets.only(left: 4, right: 4),
+                decoration: BoxDecoration(
+                  color: _kAuthGlassFill,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: _kAuthGlassBorder, width: 1.15),
                 ),
-                prefixIcon: Icon(
-                  Icons.search_rounded,
-                  size: 18,
-                  color: _Theme.muted(context),
+                child: TextField(
+                  controller: controller,
+                  textAlignVertical: TextAlignVertical.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: _Theme.text(context),
+                    fontWeight: FontWeight.w500,
+                  ),
+                  cursorColor: _Theme.primary(context),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    filled: true,
+                    fillColor: Colors.transparent,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    hintText: hintText,
+                    hintStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: _Theme.muted(context),
+                      fontWeight: FontWeight.w500,
+                    ),
+                    prefixIcon: Icon(
+                      Icons.search_rounded,
+                      size: 18,
+                      color: _Theme.muted(context),
+                    ),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 40,
+                      minHeight: 38,
+                    ),
+                    suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: controller,
+                      builder: (context, val, _) {
+                        if (val.text.isEmpty) return const SizedBox.shrink();
+                        return IconButton(
+                          splashRadius: 18,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
+                          ),
+                          onPressed: () => controller.clear(),
+                          icon: Icon(
+                            Icons.close_rounded,
+                            size: 18,
+                            color: _Theme.muted(context),
+                          ),
+                        );
+                      },
+                    ),
+                    contentPadding: const EdgeInsets.fromLTRB(0, 9, 0, 9),
+                  ),
                 ),
-                prefixIconConstraints: const BoxConstraints(
-                  minWidth: 40,
-                  minHeight: 40,
-                ),
-                suffixIcon: ValueListenableBuilder<TextEditingValue>(
-                  valueListenable: controller,
-                  builder: (context, val, _) {
-                    if (val.text.isEmpty) return const SizedBox.shrink();
-                    return IconButton(
-                      splashRadius: 18,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 36,
-                        minHeight: 36,
-                      ),
-                      onPressed: () => controller.clear(),
-                      icon: Icon(
-                        Icons.close_rounded,
-                        size: 18,
-                        color: _Theme.muted(context),
-                      ),
-                    );
-                  },
-                ),
-                contentPadding: const EdgeInsets.fromLTRB(0, 10, 0, 10),
               ),
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        InkWell(
-          onTap: onFilter,
+        const SizedBox(width: 10),
+        ClipRRect(
           borderRadius: BorderRadius.circular(14),
-          child: Container(
-            height: 40,
-            width: 40,
-            decoration: BoxDecoration(
-              color: _Theme.primary(context),
-              borderRadius: BorderRadius.circular(14),
-              border: filterActive
-                  ? Border.all(color: Colors.white, width: 2.5)
-                  : null,
-              boxShadow: filterActive
-                  ? [
-                      BoxShadow(
-                        color: _Theme.primary(context).withValues(alpha: 0.45),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Icon(
-                  filterActive ? Icons.filter_alt_rounded : Icons.tune_rounded,
-                  color: Colors.white,
-                  size: 18,
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onFilter,
+                child: Container(
+                  height: 38,
+                  width: 38,
+                  decoration: BoxDecoration(
+                    color: _AppColors.primary.withValues(alpha: 0.88),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: filterActive
+                          ? Colors.white.withValues(alpha: 0.9)
+                          : _kAuthGlassBorder,
+                      width: filterActive ? 2 : 1.1,
+                    ),
+                  ),
+                  child: Icon(
+                    filterActive ? Icons.filter_alt_rounded : Icons.tune_rounded,
+                    color: Colors.white,
+                    size: 17,
+                  ),
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -9410,121 +10020,81 @@ class _HomeSearchBar extends StatelessWidget {
   }
 }
 
-class _HeroCarousel extends StatelessWidget {
-  const _HeroCarousel({
-    required this.controller,
-    required this.index,
-    required this.onPageChanged,
-  });
+class _HeroCarousel extends StatefulWidget {
+  const _HeroCarousel();
 
-  final PageController controller;
-  final int index;
-  final ValueChanged<int> onPageChanged;
+  @override
+  State<_HeroCarousel> createState() => _HeroCarouselState();
+}
+
+class _HeroCarouselState extends State<_HeroCarousel> {
+  static const List<String> _bannerAssets = <String>[
+    'assets/images/home_banner_festive_2.png',
+    'assets/images/home_banner_special_2.png',
+  ];
+
+  late final PageController _controller;
+  Timer? _autoScrollTimer;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController(viewportFraction: 1);
+    _autoScrollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_controller.hasClients || _bannerAssets.length < 2) {
+        return;
+      }
+      final next = (_index + 1) % _bannerAssets.length;
+      _controller.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeInOutCubic,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoScrollTimer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: SizedBox(
-            height: 152,
-            child: PageView.builder(
-              controller: controller,
-              onPageChanged: onPageChanged,
-              itemCount: 3,
-              itemBuilder: (context, i) {
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Image.asset('assets/images/hero.png', fit: BoxFit.cover),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        width: 168,
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                            colors: [Color(0xFF6B1A18), Color(0x006B1A18)],
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 12,
-                      top: 20,
-                      child: SizedBox(
-                        width: 128,
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: SizedBox(
-                            width: 128,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Homely Food from',
-                                  style: Theme.of(context).textTheme.labelLarge
-                                      ?.copyWith(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 11,
-                                      ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  "God’s Own\nCountry",
-                                  style: GoogleFonts.playfairDisplay(
-                                    color: const Color(0xFFF1C16A),
-                                    fontSize: 22,
-                                    height: 1.03,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  'Authentic taste.\nTraditional recipes.\nMade with love.',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.9,
-                                        ),
-                                        fontWeight: FontWeight.w500,
-                                        height: 1.25,
-                                        fontSize: 10,
-                                      ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _Theme.border(context)),
+          boxShadow: [
+            BoxShadow(
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+              color: Colors.black.withValues(alpha: 0.08),
             ),
-          ),
+          ],
+          color: _Theme.surfaceLow(context),
         ),
-        const SizedBox(height: 6),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(
-            3,
-            (i) => Container(
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              height: 6,
-              width: 6,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: i == index ? _AppColors.primary : _AppColors.border,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: AspectRatio(
+            aspectRatio: 1536 / 691,
+            child: PageView.builder(
+              controller: _controller,
+              itemCount: _bannerAssets.length,
+              onPageChanged: (value) => _index = value,
+              itemBuilder: (context, i) => Image.asset(
+                _bannerAssets[i],
+                fit: BoxFit.cover,
+                alignment: Alignment.center,
               ),
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -9634,98 +10204,107 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
+IconData _exploreMenuChipIcon(String sectionTitle) {
+  switch (sectionTitle) {
+    case 'Puttu':
+      return Icons.breakfast_dining_rounded;
+    case 'Gravies & Curries':
+      return Icons.soup_kitchen_outlined;
+    case 'Desserts':
+      return Icons.icecream_outlined;
+    case 'Our Signature Dishes':
+      return Icons.star_outline_rounded;
+    case 'Combo Offers':
+      return Icons.local_offer_rounded;
+    default:
+      return Icons.rice_bowl_rounded;
+  }
+}
+
 class _CategoryChip extends StatelessWidget {
   const _CategoryChip({
     required this.label,
     this.onTap,
     this.margin,
+    this.icon,
   });
 
   final String label;
   final VoidCallback? onTap;
   final EdgeInsetsGeometry? margin;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = isDark ? _Theme.text(context) : _AppColors.primary;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          margin: margin ?? const EdgeInsets.only(right: 10),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? [
-                      _Theme.surfaceLow(context),
-                      Theme.of(context).colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.2),
-                    ]
-                  : const [
-                      Color(0xFFFFFCF8),
-                      Color(0xFFF8EFE4),
-                    ],
-            ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _Theme.border(context)),
-            boxShadow: [
+    return ChechiPressable(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        margin: margin ?? const EdgeInsets.only(right: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        decoration: BoxDecoration(
+          color: isDark
+              ? _Theme.surfaceLow(context)
+              : const Color(0xFFFFFCF8),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: _Theme.border(context).withValues(alpha: 0.9),
+          ),
+          boxShadow: [
+            if (!isDark)
               BoxShadow(
+                color: const Color(0xFF5D1109).withValues(alpha: 0.04),
                 blurRadius: 8,
-                offset: const Offset(0, 3),
-                color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.05),
+                offset: const Offset(0, 2),
               ),
-            ],
-          ),
-          child: Column(
-            children: [
-              Container(
-                height: 40,
-                width: 40,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? const Color(0xFF2E2521)
-                      : const Color(0xFFF1E6D8),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: _Theme.border(context)),
-                ),
-                child: const Icon(
-                  Icons.rice_bowl_rounded,
-                  size: 20,
-                  color: _AppColors.primary,
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              height: 32,
+              width: 32,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFEFE6),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: _AppColors.primary.withValues(alpha: 0.12),
                 ),
               ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: Center(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      label,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: accent,
-                        fontWeight: FontWeight.w700,
-                        height: 1.05,
-                      ),
-                    ),
-                  ),
+              child: Icon(
+                icon ?? Icons.rice_bowl_rounded,
+                size: 17,
+                color: _AppColors.primary,
+              ),
+            ),
+            const SizedBox(height: 5),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  fontSize: 10,
+                  color: accent,
+                  fontWeight: FontWeight.w700,
+                  height: 1.05,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
+
+/// Home horizontal dish row — compact premium cards.
+const double _kHomeDishCardHeight = 172;
 
 class _ProductCard extends StatefulWidget {
   const _ProductCard({
@@ -9765,9 +10344,6 @@ class _ProductCard extends StatefulWidget {
 }
 
 class _ProductCardState extends State<_ProductCard> {
-  static final Map<String, Uint8List> _decodedImageCache = <String, Uint8List>{};
-  static const int _decodedImageCacheLimit = 180;
-
   void _increment() {
     if (!widget.available) return;
     widget.onAdd();
@@ -9778,28 +10354,26 @@ class _ProductCardState extends State<_ProductCard> {
     widget.onRemove();
   }
 
-  Widget _buildImageHeader() {
+  Widget _buildImageHeader({required double height}) {
     final b64 = widget.imageBase64;
     if (b64 != null && b64.isNotEmpty) {
       try {
-        var bytes = _decodedImageCache[b64];
-        if (bytes == null) {
-          bytes = base64Decode(b64);
-          if (_decodedImageCache.length >= _decodedImageCacheLimit) {
-            _decodedImageCache.remove(_decodedImageCache.keys.first);
-          }
-          _decodedImageCache[b64] = bytes;
-        }
+        final bytes = _MenuBase64ImageCache.read(b64);
+        if (bytes == null) throw const FormatException('bad base64');
         return Image.memory(
           bytes,
+          key: ValueKey(b64.hashCode),
           fit: BoxFit.cover,
-          height: 76,
+          height: height,
           width: double.infinity,
           gaplessPlayback: true,
+          filterQuality: FilterQuality.low,
+          cacheWidth: 520,
+          cacheHeight: (height * 3).round(),
           errorBuilder: (_, _, _) => Image.asset(
             'assets/images/hero.png',
             fit: BoxFit.cover,
-            height: 76,
+            height: height,
             width: double.infinity,
           ),
         );
@@ -9808,7 +10382,7 @@ class _ProductCardState extends State<_ProductCard> {
     return Image.asset(
       'assets/images/hero.png',
       fit: BoxFit.cover,
-      height: 76,
+      height: height,
       width: double.infinity,
     );
   }
@@ -9817,34 +10391,40 @@ class _ProductCardState extends State<_ProductCard> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final disabled = !widget.available;
+    final compactHeight =
+        widget.height != null && widget.height! <= _kHomeDishCardHeight + 4;
+    final imageHeight = compactHeight ? 78.0 : 84.0;
+    final titleMaxLines = 1;
+    final subtitleMaxLines = compactHeight ? 2 : 2;
     return Opacity(
       opacity: disabled ? 0.55 : 1,
       child: Container(
         width: widget.width ?? 140,
         height: widget.height,
         margin: widget.margin ?? const EdgeInsets.only(right: 12),
-        decoration: BoxDecoration(
+        decoration: ChechiPremium.premiumCard(
+          context: context,
           color: _Theme.surfaceLow(context),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: _Theme.border(context)),
+          radius: 18,
         ),
         child: Stack(
+          clipBehavior: Clip.hardEdge,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+              padding: EdgeInsets.fromLTRB(8, 7, 8, compactHeight ? 4 : 5),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.max,
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(10),
                     child: SizedBox(
-                      height: 76,
+                      height: imageHeight,
                       width: double.infinity,
-                      child: _buildImageHeader(),
+                      child: _buildImageHeader(height: imageHeight),
                     ),
                   ),
-                  const SizedBox(height: 7),
+                  SizedBox(height: compactHeight ? 4 : 6),
                   if (widget.height != null)
                     Expanded(
                       child: Column(
@@ -9857,28 +10437,28 @@ class _ProductCardState extends State<_ProductCard> {
                             children: [
                               Text(
                                 widget.title,
-                                maxLines: 2,
+                                maxLines: titleMaxLines,
                                 softWrap: true,
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.labelMedium
                                     ?.copyWith(
                                   fontWeight: FontWeight.w900,
                                   color: _Theme.text(context),
-                                  height: 1.15,
+                                  height: 1.12,
                                 ),
                               ),
                               const SizedBox(height: 2),
                               Text(
                                 widget.subtitle,
-                                maxLines: 2,
+                                maxLines: subtitleMaxLines,
                                 softWrap: true,
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.labelSmall
                                     ?.copyWith(
                                   color: _Theme.muted(context),
                                   fontWeight: FontWeight.w600,
-                                  fontSize: 10.2,
-                                  height: 1.15,
+                                  fontSize: compactHeight ? 9 : 10.2,
+                                  height: 1.08,
                                 ),
                               ),
                             ],
@@ -10210,101 +10790,56 @@ class _ProductCardState extends State<_ProductCard> {
   }
 }
 
+class _MenuBase64ImageCache {
+  static final Map<String, Uint8List> _cache = <String, Uint8List>{};
+  static const int _limit = 260;
+
+  static Uint8List? read(String b64) {
+    final cached = _cache[b64];
+    if (cached != null) return cached;
+    try {
+      final bytes = base64Decode(b64);
+      if (_cache.length >= _limit) {
+        _cache.remove(_cache.keys.first);
+      }
+      _cache[b64] = bytes;
+      return bytes;
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
 class _OfferBanner extends StatelessWidget {
   const _OfferBanner({required this.code, required this.onOrderNow});
 
   final String code;
   final VoidCallback onOrderNow;
 
+  static const _asset = 'assets/images/combo_offers_banner.png';
+
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: SizedBox(
-        height: 72,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Image.asset('assets/images/offer.png', fit: BoxFit.cover),
-            Positioned(
-              left: 160,
-              top: 12,
-              bottom: 12,
-              right: 18,
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 190),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerRight,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'First Order Offer!',
-                          textAlign: TextAlign.right,
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(
-                                color: const Color(0xFFF1C16A),
-                                fontWeight: FontWeight.w900,
-                                fontSize: 13,
-                              ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Get 10% OFF upto ₹50',
-                          textAlign: TextAlign.right,
-                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            // Banner image is always dark; keep copy readable in light & dark app themes.
-                            color: const Color(0xFFFFF3E0),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 11,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Use Code:',
-                              style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(
-                                    color: const Color(0xFFFFE0B2),
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 10,
-                                  ),
-                            ),
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF1C16A),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                code,
-                                style: Theme.of(context).textTheme.labelSmall
-                                    ?.copyWith(
-                                      color: const Color(0xFF3A1710),
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 10,
-                                    ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onOrderNow,
+        borderRadius: BorderRadius.circular(14),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Image.asset(
+            _asset,
+            width: double.infinity,
+            height: 92,
+            fit: BoxFit.cover,
+            alignment: Alignment.center,
+            errorBuilder: (_, __, ___) => Image.asset(
+              'assets/images/offer.png',
+              width: double.infinity,
+              height: 92,
+              fit: BoxFit.cover,
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -10326,10 +10861,6 @@ class _BottomNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final dark = theme.brightness == Brightness.dark;
-    final navBg = dark ? const Color(0xFF1C1717) : const Color(0xFFFFFEFC);
-    final navBorder = dark
-        ? theme.colorScheme.outline.withValues(alpha: 0.45)
-        : const Color(0xFFE8E0D8);
     final inactiveColor = dark
         ? theme.colorScheme.onSurfaceVariant
         : const Color(0xFF8B756E);
@@ -10342,21 +10873,9 @@ class _BottomNavBar extends StatelessWidget {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
-        child: Container(
-          height: 72,
-          decoration: BoxDecoration(
-            color: navBg,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: navBorder),
-            boxShadow: [
-              BoxShadow(
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-                color: Colors.black.withValues(alpha: dark ? 0.2 : 0.07),
-              ),
-            ],
-          ),
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+        child: SizedBox(
+          height: 58,
           child: Row(
             children: [
               Expanded(
@@ -10465,25 +10984,30 @@ class _NavPillItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final fg = selected ? activeTextColor : inactiveColor;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+            duration: ChechiBrand.normal,
+            curve: ChechiBrand.ease,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
             decoration: BoxDecoration(
-              color: selected ? activeColor : Colors.transparent,
-              borderRadius: BorderRadius.circular(16),
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(14),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, color: fg, size: 21),
-                const SizedBox(height: 3),
+                AnimatedScale(
+                  scale: selected ? 1.05 : 1,
+                  duration: ChechiBrand.normal,
+                  curve: ChechiBrand.ease,
+                  child: Icon(icon, color: fg, size: 18),
+                ),
+                const SizedBox(height: 2),
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
@@ -10492,7 +11016,7 @@ class _NavPillItem extends StatelessWidget {
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: fg,
                       fontWeight: FontWeight.w700,
-                      fontSize: 10,
+                      fontSize: 9,
                     ),
                   ),
                 ),
@@ -10512,3 +11036,7 @@ class _AppColors {
   static const primary = Color(0xFF7C1D1B);
   static const icon = Color(0xFF2E7D32);
 }
+
+
+
+

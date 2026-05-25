@@ -25,6 +25,8 @@ class CustomerMenuSectionOverrides extends ChangeNotifier {
   Map<String, AdminSectionEditSnapshot> _sectionMap = {};
   List<String> _customCategories = [];
   bool _cloudSyncStarted = false;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _cloudSub;
+  Timer? _cloudRetryTimer;
 
   List<MenuCatalogSection> _sections = kCustomerMenuSections;
 
@@ -66,7 +68,39 @@ class CustomerMenuSectionOverrides extends ChangeNotifier {
     _sectionMap = local;
     _rebuildSections();
     notifyListeners();
+    unawaited(_refreshFromCloudOnce());
     unawaited(_ensureCloudSyncStarted());
+  }
+
+  Future<void> _refreshFromCloudOnce() async {
+    final cloud = await _readCloudSectionOverridesOnce();
+    if (cloud == null) return;
+    _sectionMap = Map<String, AdminSectionEditSnapshot>.from(cloud);
+    _rebuildSections();
+    notifyListeners();
+    await _persistLocal(_sectionMap);
+  }
+
+  Future<Map<String, AdminSectionEditSnapshot>?> _readCloudSectionOverridesOnce() async {
+    try {
+      final root = FirebaseFirestore.instance
+          .collection(_cloudCollection)
+          .doc(_cloudDoc);
+      final snapDocs = await root.collection(_cloudSubcollection).get();
+      final out = <String, AdminSectionEditSnapshot>{};
+      for (final d in snapDocs.docs) {
+        final m = d.data();
+        final key = (m['key'] as String?)?.trim();
+        final data = m['data'];
+        if (key == null || key.isEmpty || data is! Map) continue;
+        out[key] = AdminSectionEditSnapshot.fromJson(
+          Map<String, dynamic>.from(data),
+        );
+      }
+      return out;
+    } catch (_) {
+      return null;
+    }
   }
 
   void _rebuildSections() {
@@ -81,10 +115,12 @@ class CustomerMenuSectionOverrides extends ChangeNotifier {
   Future<void> _ensureCloudSyncStarted() async {
     if (_cloudSyncStarted) return;
     _cloudSyncStarted = true;
+    _cloudRetryTimer?.cancel();
     final root = FirebaseFirestore.instance
         .collection(_cloudCollection)
         .doc(_cloudDoc);
-    root.collection(_cloudSubcollection).snapshots().listen((snap) async {
+    _cloudSub?.cancel();
+    _cloudSub = root.collection(_cloudSubcollection).snapshots().listen((snap) async {
       final out = <String, AdminSectionEditSnapshot>{};
       for (final d in snap.docs) {
         final m = d.data();
@@ -95,24 +131,25 @@ class CustomerMenuSectionOverrides extends ChangeNotifier {
           Map<String, dynamic>.from(data),
         );
       }
-      final p = await SharedPreferences.getInstance();
-      Map<String, AdminSectionEditSnapshot> local = {};
-      final raw = p.getString(kAdminSectionOverridesPrefsKey);
-      if (raw != null && raw.isNotEmpty) {
-        try {
-          final map = jsonDecode(raw) as Map<String, dynamic>;
-          for (final e in map.entries) {
-            final v = e.value;
-            if (v is! Map<String, dynamic>) continue;
-            local[e.key] = AdminSectionEditSnapshot.fromJson(v);
-          }
-        } catch (_) {}
-      }
-      _sectionMap = {...local, ...out};
+      _sectionMap = Map<String, AdminSectionEditSnapshot>.from(out);
       await _persistLocal(_sectionMap);
       _rebuildSections();
       notifyListeners();
-    }, onError: (_) {});
+    }, onError: (_) {
+      _scheduleCloudResubscribe();
+    }, onDone: () {
+      _scheduleCloudResubscribe();
+    });
+  }
+
+  void _scheduleCloudResubscribe() {
+    _cloudSub?.cancel();
+    _cloudSub = null;
+    _cloudSyncStarted = false;
+    _cloudRetryTimer?.cancel();
+    _cloudRetryTimer = Timer(const Duration(seconds: 5), () {
+      unawaited(_ensureCloudSyncStarted());
+    });
   }
 
   Future<void> _persistLocal(
@@ -204,4 +241,5 @@ const kCustomerMenuSectionDefaultImageAssets = <String>[
   'assets/images/menus/gravies.png',
   'assets/images/menus/desserts.png',
   'assets/images/menus/signature.png',
+  'assets/images/offer.png',
 ];

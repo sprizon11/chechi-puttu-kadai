@@ -5,23 +5,13 @@ import 'package:chechi_puttu_app/admin/admin_orders_screen.dart';
 import 'package:chechi_puttu_app/admin/admin_reports_screen.dart';
 import 'package:chechi_puttu_app/admin/admin_settings_screen.dart';
 import 'package:chechi_puttu_app/services/app_refresh.dart';
+import 'package:chechi_puttu_app/theme/chechi_premium.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-
-/// Reserved admin account (Firebase Auth email/password).
-const String kChechiAdminEmail = 'sprizon1311@gmail.com';
-
-/// Password for that account (first-time bootstrap from the app).
-const String kChechiAdminPassword = 'chechi123';
-
-bool isChechiAdminUser(User? user) {
-  final e = user?.email?.trim().toLowerCase();
-  return e == kChechiAdminEmail;
-}
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({
@@ -614,60 +604,72 @@ class _FirestoreStatCardsRow extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         padding: EdgeInsets.zero,
         children: [
-          _StatCard(
-            icon: Icons.shopping_bag_outlined,
-            iconBg: const Color(0xFFFFF0E6),
-            iconColor: const Color(0xFFEA7A2C),
-            label: 'Orders (sample)',
-            value: '$totalOrders',
-            trend: 'Last 250 in Firestore',
-            trendUp: true,
-            muted: muted,
-            titleColor: cs.onSurface,
-            cardBg: cs.surface,
-            borderColor: cs.outlineVariant,
+          ChechiFadeIn(
+            delay: chechiStagger(0),
+            child: _StatCard(
+              icon: Icons.shopping_bag_outlined,
+              iconBg: const Color(0xFFFFF0E6),
+              iconColor: const Color(0xFFEA7A2C),
+              label: 'Orders',
+              value: '$totalOrders',
+              trend: 'Recent orders',
+              trendUp: true,
+              muted: muted,
+              titleColor: cs.onSurface,
+              cardBg: cs.surface,
+              borderColor: cs.outlineVariant,
+            ),
           ),
           const SizedBox(width: 10),
-          _StatCard(
-            icon: Icons.currency_rupee_rounded,
-            iconBg: const Color(0xFFE8F5E9),
-            iconColor: const Color(0xFF2E7D32),
-            label: 'Revenue (sample)',
-            value: _fmtInr(revenue),
-            trend: 'Sum of those orders',
-            trendUp: true,
-            muted: muted,
-            titleColor: cs.onSurface,
-            cardBg: cs.surface,
-            borderColor: cs.outlineVariant,
+          ChechiFadeIn(
+            delay: chechiStagger(1),
+            child: _StatCard(
+              icon: Icons.currency_rupee_rounded,
+              iconBg: const Color(0xFFE8F5E9),
+              iconColor: const Color(0xFF2E7D32),
+              label: 'Revenue',
+              value: _fmtInr(revenue),
+              trend: 'From recent orders',
+              trendUp: true,
+              muted: muted,
+              titleColor: cs.onSurface,
+              cardBg: cs.surface,
+              borderColor: cs.outlineVariant,
+            ),
           ),
           const SizedBox(width: 10),
-          _StatCard(
-            icon: Icons.people_outline_rounded,
-            iconBg: const Color(0xFFFFF8E1),
-            iconColor: const Color(0xFFF9A825),
-            label: 'Customers (sample)',
-            value: '${uids.length}',
-            trend: 'Unique uids in sample',
-            trendUp: true,
-            muted: muted,
-            titleColor: cs.onSurface,
-            cardBg: cs.surface,
-            borderColor: cs.outlineVariant,
+          ChechiFadeIn(
+            delay: chechiStagger(2),
+            child: _StatCard(
+              icon: Icons.people_outline_rounded,
+              iconBg: const Color(0xFFFFF8E1),
+              iconColor: const Color(0xFFF9A825),
+              label: 'Customers',
+              value: '${uids.length}',
+              trend: 'Unique customers',
+              trendUp: true,
+              muted: muted,
+              titleColor: cs.onSurface,
+              cardBg: cs.surface,
+              borderColor: cs.outlineVariant,
+            ),
           ),
           const SizedBox(width: 10),
-          _StatCard(
-            icon: Icons.inventory_2_outlined,
-            iconBg: const Color(0xFFF3E5F5),
-            iconColor: const Color(0xFF7B1FA2),
-            label: 'Active pipeline',
-            value: '$pending',
-            trend: 'Not delivered/cancelled',
-            trendUp: pending == 0,
-            muted: muted,
-            titleColor: cs.onSurface,
-            cardBg: cs.surface,
-            borderColor: cs.outlineVariant,
+          ChechiFadeIn(
+            delay: chechiStagger(3),
+            child: _StatCard(
+              icon: Icons.inventory_2_outlined,
+              iconBg: const Color(0xFFF3E5F5),
+              iconColor: const Color(0xFF7B1FA2),
+              label: 'Active pipeline',
+              value: '$pending',
+              trend: 'Not delivered/cancelled',
+              trendUp: pending == 0,
+              muted: muted,
+              titleColor: cs.onSurface,
+              cardBg: cs.surface,
+              borderColor: cs.outlineVariant,
+            ),
           ),
         ],
       ),
@@ -711,13 +713,7 @@ class _StatCard extends StatelessWidget {
         color: cardBg,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: ChechiPremium.cardShadow(context, elevation: 1.2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -727,7 +723,17 @@ class _StatCard extends StatelessWidget {
           Container(
             height: 32,
             width: 32,
-            decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: iconBg,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: iconColor.withValues(alpha: 0.2),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
             child: Icon(icon, size: 17, color: iconColor),
           ),
           const SizedBox(height: 6),

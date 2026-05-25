@@ -1,4 +1,4 @@
-import 'package:chechi_puttu_app/admin/admin_dashboard_screen.dart';
+import 'package:chechi_puttu_app/admin/admin_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';

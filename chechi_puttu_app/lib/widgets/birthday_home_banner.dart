@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 /// Top-of-home birthday greeting — only shown when today is the user's birthday.
-class BirthdayHomeBanner extends StatelessWidget {
+class BirthdayHomeBanner extends StatefulWidget {
   const BirthdayHomeBanner({
     super.key,
     required this.firstName,
@@ -13,20 +13,46 @@ class BirthdayHomeBanner extends StatelessWidget {
   final VoidCallback? onOpenChat;
 
   @override
+  State<BirthdayHomeBanner> createState() => _BirthdayHomeBannerState();
+}
+
+class _BirthdayHomeBannerState extends State<BirthdayHomeBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final name = firstName.trim().isEmpty ? 'there' : firstName.trim();
+    final name = widget.firstName.trim().isEmpty ? 'there' : widget.firstName.trim();
+    final scale = Tween<double>(begin: 1, end: 1.06).animate(
+      CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+    );
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onOpenChat,
-        borderRadius: BorderRadius.circular(16),
+        onTap: widget.onOpenChat,
+        borderRadius: BorderRadius.circular(20),
         child: Ink(
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -56,7 +82,10 @@ class BirthdayHomeBanner extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('🎂', style: TextStyle(fontSize: 32)),
+              ScaleTransition(
+                scale: scale,
+                child: const Text('🎂', style: TextStyle(fontSize: 34)),
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -84,7 +113,7 @@ class BirthdayHomeBanner extends StatelessWidget {
                             : const Color(0xFF7A6A62),
                       ),
                     ),
-                    if (onOpenChat != null) ...[
+                    if (widget.onOpenChat != null) ...[
                       const SizedBox(height: 8),
                       Text(
                         'Tap to open Support Chat →',

@@ -6,7 +6,7 @@ import 'package:chechi_puttu_app/services/menu_deleted_dishes.dart';
 class AppRefresh {
   AppRefresh._();
 
-  static const _minVisible = Duration(milliseconds: 450);
+  static const _minVisible = Duration(milliseconds: 180);
 
   /// Reload menu overrides from local storage + Firestore listeners.
   static Future<void> refreshMenuData() async {

@@ -7,6 +7,8 @@ import 'package:chechi_puttu_app/menu_catalog.dart';
 import 'package:chechi_puttu_app/services/customer_menu_overrides.dart';
 import 'package:chechi_puttu_app/services/customer_menu_section_overrides.dart';
 import 'package:chechi_puttu_app/services/menu_deleted_dishes.dart';
+import 'package:chechi_puttu_app/services/menu_image_utils.dart';
+import 'package:chechi_puttu_app/theme/chechi_premium.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -146,6 +148,11 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
           icon: Icons.star_outline_rounded,
           tint: const Color(0xFFFFECB3),
         );
+      case 'Combo Offers':
+        return (
+          icon: Icons.local_offer_rounded,
+          tint: const Color(0xFFFFE0E6),
+        );
       default:
         return (
           icon: Icons.restaurant_rounded,
@@ -175,17 +182,20 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
   }
 
   Future<void> _onPullToRefresh() async {
-    await _loadCustomCategories();
-    await _loadSectionSchedules();
-    await _loadSectionOverrides();
-    await _loadSnapshots();
+    await Future.wait([
+      _loadCustomCategories(),
+      _loadSectionSchedules(),
+      _loadSectionOverrides(),
+      _loadSnapshots(),
+    ]);
     if (mounted) setState(() {});
   }
 
   Future<void> _loadSnapshots() async {
     final local = await _readLocalSnapshots();
     final cloud = await _readCloudSnapshots();
-    final merged = <String, AdminDishEditSnapshot>{...local, ...cloud};
+    // Local edits win on this device, then push merged data back to cloud.
+    final merged = <String, AdminDishEditSnapshot>{...cloud, ...local};
     if (!mounted) return;
     setState(() {
       _snapshots
@@ -193,17 +203,62 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
         ..addAll(merged);
     });
     if (merged.isNotEmpty) {
-      await _persistSnapshots();
+      await _persistSnapshots(showSyncFeedback: false);
     }
     await CustomerMenuOverrides.instance.reloadFromPrefs();
   }
 
-  Future<void> _persistSnapshots() async {
+  void _recompressOversizedDishSnapshots() {
+    for (final entry in _snapshots.entries.toList()) {
+      final snap = entry.value;
+      final img = snap.imageBase64;
+      if (img == null || img.isEmpty || menuImageBase64FitsCloud(img)) continue;
+      try {
+        final compressed = compressMenuImageForCloud(base64Decode(img));
+        if (compressed == null) continue;
+        _snapshots[entry.key] = snap.copyWith(
+          imageBase64: base64Encode(compressed),
+        );
+      } catch (_) {}
+    }
+  }
+
+  void _recompressOversizedSectionSnapshots() {
+    for (final entry in _sectionSnapshots.entries.toList()) {
+      final snap = entry.value;
+      final img = snap.imageBase64;
+      if (img == null || img.isEmpty || menuImageBase64FitsCloud(img)) continue;
+      try {
+        final compressed = compressMenuImageForCloud(base64Decode(img));
+        if (compressed == null) continue;
+        _sectionSnapshots[entry.key] = snap.copyWith(
+          imageBase64: base64Encode(compressed),
+        );
+      } catch (_) {}
+    }
+  }
+
+  Future<bool> _persistSnapshots({bool showSyncFeedback = true}) async {
+    _recompressOversizedDishSnapshots();
     final p = await SharedPreferences.getInstance();
     final out = <String, dynamic>{};
     _snapshots.forEach((k, v) => out[k] = v.toJson());
     await p.setString(_prefsSnapshotsKey, jsonEncode(out));
-    await _syncSnapshotsToCloud(out);
+    final synced = await _syncSnapshotsToCloud(out);
+    if (mounted && showSyncFeedback) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            synced
+                ? 'Saved. Dish images sync to all customer phones through cloud.'
+                : 'Saved on this phone, but cloud sync did not complete. '
+                    'Other phones may still show old data.',
+            style: GoogleFonts.poppins(),
+          ),
+        ),
+      );
+    }
+    return synced;
   }
 
   Future<Map<String, AdminDishEditSnapshot>> _readLocalSnapshots() async {
@@ -255,7 +310,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
     }
   }
 
-  Future<void> _syncSnapshotsToCloud(Map<String, dynamic> snapshotsJson) async {
+  Future<bool> _syncSnapshotsToCloud(Map<String, dynamic> snapshotsJson) async {
     try {
       final firestore = FirebaseFirestore.instance;
       final root = firestore
@@ -274,23 +329,29 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
         final val = e.value;
         if (val is! Map) continue;
         final docId = base64Url.encode(utf8.encode(key)).replaceAll('=', '');
-        keepIds.add(docId);
         final data = Map<String, dynamic>.from(val);
         final img = data['imageBase64'];
-        if (img is String && img.length > 780000) {
-          // Skip only this dish image payload if too large for Firestore doc size.
-          // Admin can re-upload a smaller compressed image.
-          failedKeys.add(key);
-          continue;
+        if (img is String && img.isNotEmpty && !menuImageBase64FitsCloud(img)) {
+          try {
+            final compressed = compressMenuImageForCloud(base64Decode(img));
+            if (compressed == null) {
+              failedKeys.add(key);
+              continue;
+            }
+            data['imageBase64'] = base64Encode(compressed);
+          } catch (_) {
+            failedKeys.add(key);
+            continue;
+          }
         }
         try {
           await snapsColl.doc(docId).set({
             'key': key,
             'data': data,
             'updated_at': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+          });
+          keepIds.add(docId);
         } catch (_) {
-          // Continue syncing remaining dishes even if one image is too large.
           failedKeys.add(key);
         }
       }
@@ -308,15 +369,15 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '${failedKeys.length} dish image(s) are too large for cloud sync. '
-              'Please re-upload those images from admin.',
+              '${failedKeys.length} dish image(s) could not sync to cloud. '
+              'Re-open the dish and pick the photo again.',
               style: GoogleFonts.poppins(),
             ),
           ),
         );
       }
+      return failedKeys.isEmpty;
     } catch (_) {
-      // Keep local save as source of truth when offline/network fails.
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -327,6 +388,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
           ),
         );
       }
+      return false;
     }
   }
 
@@ -349,13 +411,10 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
     setState(() {
       _sectionSnapshots
         ..clear()
-        ..addAll({...local, ...cloud});
+        ..addAll({...cloud, ...local});
     });
     if (_sectionSnapshots.isNotEmpty) {
-      final p = await SharedPreferences.getInstance();
-      final out = <String, dynamic>{};
-      _sectionSnapshots.forEach((k, v) => out[k] = v.toJson());
-      await p.setString(kAdminSectionOverridesPrefsKey, jsonEncode(out));
+      await _persistSectionOverrides(syncCloud: true);
     }
     await CustomerMenuSectionOverrides.instance.reloadFromPrefs();
   }
@@ -384,6 +443,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
   }
 
   Future<void> _persistSectionOverrides({bool syncCloud = true}) async {
+    _recompressOversizedSectionSnapshots();
     final p = await SharedPreferences.getInstance();
     final out = <String, dynamic>{};
     _sectionSnapshots.forEach((k, v) => out[k] = v.toJson());
@@ -432,19 +492,28 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
         final val = e.value;
         if (val is! Map) continue;
         final docId = base64Url.encode(utf8.encode(key)).replaceAll('=', '');
-        keepIds.add(docId);
         final data = Map<String, dynamic>.from(val);
         final img = data['imageBase64'];
-        if (img is String && img.length > 780000) {
-          failed.add(key);
-          continue;
+        if (img is String && img.isNotEmpty && !menuImageBase64FitsCloud(img)) {
+          try {
+            final compressed = compressMenuImageForCloud(base64Decode(img));
+            if (compressed == null) {
+              failed.add(key);
+              continue;
+            }
+            data['imageBase64'] = base64Encode(compressed);
+          } catch (_) {
+            failed.add(key);
+            continue;
+          }
         }
         try {
           await coll.doc(docId).set({
             'key': key,
             'data': data,
             'updated_at': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+          });
+          keepIds.add(docId);
         } catch (_) {
           failed.add(key);
         }
@@ -465,8 +534,8 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '${failed.length} category image(s) too large for cloud sync. '
-              'Use a smaller photo (under ~250 KB).',
+              '${failed.length} category image(s) could not sync to cloud. '
+              'Re-open the category and pick the photo again.',
               style: GoogleFonts.poppins(),
             ),
           ),
@@ -554,7 +623,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
         content: Text(
           cloudOk
               ? 'Category updated and synced.'
-              : 'Category saved on this device. Cloud sync did not complete.',
+              : 'Category saved, but cloud sync did not complete. Other phones may still show old data.',
           style: GoogleFonts.poppins(),
         ),
       ),
@@ -859,7 +928,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
         );
         if (!mounted || ok != true) return;
         setState(() => _snapshots.remove(key));
-        await _persistSnapshots();
+        await _persistSnapshots(showSyncFeedback: false);
         if (!row.isCustom) {
           await MenuDeletedDishes.instance
               .markDeleted(row.sectionTitle, row.dish.title);
@@ -870,7 +939,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
         setState(() {
           _snapshots[key] = cur.copyWith(available: false);
         });
-        await _persistSnapshots();
+        await _persistSnapshots(showSyncFeedback: false);
         await CustomerMenuOverrides.instance.reloadFromPrefs();
         break;
       case 'available':
@@ -878,7 +947,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
         setState(() {
           _snapshots[key] = cur2.copyWith(available: true);
         });
-        await _persistSnapshots();
+        await _persistSnapshots(showSyncFeedback: false);
         await CustomerMenuOverrides.instance.reloadFromPrefs();
         break;
     }
@@ -1116,9 +1185,8 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
           ),
           const SizedBox(height: 6),
           Text(
-            '$catalogActive dishes in catalog (after removals on this device). '
-            'Edits sync to the customer Home menu on this device (saved locally). '
-            'Use Firestore later for multi-device sync.',
+            '$catalogActive dishes in catalog. '
+            'Dish edits and images sync to all customer phones through cloud.',
             style: GoogleFonts.poppins(
               fontSize: 13,
               height: 1.35,
@@ -1476,17 +1544,10 @@ class _MenuItemCard extends StatelessWidget {
         onTap: () {},
         borderRadius: BorderRadius.circular(14),
         child: Ink(
-          decoration: BoxDecoration(
+          decoration: ChechiPremium.premiumCard(
+            context: context,
             color: cardBg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: borderCol),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
-              ),
-            ],
+            radius: 14,
           ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
@@ -1729,6 +1790,7 @@ class _DishThumb extends StatelessWidget {
         final bytes = base64Decode(b64);
         return Image.memory(
           bytes,
+          key: ValueKey(b64.hashCode),
           fit: BoxFit.cover,
           width: 72,
           height: 72,

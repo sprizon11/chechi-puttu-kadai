@@ -1,4 +1,5 @@
 import 'package:chechi_puttu_app/services/app_refresh.dart';
+import 'package:chechi_puttu_app/theme/chechi_premium.dart';
 import 'package:flutter/material.dart';
 
 /// Pull down from the top to refresh scrollable content.
@@ -22,7 +23,10 @@ class AppPullToRefresh extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
-      color: color ?? const Color(0xFF5D1F1A),
+      color: color ?? ChechiBrand.maroonDeep,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      strokeWidth: 2.5,
+      displacement: 42,
       onRefresh: () => AppRefresh.run(onRefresh),
       child: child,
     );

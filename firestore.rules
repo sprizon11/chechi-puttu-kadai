@@ -11,6 +11,8 @@ service cloud.firestore {
         && (
           (request.auth.token.email != null
             && request.auth.token.email.lower() == 'sprizon1311@gmail.com')
+          || (request.auth.token.phone_number != null
+            && request.auth.token.phone_number == '+919994229860')
           || request.auth.token.admin == true
         );
     }

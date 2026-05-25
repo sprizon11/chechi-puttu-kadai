@@ -8,6 +8,7 @@ const Razorpay = require("razorpay");
 admin.initializeApp();
 const db = admin.firestore();
 const ADMIN_EMAIL = "sprizon1311@gmail.com";
+const ADMIN_PHONE = "+919994229860";
 
 /** Set in Firebase Console → Functions → each function → Runtime env vars, or Secret Manager. */
 function razorpayKeys() {
@@ -283,8 +284,9 @@ exports.razorpayWebhook = onRequest(async (req, res) => {
 function isAdminRequest(request) {
   if (!request.auth) return false;
   const email = String(request.auth.token?.email || "").trim().toLowerCase();
+  const phone = String(request.auth.token?.phone_number || "").trim();
   const tokenAdmin = request.auth.token?.admin === true;
-  return email === ADMIN_EMAIL || tokenAdmin;
+  return email === ADMIN_EMAIL || phone === ADMIN_PHONE || tokenAdmin;
 }
 
 async function deleteQueryInBatches(query, batchSize = 250) {

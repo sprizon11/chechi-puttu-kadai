@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:chechi_puttu_app/admin/admin_dish_models.dart';
+import 'package:chechi_puttu_app/services/menu_image_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -64,18 +65,19 @@ class _AdminCategoryEditScreenState extends State<AdminCategoryEditScreen> {
     try {
       final x = await _picker.pickImage(
         source: source,
-        maxWidth: 720,
-        maxHeight: 720,
-        imageQuality: 55,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        imageQuality: 85,
       );
       if (!mounted || x == null) return;
       final bytes = await x.readAsBytes();
-      if (bytes.length > 250_000) {
+      final compressed = compressMenuImageForCloud(bytes);
+      if (compressed == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                'Image is still too large. Try another photo or crop it smaller.',
+                'Could not compress this photo for cloud sync. Try another image.',
               ),
             ),
           );
@@ -83,7 +85,7 @@ class _AdminCategoryEditScreenState extends State<AdminCategoryEditScreen> {
         return;
       }
       setState(() {
-        _pickedBytes = bytes;
+        _pickedBytes = compressed;
         _imageRemoved = false;
       });
     } catch (e) {

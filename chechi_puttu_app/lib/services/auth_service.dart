@@ -1,4 +1,4 @@
-import 'package:chechi_puttu_app/admin/admin_dashboard_screen.dart';
+import 'package:chechi_puttu_app/admin/admin_auth.dart';
 import 'package:chechi_puttu_app/app_secrets.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart'
