@@ -1,4 +1,65 @@
 workflows:
+  # Android — works without Apple account. Download APK from Codemagic artifacts.
+  android-workflow:
+    name: Chechi Puttu Android
+    max_build_duration: 45
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      java: 17
+    working_directory: chechi_puttu_app
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Build APK
+        script: flutter build apk --release
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+
+  # iOS free install — no Apple Developer Program required.
+  # Download chechi_puttu_free.ipa from artifacts, then install with Sideloadly
+  # on Windows using your free Apple ID (re-sign every ~7 days).
+  ios-free-workflow:
+    name: Chechi Puttu iOS (Free Install)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    working_directory: chechi_puttu_app
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Install CocoaPods dependencies
+        script: |
+          cd ios
+          pod install --repo-update
+      - name: Build unsigned iOS app
+        script: flutter build ios --release --no-codesign
+      - name: Package IPA for Sideloadly
+        script: |
+          APP_PATH="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Runner.app not found — searching build/ios..."
+            APP_PATH="$(find build/ios -name Runner.app -type d | head -n 1)"
+          fi
+          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+            echo "Could not locate Runner.app after build."
+            find build/ios -maxdepth 4 -type d
+            exit 1
+          fi
+          rm -rf Payload chechi_puttu_free.ipa
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qr chechi_puttu_free.ipa Payload
+          rm -rf Payload
+          ls -lh chechi_puttu_free.ipa
+    artifacts:
+      - chechi_puttu_free.ipa
+
+  # iOS — requires App Store Connect API key in Codemagic named exactly: chechi-puttu
+  # Also requires Apple Developer Program ($99/year) for Ad Hoc signing.
   ios-workflow:
     name: Chechi Puttu iOS
     max_build_duration: 60
