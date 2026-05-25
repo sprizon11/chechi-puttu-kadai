@@ -6,4 +6,6 @@
 abstract final class AppSecrets {
   static const String googleWebClientId =
       '316102307451-8gqjm1eeckudc7eqdluu60ptl2a1tb62.apps.googleusercontent.com';
+  static const String googleIosClientId =
+      '316102307451-l09t7egsunl83jmp6nk59blj2atp3oqc.apps.googleusercontent.com';
 }

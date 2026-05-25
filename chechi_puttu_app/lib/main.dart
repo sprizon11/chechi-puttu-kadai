@@ -2802,7 +2802,7 @@ class _LoginScreenState extends State<LoginScreen>
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: Scaffold(
-        resizeToAvoidBottomInset: true,
+        resizeToAvoidBottomInset: false,
         backgroundColor: Colors.transparent,
         body: Stack(
           fit: StackFit.expand,
@@ -3290,65 +3290,65 @@ class _LoginScreenState extends State<LoginScreen>
                                                             CrossAxisAlignment
                                                                 .stretch,
                                                         children: [
-                                                          Padding(
-                                                            padding:
-                                                                const EdgeInsets.symmetric(
-                                                                  vertical: 2,
-                                                                ),
-                                                            child: Row(
-                                                              children: [
-                                                                Expanded(
-                                                                  child: Divider(
-                                                                    color: border
-                                                                        .withValues(
-                                                                          alpha:
-                                                                              0.85,
-                                                                        ),
+                                                            Padding(
+                                                              padding:
+                                                                  const EdgeInsets.symmetric(
+                                                                    vertical: 2,
                                                                   ),
-                                                                ),
-                                                                Padding(
-                                                                  padding:
-                                                                      const EdgeInsets.symmetric(
-                                                                        horizontal:
-                                                                            8,
-                                                                      ),
-                                                                  child: Text(
-                                                                    'OR',
-                                                                    style: GoogleFonts.poppins(
-                                                                      color:
-                                                                          muted,
-                                                                      fontSize:
-                                                                          10.5,
-                                                                      fontWeight:
-                                                                          FontWeight
-                                                                              .w700,
+                                                              child: Row(
+                                                                children: [
+                                                                  Expanded(
+                                                                    child: Divider(
+                                                                      color: border
+                                                                          .withValues(
+                                                                            alpha:
+                                                                                0.85,
+                                                                          ),
                                                                     ),
                                                                   ),
-                                                                ),
-                                                                Expanded(
-                                                                  child: Divider(
-                                                                    color: border
-                                                                        .withValues(
-                                                                          alpha:
-                                                                              0.85,
+                                                                  Padding(
+                                                                    padding:
+                                                                        const EdgeInsets.symmetric(
+                                                                          horizontal:
+                                                                              8,
                                                                         ),
+                                                                    child: Text(
+                                                                      'OR',
+                                                                      style: GoogleFonts.poppins(
+                                                                        color:
+                                                                            muted,
+                                                                        fontSize:
+                                                                            10.5,
+                                                                        fontWeight:
+                                                                            FontWeight
+                                                                                .w700,
+                                                                      ),
+                                                                    ),
                                                                   ),
-                                                                ),
-                                                              ],
+                                                                  Expanded(
+                                                                    child: Divider(
+                                                                      color: border
+                                                                          .withValues(
+                                                                            alpha:
+                                                                                0.85,
+                                                                          ),
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ),
                                                             ),
-                                                          ),
-                                                          SizedBox(
-                                                            height:
-                                                                compactLogin
-                                                                    ? 36
-                                                                    : 40,
-                                                            child: Row(
-                                                              crossAxisAlignment:
-                                                                  CrossAxisAlignment
-                                                                      .stretch,
-                                                              children: [
-                                                                Expanded(
-                                                                  child: OutlinedButton.icon(
+                                                            SizedBox(
+                                                              height:
+                                                                  compactLogin
+                                                                      ? 36
+                                                                      : 40,
+                                                              child: Row(
+                                                                crossAxisAlignment:
+                                                                    CrossAxisAlignment
+                                                                        .stretch,
+                                                                children: [
+                                                                  Expanded(
+                                                                    child: OutlinedButton.icon(
                                                                     style: OutlinedButton.styleFrom(
                                                                       foregroundColor:
                                                                           bgText,
@@ -3428,11 +3428,11 @@ class _LoginScreenState extends State<LoginScreen>
                                                                     ),
                                                                   ),
                                                                 ),
-                                                                const SizedBox(
-                                                                  width: 8,
-                                                                ),
-                                                                Expanded(
-                                                                  child: OutlinedButton.icon(
+                                                                  const SizedBox(
+                                                                    width: 8,
+                                                                  ),
+                                                                  Expanded(
+                                                                    child: OutlinedButton.icon(
                                                                     style: OutlinedButton.styleFrom(
                                                                       foregroundColor:
                                                                           bgText,
@@ -3486,10 +3486,10 @@ class _LoginScreenState extends State<LoginScreen>
                                                                       ),
                                                                     ),
                                                                   ),
-                                                                ),
-                                                              ],
+                                                                  ),
+                                                                ],
+                                                              ),
                                                             ),
-                                                          ),
                                                         ],
                                                       ),
                                                     ),

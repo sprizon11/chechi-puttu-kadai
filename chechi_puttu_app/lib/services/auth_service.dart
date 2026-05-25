@@ -253,20 +253,30 @@ class AuthService {
     }
 
     final webClientId = AppSecrets.googleWebClientId.trim();
+    final iosClientId = AppSecrets.googleIosClientId.trim();
+    final needsIosClientId = defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS;
     final googleConfigured = webClientId.isNotEmpty &&
         !webClientId.contains('REPLACE') &&
         webClientId.contains('.apps.googleusercontent.com');
+    final iosConfigured = !needsIosClientId ||
+        (iosClientId.isNotEmpty &&
+            !iosClientId.contains('REPLACE') &&
+            iosClientId.contains('.apps.googleusercontent.com'));
 
-    if (!googleConfigured) {
+    if (!googleConfigured || !iosConfigured) {
       throw FirebaseAuthException(
         code: 'client-configuration-error',
         message:
-            'Set AppSecrets.googleWebClientId in lib/app_secrets.dart to your '
-            'OAuth Web client ID (…apps.googleusercontent.com).',
+            'Set AppSecrets.googleWebClientId and AppSecrets.googleIosClientId '
+            'in lib/app_secrets.dart with valid OAuth client IDs.',
       );
     }
 
-    await GoogleSignIn.instance.initialize(serverClientId: webClientId);
+    await GoogleSignIn.instance.initialize(
+      serverClientId: webClientId,
+      clientId: needsIosClientId ? iosClientId : null,
+    );
 
     try {
       final account = await GoogleSignIn.instance.authenticate(
