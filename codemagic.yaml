@@ -35,19 +35,26 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
-      flutter: stable
+      flutter: 3.41.9
       xcode: latest
       cocoapods: default
     working_directory: chechi_puttu_app
     scripts:
       - name: Get Flutter packages
-        script: flutter pub get
+        script: |
+          flutter config --no-enable-swift-package-manager
+          flutter pub get
       - name: Install CocoaPods dependencies
         script: |
           cd ios
+          rm -rf Pods Podfile.lock Runner.xcworkspace/xcshareddata/swiftpm
           pod install --repo-update
       - name: Build unsigned iOS app
-        script: flutter build ios --release --no-codesign
+        script: |
+          flutter clean
+          flutter pub get
+          cd ios && pod install && cd ..
+          flutter build ios --release --no-codesign
       - name: Package IPA for Sideloadly
         script: |
           APP_PATH="build/ios/iphoneos/Runner.app"
@@ -78,7 +85,7 @@ workflows:
     integrations:
       app_store_connect: chechi-puttu
     environment:
-      flutter: stable
+      flutter: 3.41.9
       xcode: latest
       cocoapods: default
       vars:

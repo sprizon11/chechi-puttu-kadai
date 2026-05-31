@@ -74,6 +74,9 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+  config:
+    # cloud_firestore + Firebase iOS SDK fail under SPM on CI; use CocoaPods.
+    enable-swift-package-manager: false
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
