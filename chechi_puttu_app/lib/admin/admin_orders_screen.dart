@@ -376,6 +376,12 @@ class _AdminOrdersBodyState extends State<AdminOrdersBody> {
                           onReject: _tab == 0
                               ? () => _setStatus(doc.id, 'cancelled')
                               : null,
+                          onMarkReady: _tab == 1
+                              ? () => _setStatus(doc.id, 'ready')
+                              : null,
+                          onMarkCompleted: _tab == 2
+                              ? () => _setStatus(doc.id, 'completed')
+                              : null,
                         );
                       },
                     ),
@@ -399,7 +405,39 @@ class _AdminOrdersBodyState extends State<AdminOrdersBody> {
                         const SizedBox(width: 6),
                         Flexible(
                           child: Text(
-                            'Orders move to Preparing after you tap Accept.',
+                            'Accept moves order to Preparing. Then use Mark Ready and Mark Completed.',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.poppins(fontSize: 11, color: muted),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else if (_tab == 1) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.info_outline_rounded, size: 16, color: muted),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            'Tap Mark Ready when food is packed for pickup/delivery.',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.poppins(fontSize: 11, color: muted),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else if (_tab == 2) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.info_outline_rounded, size: 16, color: muted),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            'Tap Mark Completed after customer receives the order.',
                             textAlign: TextAlign.center,
                             style: GoogleFonts.poppins(fontSize: 11, color: muted),
                           ),
@@ -526,6 +564,8 @@ class _AdminOrderCard extends StatelessWidget {
     required this.muted,
     this.onAccept,
     this.onReject,
+    this.onMarkReady,
+    this.onMarkCompleted,
   });
 
   final String docId;
@@ -539,6 +579,8 @@ class _AdminOrderCard extends StatelessWidget {
   final Color muted;
   final VoidCallback? onAccept;
   final VoidCallback? onReject;
+  final VoidCallback? onMarkReady;
+  final VoidCallback? onMarkCompleted;
 
   String _orderRef() {
     if (docId.length >= 6) {
@@ -589,21 +631,11 @@ class _AdminOrderCard extends StatelessWidget {
               Row(
                 children: [
                   if (tabIndex == 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFF9800),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        'NEW',
-                        style: GoogleFonts.poppins(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                        ),
-                      ),
-                    )
+                    _statusChip('NEW', const Color(0xFFFF9800))
+                  else if (tabIndex == 1)
+                    _statusChip('PREPARING', const Color(0xFF1565C0))
+                  else if (tabIndex == 2)
+                    _statusChip('READY', const Color(0xFF2E7D32))
                   else
                     const SizedBox.shrink(),
                   const Spacer(),
@@ -741,8 +773,64 @@ class _AdminOrderCard extends StatelessWidget {
                   ],
                 ),
               ],
+              if (onMarkReady != null) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: onMarkReady,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF1565C0),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    icon: const Icon(Icons.restaurant_rounded, size: 18),
+                    label: Text(
+                      'Mark Ready',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ],
+              if (onMarkCompleted != null) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: onMarkCompleted,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF2E7D32),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+                    label: Text(
+                      'Mark Completed',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  static Widget _statusChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.poppins(
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
         ),
       ),
     );

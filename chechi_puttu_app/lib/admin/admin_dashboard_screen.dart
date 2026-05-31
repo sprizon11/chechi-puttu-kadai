@@ -48,7 +48,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Stream<QuerySnapshot<Map<String, dynamic>>> _usersStream() {
     return FirebaseFirestore.instance
         .collection('users')
-        .limit(1200)
+        .limit(400)
         .snapshots();
   }
 

@@ -29,6 +29,8 @@ class NotificationsService {
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _ordersSub;
   StreamSubscription<RemoteMessage>? _pushSub;
   StreamSubscription<RemoteMessage>? _pushOpenSub;
+  final Map<String, String> _lastOrderStatusById = {};
+  bool _ordersSnapshotPrimed = false;
 
   static const _androidChannelId = 'order_updates';
   static const _androidChannelName = 'Order updates';
@@ -56,12 +58,34 @@ class NotificationsService {
         .where('uid', isEqualTo: uid)
         .snapshots()
         .listen((snapshot) {
-          for (final change in snapshot.docChanges) {
-            if (change.type == DocumentChangeType.modified) {
-              final status = change.doc.data()?['status'] as String?;
-              if (status != null) {
-                _showOrderStatusLocal(status);
+          if (!_ordersSnapshotPrimed) {
+            for (final doc in snapshot.docs) {
+              final status = doc.data()['status'];
+              if (status is String) {
+                _lastOrderStatusById[doc.id] = status.trim().toLowerCase();
               }
+            }
+            _ordersSnapshotPrimed = true;
+            return;
+          }
+
+          for (final change in snapshot.docChanges) {
+            if (change.type != DocumentChangeType.modified &&
+                change.type != DocumentChangeType.added) {
+              continue;
+            }
+            final data = change.doc.data();
+            if (data == null) continue;
+            final status = data['status'];
+            if (status is! String || status.trim().isEmpty) continue;
+            final normalized = status.trim().toLowerCase();
+            final prev = _lastOrderStatusById[change.doc.id];
+            _lastOrderStatusById[change.doc.id] = normalized;
+            if (prev == normalized) continue;
+            if (change.type == DocumentChangeType.modified ||
+                (change.type == DocumentChangeType.added &&
+                    normalized != 'placed')) {
+              _showOrderStatusLocal(normalized);
             }
           }
         });
@@ -87,6 +111,8 @@ class NotificationsService {
     await _ordersSub?.cancel();
     await _pushSub?.cancel();
     await _pushOpenSub?.cancel();
+    _lastOrderStatusById.clear();
+    _ordersSnapshotPrimed = false;
   }
 
   Future<void> _initLocalNotifications() async {
@@ -131,15 +157,22 @@ class NotificationsService {
   }
 
   void _showOrderStatusLocal(String status) {
-    final (title, body) = switch (status) {
+    final (title, body) = switch (status.trim().toLowerCase()) {
       'placed' => ('Order placed', 'We have received your order.'),
-      'preparing' => ('Preparing', 'Your food is being prepared.'),
+      'preparing' || 'accepted' => ('Preparing', 'Your food is being prepared.'),
+      'ready' => ('Ready', 'Your order is packed and ready.'),
+      'completed' => ('Completed', 'Your order has been completed.'),
       'outForDelivery' || 'out_for_delivery' => ('Out for delivery', 'Your order is on the way.'),
       'delivered' => ('Delivered', 'Hope you enjoyed your meal.'),
       'cancelled' => ('Order cancelled', 'Your order was cancelled.'),
+      'rejected' => ('Order rejected', 'Your order was rejected by the store.'),
       _ => ('Order update', 'Status: $status'),
     };
-    _showLocal(title: title, body: body);
+    _showLocal(
+      title: title,
+      body: body,
+      payload: jsonEncode({'type': 'order_status', 'status': status}),
+    );
   }
 
   void _showForegroundPush(RemoteMessage m) {

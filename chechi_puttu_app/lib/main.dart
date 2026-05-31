@@ -2795,8 +2795,8 @@ class _LoginScreenState extends State<LoginScreen>
     const loginGlassFill = _kAuthGlassFill;
     const loginGlassBorder = _kAuthGlassBorder;
     final screenHeight = MediaQuery.sizeOf(context).height;
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final compactLogin = screenHeight < 900;
-    final tinyLogin = screenHeight < 760;
     final formTopOffset = compactLogin ? 0.0 : 10.0;
     final labelBrown = _AppColors.primary;
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -2914,15 +2914,36 @@ class _LoginScreenState extends State<LoginScreen>
                                                     SizedBox(
                                                       height: compactLogin ? 8 : 10,
                                                     ),
-                                                    Text(
-                                                      'Mobile number',
-                                                      style:
-                                                          GoogleFonts.poppins(
+                                                    Row(
+                                                      children: [
+                                                        Text(
+                                                          'Mobile number',
+                                                          style: GoogleFonts.poppins(
                                                             color: labelBrown,
                                                             fontSize: 13,
                                                             fontWeight:
                                                                 FontWeight.w700,
                                                           ),
+                                                        ),
+                                                        const Spacer(),
+                                                        if (_otpSent)
+                                                          InkWell(
+                                                            onTap: _busy
+                                                                ? null
+                                                                : _resetPhoneOtpFlow,
+                                                            child: Text(
+                                                              'Edit number',
+                                                              style: GoogleFonts.poppins(
+                                                                color: const Color(
+                                                                  0xFFEA7A2C,
+                                                                ),
+                                                                fontSize: 13,
+                                                                fontWeight:
+                                                                    FontWeight.w700,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                      ],
                                                     ),
                                                     const SizedBox(height: 5),
                                                     _InputCard(
@@ -2994,6 +3015,10 @@ class _LoginScreenState extends State<LoginScreen>
                                                                   hintText:
                                                                       'Enter your mobile number',
                                                                 ),
+                                                                scrollPadding:
+                                                                    const EdgeInsets.only(
+                                                                      bottom: 180,
+                                                                    ),
                                                                 style: GoogleFonts
                                                                     .poppins(
                                                                   color: bgText,
@@ -3008,31 +3033,6 @@ class _LoginScreenState extends State<LoginScreen>
                                                         ],
                                                       ),
                                                     ),
-                                                    if (_otpSent) ...[
-                                                      const SizedBox(height: 4),
-                                                      Align(
-                                                        alignment: Alignment
-                                                            .centerRight,
-                                                        child: InkWell(
-                                                          onTap: _busy
-                                                              ? null
-                                                              : _resetPhoneOtpFlow,
-                                                          child: Text(
-                                                            'Edit number',
-                                                            style: GoogleFonts.poppins(
-                                                              color:
-                                                                  const Color(
-                                                                    0xFFEA7A2C,
-                                                                  ),
-                                                              fontSize: 13,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w700,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
                                                     const SizedBox(height: 6),
                                                     Text(
                                                       'OTP',
@@ -3091,6 +3091,10 @@ class _LoginScreenState extends State<LoginScreen>
                                                                   hintText:
                                                                       'Enter 6-digit OTP',
                                                                 ),
+                                                                scrollPadding:
+                                                                    const EdgeInsets.only(
+                                                                      bottom: 180,
+                                                                    ),
                                                                 style: GoogleFonts
                                                                     .poppins(
                                                                   color: bgText,
@@ -3496,21 +3500,17 @@ class _LoginScreenState extends State<LoginScreen>
                                                   ],
                                                 ),
                                           );
-                                          return SizedBox(
-                                            width: constraints.maxWidth,
-                                            height: constraints.maxHeight,
-                                            child: tinyLogin
-                                                ? FittedBox(
-                                                    fit: BoxFit.scaleDown,
-                                                    alignment:
-                                                        Alignment.topCenter,
-                                                    child: formContent,
-                                                  )
-                                                : Align(
-                                                    alignment:
-                                                        Alignment.topCenter,
-                                                    child: formContent,
-                                                  ),
+                                          return SingleChildScrollView(
+                                            keyboardDismissBehavior:
+                                                ScrollViewKeyboardDismissBehavior
+                                                    .onDrag,
+                                            padding: EdgeInsets.only(
+                                              bottom: keyboardInset + 16,
+                                            ),
+                                            child: Align(
+                                              alignment: Alignment.topCenter,
+                                              child: formContent,
+                                            ),
                                           );
                                         },
                                       ),
@@ -3761,24 +3761,28 @@ class CartLineItem {
     required this.subtitle,
     required this.price,
     required this.qty,
+    this.imageBase64,
   });
 
   final String name;
   final String subtitle;
   final int price;
   final int qty;
+  final String? imageBase64;
 
   CartLineItem copyWith({
     String? name,
     String? subtitle,
     int? price,
     int? qty,
+    String? imageBase64,
   }) {
     return CartLineItem(
       name: name ?? this.name,
       subtitle: subtitle ?? this.subtitle,
       price: price ?? this.price,
       qty: qty ?? this.qty,
+      imageBase64: imageBase64 ?? this.imageBase64,
     );
   }
 }
@@ -3804,15 +3808,25 @@ void _cartAddDishLine(
   String title,
   String subtitle,
   String priceStr,
+  String? imageBase64,
 ) {
   final rupees = _parseRupeesPrice(priceStr);
   final next = List<CartLineItem>.from(cart.value);
   final idx = next.indexWhere((e) => e.name == title && e.subtitle == subtitle);
   if (idx >= 0) {
-    next[idx] = next[idx].copyWith(qty: next[idx].qty + 1);
+    next[idx] = next[idx].copyWith(
+      qty: next[idx].qty + 1,
+      imageBase64: next[idx].imageBase64 ?? imageBase64,
+    );
   } else {
     next.add(
-      CartLineItem(name: title, subtitle: subtitle, price: rupees, qty: 1),
+      CartLineItem(
+        name: title,
+        subtitle: subtitle,
+        price: rupees,
+        qty: 1,
+        imageBase64: imageBase64,
+      ),
     );
   }
   cart.value = next;
@@ -3855,6 +3869,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   final _homeSearchController = TextEditingController();
+  Timer? _homeSearchDebounce;
 
   /// `null` = show all [customerMenuSections]; otherwise index of single section.
   int? _homeSectionFilter;
@@ -4536,7 +4551,10 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _onHomeSearchTextChanged() {
-    if (mounted) setState(() {});
+    _homeSearchDebounce?.cancel();
+    _homeSearchDebounce = Timer(const Duration(milliseconds: 280), () {
+      if (mounted) setState(() {});
+    });
   }
 
   bool _birthdayToday = false;
@@ -4582,6 +4600,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
+    _homeSearchDebounce?.cancel();
     widget.navIndexNotifier.removeListener(_navListener);
     _homeSearchController.removeListener(_onHomeSearchTextChanged);
     _homeSearchController.dispose();
@@ -4771,8 +4790,19 @@ class _HomeScreenState extends State<HomeScreen>
     await p.setStringList(_favoritesPrefKey(uid), next.toList()..sort());
   }
 
-  void _addDishToCart(String title, String subtitle, String priceStr) {
-    _cartAddDishLine(widget.cartLinesNotifier, title, subtitle, priceStr);
+  void _addDishToCart(
+    String title,
+    String subtitle,
+    String priceStr, {
+    String? imageBase64,
+  }) {
+    _cartAddDishLine(
+      widget.cartLinesNotifier,
+      title,
+      subtitle,
+      priceStr,
+      imageBase64,
+    );
   }
 
   void _removeDishFromCart(String title, String subtitle) {
@@ -5183,8 +5213,12 @@ class _HomeScreenState extends State<HomeScreen>
                         onToggleFavorite: () =>
                             _toggleFavoriteDish(m.title, m.subtitle),
                         qty: _qtyInCart(m.title, m.subtitle),
-                        onAdd: () =>
-                            _addDishToCart(m.title, m.subtitle, m.price),
+                        onAdd: () => _addDishToCart(
+                          m.title,
+                          m.subtitle,
+                          m.price,
+                          imageBase64: m.imageBase64,
+                        ),
                         onRemove: () =>
                             _removeDishFromCart(m.title, m.subtitle),
                       ),
@@ -5350,8 +5384,12 @@ class _HomeScreenState extends State<HomeScreen>
                         onToggleFavorite: () =>
                             _toggleFavoriteDish(m.title, m.subtitle),
                         qty: _qtyInCart(m.title, m.subtitle),
-                        onAdd: () =>
-                            _addDishToCart(m.title, m.subtitle, m.price),
+                        onAdd: () => _addDishToCart(
+                          m.title,
+                          m.subtitle,
+                          m.price,
+                          imageBase64: m.imageBase64,
+                        ),
                         onRemove: () =>
                             _removeDishFromCart(m.title, m.subtitle),
                       ),
@@ -5388,6 +5426,7 @@ class _HomeScreenState extends State<HomeScreen>
                 onLocationTap: _openDeliveryLocationSheet,
                 isDark: widget.isDark,
                 onToggleTheme: widget.onToggleTheme,
+                cartLinesNotifier: widget.cartLinesNotifier,
                 onCartTap: () => widget.navIndexNotifier.value = 2,
               ),
               const SizedBox(height: 6),
@@ -6754,6 +6793,7 @@ class _OrderUiModel {
     required this.id,
     required this.itemCount,
     required this.placedAt,
+    required this.statusRaw,
     required this.statusLine,
     required this.status,
     required this.price,
@@ -6768,6 +6808,7 @@ class _OrderUiModel {
   final String id;
   final int itemCount;
   final String placedAt;
+  final String statusRaw;
   final String statusLine;
   final _OrderUiStatus status;
   final String price;
@@ -6776,6 +6817,22 @@ class _OrderUiModel {
   final bool canRate;
   final String deliveryLine;
   final String paymentMode;
+}
+
+int _orderTimelineStepFromRaw(String raw) {
+  switch (raw.trim().toLowerCase()) {
+    case 'preparing':
+    case 'accepted':
+      return 1;
+    case 'ready':
+      return 2;
+    case 'completed':
+    case 'delivered':
+    case 'out_for_delivery':
+      return 3;
+    default:
+      return 0;
+  }
 }
 
 enum _CheckoutDeliveryMode { deliverNow, schedule }
@@ -7694,6 +7751,31 @@ class _CartItemTile extends StatelessWidget {
   final VoidCallback onPlus;
   final VoidCallback onDelete;
 
+  Widget _buildDishImage() {
+    final b64 = item.imageBase64;
+    if (b64 != null && b64.isNotEmpty) {
+      try {
+        final bytes = _MenuBase64ImageCache.read(b64);
+        if (bytes == null) throw const FormatException('bad base64');
+        return Image.memory(
+          bytes,
+          key: ValueKey(b64.hashCode),
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          filterQuality: FilterQuality.medium,
+          width: double.infinity,
+          height: double.infinity,
+        );
+      } catch (_) {}
+    }
+    return Image.asset(
+      'assets/images/hero.png',
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -7705,7 +7787,7 @@ class _CartItemTile extends StatelessWidget {
             child: SizedBox(
               width: 70,
               height: 70,
-              child: Image.asset('assets/images/hero.png', fit: BoxFit.cover),
+              child: _buildDishImage(),
             ),
           ),
           const SizedBox(width: 10),
@@ -7715,18 +7797,23 @@ class _CartItemTile extends StatelessWidget {
               children: [
                 Text(
                   item.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.playfairDisplay(
                     color: titleColor,
-                    fontSize: 30,
-                    height: 0.95,
+                    fontSize: 17,
+                    height: 1.05,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 Text(
                   item.subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.poppins(
                     color: muted,
-                    fontSize: 14,
+                    fontSize: 12.5,
+                    height: 1.2,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -7735,9 +7822,9 @@ class _CartItemTile extends StatelessWidget {
                   '₹${item.price}',
                   style: GoogleFonts.poppins(
                     color: const Color(0xFFE65100),
-                    fontSize: 30,
-                    height: 0.95,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 18,
+                    height: 1.0,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ],
@@ -8018,6 +8105,117 @@ class _SummaryRow extends StatelessWidget {
   }
 }
 
+class _RateOrderDialog extends StatefulWidget {
+  const _RateOrderDialog();
+
+  @override
+  State<_RateOrderDialog> createState() => _RateOrderDialogState();
+}
+
+class _RateOrderDialogState extends State<_RateOrderDialog> {
+  int _stars = 5;
+  final TextEditingController _reviewCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _reviewCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        'Rate your order',
+        style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                5,
+                (i) => IconButton(
+                  onPressed: () => setState(() => _stars = i + 1),
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(
+                    minWidth: 34,
+                    minHeight: 34,
+                  ),
+                  iconSize: 30,
+                  icon: Icon(
+                    i < _stars
+                        ? Icons.star_rounded
+                        : Icons.star_border_rounded,
+                    color: const Color(0xFFFFB300),
+                  ),
+                ),
+              ),
+            ),
+            TextField(
+              controller: _reviewCtrl,
+              minLines: 2,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: 'Write a short review (optional)',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(
+            context,
+            (rating: _stars, review: _reviewCtrl.text.trim()),
+          ),
+          child: const Text('Submit'),
+        ),
+      ],
+    );
+  }
+}
+
+Widget _orderInvoiceRow(BuildContext context, String label, String value) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 92,
+          child: Text(
+            label,
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: _OrdersPalette.mutedOf(context),
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: _OrdersPalette.titleOf(context),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 class _OrdersTab extends StatefulWidget {
   const _OrdersTab({
     required this.cartLinesNotifier,
@@ -8043,12 +8241,21 @@ class _OrdersTab extends StatefulWidget {
 
 class _OrdersTabState extends State<_OrdersTab> {
   int _filter = 0;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _ordersStream;
 
   @override
   void initState() {
     super.initState();
     _filter = widget.ordersFilterNotifier.value.clamp(0, 3);
     widget.ordersFilterNotifier.addListener(_syncFilterFromNotifier);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      _ordersStream = FirebaseFirestore.instance
+          .collection('orders')
+          .where('uid', isEqualTo: uid)
+          .limit(120)
+          .snapshots();
+    }
   }
 
   void _syncFilterFromNotifier() {
@@ -8089,7 +8296,7 @@ class _OrdersTabState extends State<_OrdersTab> {
 
   _OrderUiStatus _statusFromRaw(String raw) {
     final s = raw.trim().toLowerCase();
-    if (s == 'delivered') return _OrderUiStatus.delivered;
+    if (s == 'delivered' || s == 'completed') return _OrderUiStatus.delivered;
     if (s == 'cancelled' || s == 'rejected') return _OrderUiStatus.cancelled;
     return _OrderUiStatus.ongoing;
   }
@@ -8100,6 +8307,7 @@ class _OrdersTabState extends State<_OrdersTab> {
       case 'placed':
         return 'Order placed successfully.';
       case 'preparing':
+      case 'accepted':
         return 'Chechi kitchen is preparing your order.';
       case 'ready':
         return 'Your order is packed and ready.';
@@ -8107,6 +8315,8 @@ class _OrdersTabState extends State<_OrdersTab> {
         return 'Delivery partner is on the way.';
       case 'delivered':
         return 'Delivered to your location.';
+      case 'completed':
+        return 'Order completed successfully.';
       case 'cancelled':
         return 'This order was cancelled.';
       case 'rejected':
@@ -8172,6 +8382,7 @@ class _OrdersTabState extends State<_OrdersTab> {
       id: '#ORD${tail.toUpperCase()}',
       itemCount: itemCount <= 0 ? reorderLines.length : itemCount,
       placedAt: _placedAtLabel(dt),
+      statusRaw: statusRaw,
       statusLine: _statusLineFromRaw(statusRaw),
       status: status,
       price: '₹$total',
@@ -8210,65 +8421,19 @@ class _OrdersTabState extends State<_OrdersTab> {
 
   Future<void> _rateOrder(_OrderUiModel order) async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    var stars = 5;
-    final ctrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    if (user == null || !mounted) return;
+
+    final result = await showDialog<({int rating, String review})>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: Text(
-            'Rate your order',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  5,
-                  (i) => IconButton(
-                    onPressed: () => setLocal(() => stars = i + 1),
-                    icon: Icon(
-                      i < stars ? Icons.star_rounded : Icons.star_border_rounded,
-                      color: const Color(0xFFFFB300),
-                    ),
-                  ),
-                ),
-              ),
-              TextField(
-                controller: ctrl,
-                minLines: 2,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  hintText: 'Write a short review (optional)',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Submit'),
-            ),
-          ],
-        ),
-      ),
+      builder: (dialogContext) => const _RateOrderDialog(),
     );
-    final review = ctrl.text.trim();
-    ctrl.dispose();
-    if (ok != true) return;
+    if (result == null || !mounted) return;
+
     await FirebaseFirestore.instance.collection('order_reviews').add({
       'uid': user.uid,
       'order_id': order.sourceId,
-      'rating': stars,
-      'review': review,
+      'rating': result.rating,
+      'review': result.review,
       'created_at': FieldValue.serverTimestamp(),
     });
     if (!mounted) return;
@@ -8282,38 +8447,225 @@ class _OrdersTabState extends State<_OrdersTab> {
     );
   }
 
-  Future<void> _copyInvoice(_OrderUiModel order) async {
+  Future<void> _showInvoice(_OrderUiModel order) async {
     final user = FirebaseAuth.instance.currentUser;
     final now = DateTime.now();
     final issued =
         '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
-    final lines = <String>[
-      'CHECHI PUTTU KADAI',
-      'Invoice',
-      '',
-      'Invoice Date: $issued',
-      'Order Ref: ${order.id}',
-      'Customer UID: ${user?.uid ?? '—'}',
-      '',
-      'Items:',
-      for (final l in order.reorderLines)
-        '- ${l.name}${l.subtitle.trim().isEmpty ? '' : ' (${l.subtitle})'}  x${l.qty}  ₹${l.price * l.qty}',
-      '',
-      'Delivery: ${order.deliveryLine.isEmpty ? '—' : order.deliveryLine}',
-      'Payment Mode: ${order.paymentMode}',
-      'Total: ${order.price}',
-      '',
-      'This is a system generated invoice summary.',
-    ];
-    await Clipboard.setData(ClipboardData(text: lines.join('\n')));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Invoice copied to clipboard.',
-          style: GoogleFonts.poppins(),
-        ),
-      ),
+    final itemTotal = order.reorderLines.fold<int>(
+      0,
+      (sum, line) => sum + line.price * line.qty,
+    );
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final titleColor = _OrdersPalette.titleOf(ctx);
+        final muted = _OrdersPalette.mutedOf(ctx);
+        final border = _OrdersPalette.cardBorderOf(ctx);
+        return DraggableScrollableSheet(
+          initialChildSize: 0.72,
+          minChildSize: 0.45,
+          maxChildSize: 0.92,
+          builder: (context, scrollCtrl) {
+            return Container(
+              decoration: BoxDecoration(
+                color: _OrdersPalette.cardFillOf(ctx),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+                border: Border.all(color: border),
+              ),
+              child: ListView(
+                controller: scrollCtrl,
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: muted.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Chechi Puttu Kadai',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: titleColor,
+                    ),
+                  ),
+                  Text(
+                    'Tax Invoice / Bill Summary',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: muted,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _orderInvoiceRow(ctx, 'Invoice Date', issued),
+                  _orderInvoiceRow(ctx, 'Order Ref', order.id),
+                  _orderInvoiceRow(ctx, 'Order Date', order.placedAt),
+                  _orderInvoiceRow(ctx, 'Status', order.statusLine),
+                  if (user?.phoneNumber?.trim().isNotEmpty ?? false)
+                    _orderInvoiceRow(ctx, 'Mobile', user!.phoneNumber!.trim()),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Items',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: titleColor,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...order.reorderLines.map((line) {
+                    final lineTotal = line.price * line.qty;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _OrdersPalette.pageBgOf(ctx),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: border),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  line.name,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: titleColor,
+                                  ),
+                                ),
+                                if (line.subtitle.trim().isNotEmpty)
+                                  Text(
+                                    line.subtitle,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 11.5,
+                                      color: muted,
+                                    ),
+                                  ),
+                                Text(
+                                  'Qty: ${line.qty}  ×  ₹${line.price}',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w500,
+                                    color: muted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            '₹$lineTotal',
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: titleColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 8),
+                  _orderInvoiceRow(
+                    ctx,
+                    'Delivery',
+                    order.deliveryLine.isEmpty ? '—' : order.deliveryLine,
+                  ),
+                  _orderInvoiceRow(
+                    ctx,
+                    'Payment',
+                    order.paymentMode.replaceAll('_', ' '),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3E0),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: border),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          'Total Amount',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: titleColor,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          itemTotal > 0 ? '₹$itemTotal' : order.price,
+                          style: GoogleFonts.poppins(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFFE65100),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'This is a system-generated invoice summary for your order.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      height: 1.35,
+                      color: muted,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _AppColors.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(ctx),
+                      child: Text(
+                        'Close',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -8470,7 +8822,7 @@ class _OrdersTabState extends State<_OrdersTab> {
                         children: const [SizedBox(height: 120)],
                       );
                     }
-                    final stream = FirebaseFirestore.instance
+                    final stream = _ordersStream ??= FirebaseFirestore.instance
                         .collection('orders')
                         .where('uid', isEqualTo: user.uid)
                         .limit(120)
@@ -8556,7 +8908,7 @@ class _OrdersTabState extends State<_OrdersTab> {
                           onRate: visible[i].canRate
                               ? () => _rateOrder(visible[i])
                               : null,
-                          onInvoice: () => _copyInvoice(visible[i]),
+                          onInvoice: () => _showInvoice(visible[i]),
                         ),
                       );
                       },
@@ -8705,11 +9057,26 @@ class _OrderListCard extends StatelessWidget {
   }
 
   String get _badgeText {
+    final s = order.statusRaw.trim().toLowerCase();
     switch (order.status) {
       case _OrderUiStatus.delivered:
-        return 'Delivered';
+        return s == 'completed' ? 'Completed' : 'Delivered';
       case _OrderUiStatus.ongoing:
-        return 'Ongoing';
+        switch (s) {
+          case 'ready':
+            return 'Ready';
+          case 'preparing':
+          case 'accepted':
+            return 'Preparing';
+          case 'out_for_delivery':
+            return 'On the way';
+          case 'placed':
+          case 'new':
+          case '':
+            return 'Placed';
+          default:
+            return 'Ongoing';
+        }
       case _OrderUiStatus.cancelled:
         return 'Cancelled';
     }
@@ -8726,257 +9093,168 @@ class _OrderListCard extends StatelessWidget {
     }
   }
 
-  int get _timelineStep {
-    switch (order.statusLine.toLowerCase()) {
-      case String s when s.contains('delivered'):
-        return 3;
-      case String s when s.contains('on the way') || s.contains('out for delivery'):
-        return 2;
-      case String s when s.contains('preparing') || s.contains('packed') || s.contains('ready'):
-        return 1;
-      default:
-        return 0;
-    }
-  }
+  int get _timelineStep => _orderTimelineStepFromRaw(order.statusRaw);
 
   @override
   Widget build(BuildContext context) {
     final badge = _badgeColors;
     final st = _statusIcon;
+    final showTimeline = order.status != _OrderUiStatus.cancelled;
+    final muted = _OrdersPalette.mutedOf(context);
+    final titleColor = _OrdersPalette.titleOf(context);
+
+    OutlinedButton compactBtn({
+      required VoidCallback? onPressed,
+      required String label,
+      required Color fg,
+    }) {
+      return OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: fg,
+          side: BorderSide(color: fg, width: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.poppins(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
+
     return Material(
       color: _OrdersPalette.cardFillOf(context),
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
       elevation: 0,
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         onTap: () {},
         child: Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(color: _OrdersPalette.cardBorderOf(context)),
           ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
                   children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: SizedBox(
-                        width: 72,
-                        height: 72,
-                        child: Image.asset(
-                          'assets/images/hero.png',
-                          fit: BoxFit.cover,
+                    Expanded(
+                      child: Text(
+                        order.id,
+                        style: GoogleFonts.poppins(
+                          fontSize: 13.5,
+                          height: 1.1,
+                          letterSpacing: 0.4,
+                          fontWeight: FontWeight.w800,
+                          color: titleColor,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            order.id,
-                            style: GoogleFonts.playfairDisplay(
-                              fontSize: 15,
-                              height: 1.15,
-                              fontWeight: FontWeight.w700,
-                              color: _OrdersPalette.titleOf(context),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${order.itemCount} Items',
-                            style: GoogleFonts.poppins(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: _OrdersPalette.mutedOf(context),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.only(top: 1),
-                                child: Icon(
-                                  Icons.calendar_today_outlined,
-                                  size: 13,
-                                  color: _OrdersPalette.mutedOf(context),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  order.placedAt,
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 12.5,
-                                    height: 1.35,
-                                    fontWeight: FontWeight.w500,
-                                    color: _OrdersPalette.mutedOf(context),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(st.$1, size: 15, color: st.$2),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  order.statusLine,
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 12.5,
-                                    height: 1.35,
-                                    fontWeight: FontWeight.w500,
-                                    color: _OrdersPalette.mutedOf(context),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          _OrderTimelineMini(currentStep: _timelineStep),
-                          const SizedBox(height: 12),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Text(
-                                order.price,
-                                style: GoogleFonts.playfairDisplay(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w700,
-                                  color: _OrdersPalette.titleOf(context),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              OutlinedButton(
-                                onPressed: onReorder,
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: _OrdersPalette.titleOf(
-                                    context,
-                                  ),
-                                  side: BorderSide(
-                                    color: _OrdersPalette.titleOf(context),
-                                    width: 1,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 7,
-                                  ),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                                child: Text(
-                                  order.actionLabel,
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                              if (onRate != null) ...[
-                                const SizedBox(width: 8),
-                                OutlinedButton(
-                                  onPressed: onRate,
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: const Color(0xFFEA7A2C),
-                                    side: const BorderSide(
-                                      color: Color(0xFFEA7A2C),
-                                      width: 1,
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 7,
-                                    ),
-                                    minimumSize: Size.zero,
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    'Rate',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              if (onInvoice != null) ...[
-                                const SizedBox(width: 8),
-                                OutlinedButton(
-                                  onPressed: onInvoice,
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: const Color(0xFF1F5AA0),
-                                    side: const BorderSide(
-                                      color: Color(0xFF1F5AA0),
-                                      width: 1,
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 7,
-                                    ),
-                                    minimumSize: Size.zero,
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    'Invoice',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: badge.$1,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        _badgeText,
+                        style: GoogleFonts.poppins(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: badge.$2,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-              Positioned(
-                top: 12,
-                right: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: badge.$1,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    _badgeText,
-                    style: GoogleFonts.poppins(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: badge.$2,
-                    ),
+                const SizedBox(height: 3),
+                Text(
+                  '${order.itemCount} items • ${order.placedAt}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                    color: muted,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 4),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(st.$1, size: 13, color: st.$2),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        order.statusLine,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(
+                          fontSize: 11.5,
+                          height: 1.25,
+                          fontWeight: FontWeight.w500,
+                          color: muted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (showTimeline) ...[
+                  const SizedBox(height: 6),
+                  _OrderTimelineMini(currentStep: _timelineStep),
+                ],
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      order.price,
+                      style: GoogleFonts.poppins(
+                        fontSize: 19,
+                        height: 1.0,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFFE65100),
+                      ),
+                    ),
+                    const Spacer(),
+                    compactBtn(
+                      onPressed: onReorder,
+                      label: order.actionLabel,
+                      fg: titleColor,
+                    ),
+                    if (onRate != null) ...[
+                      const SizedBox(width: 6),
+                      compactBtn(
+                        onPressed: onRate,
+                        label: 'Rate',
+                        fg: const Color(0xFFEA7A2C),
+                      ),
+                    ],
+                    if (onInvoice != null) ...[
+                      const SizedBox(width: 6),
+                      compactBtn(
+                        onPressed: onInvoice,
+                        label: 'Invoice',
+                        fg: const Color(0xFF1F5AA0),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -8989,7 +9267,7 @@ class _OrderTimelineMini extends StatelessWidget {
 
   final int currentStep;
 
-  static const _labels = ['Placed', 'Preparing', 'On the way', 'Delivered'];
+  static const _labels = ['Placed', 'Preparing', 'Ready', 'Done'];
 
   @override
   Widget build(BuildContext context) {
@@ -8999,33 +9277,29 @@ class _OrderTimelineMini extends StatelessWidget {
       children: List.generate(_labels.length, (i) {
         final complete = i <= currentStep;
         return Expanded(
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                complete ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-                size: 13,
+                complete
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                size: 14,
                 color: complete ? done : muted.withValues(alpha: 0.7),
               ),
-              const SizedBox(width: 3),
-              Expanded(
-                child: Text(
-                  _labels[i],
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.poppins(
-                    fontSize: 9.5,
-                    fontWeight: complete ? FontWeight.w700 : FontWeight.w500,
-                    color: complete ? done : muted,
-                  ),
+              const SizedBox(height: 3),
+              Text(
+                _labels[i],
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  fontSize: 9,
+                  fontWeight: complete ? FontWeight.w700 : FontWeight.w500,
+                  color: complete ? done : muted,
+                  height: 1.1,
                 ),
               ),
-              if (i < _labels.length - 1)
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  width: 12,
-                  height: 1.3,
-                  color: (i < currentStep) ? done : muted.withValues(alpha: 0.35),
-                ),
             ],
           ),
         );
@@ -9198,6 +9472,7 @@ class _MenuVarietyDetailScreen extends StatelessWidget {
                           m.title,
                           m.subtitle,
                           m.price,
+                          m.imageBase64,
                         ),
                         onRemove: () => _cartRemoveDishLine(
                           cartLinesNotifier,
@@ -9791,6 +10066,7 @@ class _TopLocationRow extends StatelessWidget {
     required this.isDark,
     required this.onToggleTheme,
     required this.onCartTap,
+    required this.cartLinesNotifier,
   });
 
   final String deliveryLine;
@@ -9799,6 +10075,7 @@ class _TopLocationRow extends StatelessWidget {
   final bool isDark;
   final VoidCallback onToggleTheme;
   final VoidCallback onCartTap;
+  final ValueNotifier<List<CartLineItem>> cartLinesNotifier;
 
   @override
   Widget build(BuildContext context) {
@@ -9883,10 +10160,55 @@ class _TopLocationRow extends StatelessWidget {
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: _Theme.border(context)),
                 ),
-                child: Icon(
-                  Icons.shopping_cart_outlined,
-                  size: 18,
-                  color: _Theme.primary(context),
+                child: ListenableBuilder(
+                  listenable: cartLinesNotifier,
+                  builder: (context, _) {
+                    final cartCount = _cartBadgeTotal(cartLinesNotifier.value);
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.center,
+                      children: [
+                        Icon(
+                          Icons.shopping_cart_outlined,
+                          size: 18,
+                          color: _Theme.primary(context),
+                        ),
+                        if (cartCount > 0)
+                          Positioned(
+                            right: -2,
+                            top: -2,
+                            child: Container(
+                              constraints: const BoxConstraints(
+                                minWidth: 16,
+                                minHeight: 16,
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE53935),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: _Theme.surfaceLow(context),
+                                  width: 1.5,
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                cartCount > 99 ? '99+' : '$cartCount',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  height: 1,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -10354,36 +10676,45 @@ class _ProductCardState extends State<_ProductCard> {
     widget.onRemove();
   }
 
-  Widget _buildImageHeader({required double height}) {
+  Widget _buildImageHeader() {
     final b64 = widget.imageBase64;
     if (b64 != null && b64.isNotEmpty) {
       try {
         final bytes = _MenuBase64ImageCache.read(b64);
         if (bytes == null) throw const FormatException('bad base64');
-        return Image.memory(
-          bytes,
-          key: ValueKey(b64.hashCode),
-          fit: BoxFit.cover,
-          height: height,
-          width: double.infinity,
-          gaplessPlayback: true,
-          filterQuality: FilterQuality.low,
-          cacheWidth: 520,
-          cacheHeight: (height * 3).round(),
-          errorBuilder: (_, _, _) => Image.asset(
-            'assets/images/hero.png',
+        return ColoredBox(
+          color: const Color(0xFFF6EFE6),
+          child: Image.memory(
+            bytes,
+            key: ValueKey(b64.hashCode),
             fit: BoxFit.cover,
-            height: height,
+            alignment: Alignment.center,
             width: double.infinity,
+            height: double.infinity,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.medium,
+            // Width-only decode keeps original aspect ratio (prevents stretch).
+            cacheWidth: 720,
+            errorBuilder: (_, _, _) => Image.asset(
+              'assets/images/hero.png',
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+              width: double.infinity,
+              height: double.infinity,
+            ),
           ),
         );
       } catch (_) {}
     }
-    return Image.asset(
-      'assets/images/hero.png',
-      fit: BoxFit.cover,
-      height: height,
-      width: double.infinity,
+    return ColoredBox(
+      color: const Color(0xFFF6EFE6),
+      child: Image.asset(
+        'assets/images/hero.png',
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        width: double.infinity,
+        height: double.infinity,
+      ),
     );
   }
 
@@ -10393,7 +10724,7 @@ class _ProductCardState extends State<_ProductCard> {
     final disabled = !widget.available;
     final compactHeight =
         widget.height != null && widget.height! <= _kHomeDishCardHeight + 4;
-    final imageHeight = compactHeight ? 78.0 : 84.0;
+    final imageRadius = compactHeight ? 11.0 : 12.0;
     final titleMaxLines = 1;
     final subtitleMaxLines = compactHeight ? 2 : 2;
     return Opacity(
@@ -10416,12 +10747,31 @@ class _ProductCardState extends State<_ProductCard> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.max,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: SizedBox(
-                      height: imageHeight,
-                      width: double.infinity,
-                      child: _buildImageHeader(height: imageHeight),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(imageRadius),
+                      border: Border.all(
+                        color: Colors.white.withValues(
+                          alpha: isDark ? 0.16 : 0.45,
+                        ),
+                        width: 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(
+                            alpha: isDark ? 0.24 : 0.1,
+                          ),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(imageRadius),
+                      child: AspectRatio(
+                        aspectRatio: 4 / 3,
+                        child: _buildImageHeader(),
+                      ),
                     ),
                   ),
                   SizedBox(height: compactHeight ? 4 : 6),

@@ -356,19 +356,46 @@ function orderStatusText(status, orderId, totalRupees) {
     case "placed":
       return `Your order ${ref} is placed. Total: ₹${amount}.`;
     case "preparing":
+    case "accepted":
       return `Your order ${ref} is now preparing in the kitchen.`;
     case "ready":
-      return `Your order ${ref} is ready for dispatch.`;
+      return `Your order ${ref} is ready for pickup/delivery.`;
     case "out_for_delivery":
       return `Your order ${ref} is out for delivery.`;
     case "delivered":
       return `Your order ${ref} is delivered. Enjoy your meal!`;
+    case "completed":
+      return `Your order ${ref} is completed. Thank you!`;
     case "cancelled":
       return `Your order ${ref} was cancelled.`;
     case "rejected":
       return `Your order ${ref} was rejected by the store.`;
     default:
       return `Order ${ref} update: ${status}`;
+  }
+}
+
+function orderStatusPushCopy(status) {
+  switch (String(status || "").toLowerCase()) {
+    case "placed":
+      return {title: "Order placed", body: "We have received your order."};
+    case "preparing":
+    case "accepted":
+      return {title: "Preparing", body: "Chechi kitchen is preparing your food."};
+    case "ready":
+      return {title: "Ready", body: "Your order is packed and ready."};
+    case "out_for_delivery":
+      return {title: "On the way", body: "Your order is out for delivery."};
+    case "delivered":
+      return {title: "Delivered", body: "Your order has been delivered."};
+    case "completed":
+      return {title: "Completed", body: "Your order is completed. Thank you!"};
+    case "cancelled":
+      return {title: "Order cancelled", body: "Your order was cancelled."};
+    case "rejected":
+      return {title: "Order rejected", body: "Your order was rejected by the store."};
+    default:
+      return null;
   }
 }
 
@@ -547,6 +574,20 @@ exports.onOrderStatusChangedChatMessage = onDocumentUpdated("orders/{orderId}", 
     orderId: event.params.orderId,
     status: nextStatus,
   });
+
+  const pushCopy = orderStatusPushCopy(nextStatus);
+  if (pushCopy) {
+    await sendPush({
+      uid,
+      title: pushCopy.title,
+      body: pushCopy.body,
+      data: {
+        type: "order_status",
+        orderId: event.params.orderId,
+        status: nextStatus,
+      },
+    });
+  }
 });
 
 exports.onSupportMessagePush = onDocumentCreated(
