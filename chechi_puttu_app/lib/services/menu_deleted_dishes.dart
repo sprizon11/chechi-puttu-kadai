@@ -63,4 +63,21 @@ class MenuDeletedDishes extends ChangeNotifier {
     await CustomerMenuOverrides.instance.reloadFromPrefs();
     notifyListeners();
   }
+
+  /// Hides every catalog dish in a section (used when admin deletes a category).
+  Future<void> markAllCatalogDishesDeleted(
+    String sectionTitle,
+    Iterable<String> catalogDishTitles,
+  ) async {
+    var changed = false;
+    for (final title in catalogDishTitles) {
+      final key = catalogDishStorageKey(sectionTitle, title);
+      if (_keys.add(key)) changed = true;
+      await _removeSnapshotForDishKey(key);
+    }
+    if (!changed) return;
+    await _persistKeys();
+    await CustomerMenuOverrides.instance.reloadFromPrefs();
+    notifyListeners();
+  }
 }

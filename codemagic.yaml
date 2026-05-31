@@ -2,17 +2,28 @@ workflows:
   # Android — works without Apple account. Download APK from Codemagic artifacts.
   android-workflow:
     name: Chechi Puttu Android
-    max_build_duration: 45
+    max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
-      flutter: stable
+      flutter: 3.41.9
       java: 17
     working_directory: chechi_puttu_app
     scripts:
       - name: Get Flutter packages
         script: flutter pub get
+      - name: Set up Android SDK
+        script: |
+          set -e
+          yes | sdkmanager --licenses || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
       - name: Build APK
-        script: flutter build apk --release
+        script: |
+          flutter build apk --release --no-tree-shake-icons
     artifacts:
       - build/app/outputs/flutter-apk/app-release.apk
 

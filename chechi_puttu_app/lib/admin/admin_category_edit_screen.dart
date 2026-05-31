@@ -132,6 +132,56 @@ class _AdminCategoryEditScreenState extends State<AdminCategoryEditScreen> {
     );
   }
 
+  Future<void> _confirmDeleteCategory() async {
+    final label = _titleCtrl.text.trim().isNotEmpty
+        ? _titleCtrl.text.trim()
+        : widget.sectionId;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Delete category?',
+          style: GoogleFonts.playfairDisplay(
+            fontWeight: FontWeight.w700,
+            fontSize: 20,
+            color: _maroon,
+          ),
+        ),
+        content: Text(
+          'Delete "$label" and all dishes inside it? '
+          'This hides them from the customer menu on this device.',
+          style: GoogleFonts.poppins(
+            fontSize: 13,
+            height: 1.4,
+            color: _muted,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red.shade800,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(
+              'Delete category',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || ok != true) return;
+    Navigator.of(context).pop(const AdminCategoryDeleteRequest());
+  }
+
   @override
   Widget build(BuildContext context) {
     final thumbBytes =
@@ -294,6 +344,23 @@ class _AdminCategoryEditScreenState extends State<AdminCategoryEditScreen> {
             ),
             style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
           ),
+          const SizedBox(height: 28),
+          OutlinedButton.icon(
+            onPressed: _confirmDeleteCategory,
+            icon: const Icon(Icons.delete_forever_rounded, size: 22),
+            label: Text(
+              'Delete category & all dishes',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.red.shade800,
+              side: BorderSide(color: Colors.red.shade300),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+          ),
         ],
       ),
     );
@@ -308,4 +375,9 @@ class AdminCategorySaveResult {
 
   final AdminSectionEditSnapshot snapshot;
   final String? renamedSectionId;
+}
+
+/// Returned when admin confirms category delete from the editor.
+class AdminCategoryDeleteRequest {
+  const AdminCategoryDeleteRequest();
 }

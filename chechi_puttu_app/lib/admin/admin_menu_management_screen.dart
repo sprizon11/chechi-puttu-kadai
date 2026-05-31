@@ -57,9 +57,24 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
     (icon: Icons.star_outline_rounded, label: 'Our Signature Dishes'),
   ];
 
+  bool _sectionHasVisibleMenuItems(String sectionId) {
+    final catalog = _catalogSectionForId(sectionId);
+    if (catalog != null) {
+      for (final d in catalog.dishes) {
+        if (!MenuDeletedDishes.instance.isDeleted(sectionId, d.title)) {
+          return true;
+        }
+      }
+    }
+    final prefix = '$_customPrefix$sectionId\u001f';
+    return _snapshots.keys.any((k) => k.startsWith(prefix));
+  }
+
   List<({IconData icon, String label})> get _categories => [
     _baseCategories.first,
-    ...kCustomerMenuSections.map((s) {
+    ...kCustomerMenuSections
+        .where((s) => _sectionHasVisibleMenuItems(s.title))
+        .map((s) {
       final t = _thumbForSection(s.title);
       return (icon: t.icon, label: _displayLabelForSectionId(s.title));
     }),
@@ -586,10 +601,56 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
     await _persistSectionSchedules();
   }
 
+  Future<void> _deleteCategory(String sectionId) async {
+    final catalog = _catalogSectionForId(sectionId);
+    if (catalog != null) {
+      await MenuDeletedDishes.instance.markAllCatalogDishesDeleted(
+        sectionId,
+        catalog.dishes.map((d) => d.title),
+      );
+    }
+
+    final prefix = '$_customPrefix$sectionId\u001f';
+    final customKeys =
+        _snapshots.keys.where((k) => k.startsWith(prefix)).toList();
+    for (final k in customKeys) {
+      _snapshots.remove(k);
+    }
+
+    if (_isCustomSectionId(sectionId)) {
+      _customCategories.remove(sectionId);
+      await _persistCustomCategories();
+    }
+
+    _sectionSnapshots.remove(adminSectionStorageKey(sectionId));
+    _sectionSchedules.remove(sectionId);
+
+    await _persistSectionSchedules();
+    await _persistSnapshots(showSyncFeedback: false);
+    await _persistSectionOverrides(syncCloud: true);
+    await CustomerMenuOverrides.instance.reloadFromPrefs();
+    await CustomerMenuSectionOverrides.instance.reloadFromPrefs();
+
+    if (!mounted) return;
+    setState(() {
+      if (_categoryIndex >= _categories.length) {
+        _categoryIndex = 0;
+      }
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Category "$sectionId" and its dishes were removed.',
+          style: GoogleFonts.poppins(),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openCategoryEditor(String sectionId) async {
     final isCustom = _isCustomSectionId(sectionId);
     final initial = _mergedSection(sectionId);
-    final result = await Navigator.of(context).push<AdminCategorySaveResult>(
+    final result = await Navigator.of(context).push<Object?>(
       MaterialPageRoute(
         builder: (ctx) => AdminCategoryEditScreen(
           sectionId: sectionId,
@@ -599,6 +660,12 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
       ),
     );
     if (!mounted || result == null) return;
+
+    if (result is AdminCategoryDeleteRequest) {
+      await _deleteCategory(sectionId);
+      return;
+    }
+    if (result is! AdminCategorySaveResult) return;
 
     var effectiveId = sectionId;
     if (result.renamedSectionId != null &&
