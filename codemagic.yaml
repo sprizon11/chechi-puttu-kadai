@@ -21,11 +21,13 @@ workflows:
             "build-tools;36.0.0" \
             "platforms;android-35" \
             "build-tools;35.0.0"
-      - name: Build APK
+      - name: Build release (APK + Play Store AAB)
         script: |
           flutter build apk --release --no-tree-shake-icons
+          flutter build appbundle --release --no-tree-shake-icons
     artifacts:
       - build/app/outputs/flutter-apk/app-release.apk
+      - build/app/outputs/bundle/release/app-release.aab
 
   # iOS free install — no Apple Developer Program required.
   # Download chechi_puttu_free.ipa from artifacts, then install with Sideloadly
