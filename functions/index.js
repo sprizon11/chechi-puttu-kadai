@@ -287,9 +287,9 @@ exports.razorpayWebhook = onRequest(async (req, res) => {
 //   CASHFREE_APP_ID, CASHFREE_SECRET_KEY, CASHFREE_ENV ("production"|"sandbox")
 // Optional: CASHFREE_WEBHOOK_URL (https URL of cashfreeWebhook below).
 function cashfreeKeys() {
-  const appId = process.env.CASHFREE_APP_ID || "";
-  const secretKey = process.env.CASHFREE_SECRET_KEY || "";
-  const env = (process.env.CASHFREE_ENV || "sandbox").toLowerCase();
+  const appId = (process.env.CASHFREE_APP_ID || "").trim();
+  const secretKey = (process.env.CASHFREE_SECRET_KEY || "").trim();
+  const env = (process.env.CASHFREE_ENV || "sandbox").trim().toLowerCase();
   return {appId, secretKey, env};
 }
 
@@ -454,6 +454,7 @@ exports.cashfreeWebhook = onRequest(
     .update(ts + rawBody)
     .digest("base64");
   if (!timingSafeEqual(expected, sig)) {
+    console.error("cashfreeWebhook: signature mismatch", {ts: !!ts, rawBodyLen: rawBody.length});
     res.status(400).send("Invalid signature");
     return;
   }
