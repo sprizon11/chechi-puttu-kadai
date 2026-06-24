@@ -7226,32 +7226,14 @@ class _CartTabState extends State<_CartTab> {
 
     if (!context.mounted) return;
     if (orderId != null) {
+      final ref = orderId.length > 10 ? orderId.substring(0, 10) : orderId;
       await showDialog<void>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(
-            'Order placed',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
-          ),
-          content: Text(
-            <String?>[
-              scheduleLine,
-              'Address: $deliveryLine',
-              'Paid online (Cashfree).',
-              'Order ref: $orderId',
-              'Total: ₹$total',
-            ].whereType<String>().join('\n\n'),
-            style: GoogleFonts.poppins(height: 1.35),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(
-                'OK',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
+        builder: (ctx) => _OrderSuccessDialog(
+          scheduleLine: scheduleLine ?? '',
+          deliveryLine: deliveryLine,
+          total: total,
+          paymentLabel: 'Paid online · Ref: $ref',
         ),
       );
       if (!context.mounted) return;
@@ -7293,41 +7275,38 @@ class _CartTabState extends State<_CartTab> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Payment method',
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
+                  'Choose payment',
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 20,
                     fontWeight: FontWeight.w700,
+                    color: Theme.of(ctx).colorScheme.onSurface,
                   ),
                 ),
-                const SizedBox(height: 12),
-                ListTile(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: Theme.of(ctx).colorScheme.outlineVariant,
-                    ),
+                const SizedBox(height: 4),
+                Text(
+                  'How would you like to pay?',
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                   ),
-                  leading: const Icon(Icons.payments_outlined),
-                  title: Text(
-                    'Cash on delivery',
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
-                  ),
+                ),
+                const SizedBox(height: 16),
+                _PaymentOptionTile(
+                  icon: Icons.payments_rounded,
+                  iconBg: const Color(0xFFE8F5E9),
+                  iconColor: const Color(0xFF2E7D32),
+                  title: 'Cash on Delivery',
+                  subtitle: 'Pay when your order arrives',
                   onTap: () =>
                       Navigator.pop(ctx, _CheckoutPaymentMode.cashOnDelivery),
                 ),
                 const SizedBox(height: 10),
-                ListTile(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: Theme.of(ctx).colorScheme.outlineVariant,
-                    ),
-                  ),
-                  leading: const Icon(Icons.credit_card_rounded),
-                  title: Text(
-                    'Online payment',
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
-                  ),
+                _PaymentOptionTile(
+                  icon: Icons.credit_card_rounded,
+                  iconBg: const Color(0xFFE3F2FD),
+                  iconColor: const Color(0xFF1565C0),
+                  title: 'Online Payment',
+                  subtitle: 'UPI, cards, net banking via Cashfree',
                   onTap: () =>
                       Navigator.pop(ctx, _CheckoutPaymentMode.onlinePayment),
                 ),
@@ -7394,29 +7373,11 @@ class _CartTabState extends State<_CartTab> {
     if (!context.mounted) return;
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(
-          'Order placed',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
-        ),
-        content: Text(
-          <String>[
-            scheduleLine,
-            'Address: $deliveryLine',
-            'Pay cash when your order is delivered.',
-            'Total: ₹$total',
-          ].join('\n\n'),
-          style: GoogleFonts.poppins(height: 1.35),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              'OK',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
+      builder: (ctx) => _OrderSuccessDialog(
+        scheduleLine: scheduleLine,
+        deliveryLine: deliveryLine,
+        total: total,
+        paymentLabel: 'Pay ₹$total cash on delivery',
       ),
     );
     if (!context.mounted) return;
@@ -7694,6 +7655,86 @@ class _CartTabState extends State<_CartTab> {
   }
 }
 
+class _PaymentOptionTile extends StatelessWidget {
+  const _PaymentOptionTile({
+    required this.icon,
+    required this.iconBg,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color iconBg;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: cs.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: cs.outlineVariant),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: iconColor, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.poppins(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: cs.onSurface,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 15,
+                color: cs.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CartDeliveryCard extends StatelessWidget {
   const _CartDeliveryCard({
     required this.border,
@@ -7961,49 +8002,51 @@ class _CartCouponCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
       decoration: BoxDecoration(
-        color: fill,
+        color: const Color(0xFFFFFAF0),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: border),
+        border: Border.all(color: const Color(0xFFFFD580).withValues(alpha: 0.6)),
       ),
       child: Row(
         children: [
-          Icon(Icons.sell_outlined, color: muted, size: 22),
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF3CD),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.local_fire_department_rounded,
+              color: Color(0xFFE67C2D),
+              size: 18,
+            ),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Apply Coupon',
+                  'Fresh & Made to Order',
                   style: GoogleFonts.poppins(
-                    color: titleColor,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF5D1F1A),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 Text(
-                  'Use code to get exciting offers',
+                  'Every dish is prepared fresh for you',
                   style: GoogleFonts.poppins(
                     color: muted,
-                    fontSize: 14,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
             ),
           ),
-          Text(
-            'Apply',
-            style: GoogleFonts.poppins(
-              color: const Color(0xFFE67C2D),
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(width: 3),
-          Icon(
-            Icons.chevron_right_rounded,
-            color: const Color(0xFFE67C2D),
+          const Icon(
+            Icons.verified_rounded,
+            color: Color(0xFFE67C2D),
             size: 20,
           ),
         ],
@@ -8084,6 +8127,7 @@ class _CartSummaryCard extends StatelessWidget {
             valueColor: const Color(0xFFE65100),
             labelWeight: FontWeight.w700,
             valueWeight: FontWeight.w800,
+            isTotal: true,
           ),
         ],
       ),
@@ -8099,6 +8143,7 @@ class _SummaryRow extends StatelessWidget {
     this.valueColor,
     this.labelWeight = FontWeight.w500,
     this.valueWeight = FontWeight.w600,
+    this.isTotal = false,
   });
 
   final String label;
@@ -8107,6 +8152,7 @@ class _SummaryRow extends StatelessWidget {
   final Color? valueColor;
   final FontWeight labelWeight;
   final FontWeight valueWeight;
+  final bool isTotal;
 
   @override
   Widget build(BuildContext context) {
@@ -8117,7 +8163,7 @@ class _SummaryRow extends StatelessWidget {
             label,
             style: GoogleFonts.poppins(
               color: color,
-              fontSize: 15,
+              fontSize: isTotal ? 16 : 14,
               fontWeight: labelWeight,
             ),
           ),
@@ -8126,9 +8172,195 @@ class _SummaryRow extends StatelessWidget {
           value,
           style: GoogleFonts.poppins(
             color: valueColor ?? color,
-            fontSize: 26,
-            height: 0.95,
+            fontSize: isTotal ? 22 : 14,
+            height: isTotal ? 1.0 : 1.2,
             fontWeight: valueWeight,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OrderSuccessDialog extends StatelessWidget {
+  const _OrderSuccessDialog({
+    required this.scheduleLine,
+    required this.deliveryLine,
+    required this.total,
+    required this.paymentLabel,
+  });
+
+  final String scheduleLine;
+  final String deliveryLine;
+  final int total;
+  final String paymentLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F5E9),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: const Color(0xFF2E7D32).withValues(alpha: 0.2),
+                  width: 2,
+                ),
+              ),
+              child: const Icon(
+                Icons.check_circle_rounded,
+                color: Color(0xFF2E7D32),
+                size: 36,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Order Placed!',
+              style: GoogleFonts.playfairDisplay(
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                color: cs.onSurface,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'We\'ll start preparing your food soon.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: cs.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: cs.outlineVariant),
+              ),
+              child: Column(
+                children: [
+                  _SuccessRow(
+                    icon: Icons.schedule_rounded,
+                    label: scheduleLine,
+                  ),
+                  const SizedBox(height: 8),
+                  _SuccessRow(
+                    icon: Icons.location_on_rounded,
+                    label: deliveryLine,
+                  ),
+                  const SizedBox(height: 8),
+                  _SuccessRow(
+                    icon: Icons.payments_outlined,
+                    label: paymentLabel,
+                    highlight: true,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFFEFE6), Color(0xFFFFF5ED)],
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'Total paid: ',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF5D1F1A),
+                    ),
+                  ),
+                  Text(
+                    '₹$total',
+                    style: GoogleFonts.poppins(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFFE65100),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: ChechiBrand.maroonDeep,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  'Track my order',
+                  style: GoogleFonts.poppins(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SuccessRow extends StatelessWidget {
+  const _SuccessRow({
+    required this.icon,
+    required this.label,
+    this.highlight = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool highlight;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          icon,
+          size: 16,
+          color: highlight ? const Color(0xFF2E7D32) : cs.onSurfaceVariant,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: highlight ? FontWeight.w600 : FontWeight.w500,
+              color: highlight ? const Color(0xFF2E7D32) : cs.onSurface,
+              height: 1.3,
+            ),
           ),
         ),
       ],
