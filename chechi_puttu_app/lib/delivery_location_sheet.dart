@@ -128,6 +128,7 @@ class _DeliveryLocationSheetState extends State<_DeliveryLocationSheet> {
     if (!mounted) return;
 
     final shop = await ShopLocationService.load();
+    if (!mounted) return;
     final picked = await openCustomerLocationPicker(
       context,
       initialLatitude: startLat ?? shop?.latitude,

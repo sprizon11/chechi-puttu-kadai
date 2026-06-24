@@ -62,11 +62,18 @@ class CashfreeCheckoutService {
     });
 
     final data = Map<String, dynamic>.from(res.data as Map);
+    final sessionId = data['sessionId'] as String? ?? '';
+    final paymentSessionId = data['paymentSessionId'] as String? ?? '';
+    final cfOrderId = data['cfOrderId'] as String? ?? '';
+    final orderId = data['orderId'] as String? ?? '';
+    if (sessionId.isEmpty || paymentSessionId.isEmpty || orderId.isEmpty) {
+      throw StateError('Invalid response from payment server — missing fields');
+    }
     return CashfreeCheckoutResult(
-      sessionId: data['sessionId']! as String,
-      paymentSessionId: data['paymentSessionId']! as String,
-      cfOrderId: data['cfOrderId']! as String,
-      orderId: data['orderId']! as String,
+      sessionId: sessionId,
+      paymentSessionId: paymentSessionId,
+      cfOrderId: cfOrderId,
+      orderId: orderId,
       mode: (data['mode'] as String?) ?? 'sandbox',
       amountRupees: (data['amountRupees'] as num?) ?? 0,
     );
@@ -81,7 +88,7 @@ class CashfreeCheckoutService {
   /// Waits until webhook marks session paid (returns `order_id`), or failure / timeout.
   Future<String?> waitUntilPaid(
     String sessionId, {
-    Duration timeout = const Duration(minutes: 6),
+    Duration timeout = const Duration(minutes: 2),
   }) async {
     final deadline = DateTime.now().add(timeout);
     final d0 = await _fetchSession(sessionId);

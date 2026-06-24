@@ -72,7 +72,7 @@ class ChechiPuttuApp extends StatefulWidget {
 }
 
 class _ChechiPuttuAppState extends State<ChechiPuttuApp> {
-  bool _isDark = false;
+  final bool _isDark = false;
 
   @override
   Widget build(BuildContext context) {
@@ -3021,9 +3021,7 @@ class _LoginScreenState extends State<LoginScreen>
     const loginGlassFill = _kAuthGlassFill;
     const loginGlassBorder = _kAuthGlassBorder;
     final screenHeight = MediaQuery.sizeOf(context).height;
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final compactLogin = screenHeight < 950;
-    final formTopOffset = compactLogin ? 0.0 : 10.0;
     final labelBrown = _AppColors.primary;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
@@ -8487,7 +8485,7 @@ class _OrdersTabState extends State<_OrdersTab> {
         '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
     final itemTotal = order.reorderLines.fold<int>(
       0,
-      (sum, line) => sum + line.price * line.qty,
+      (acc, line) => acc + line.price * line.qty,
     );
 
     await showModalBottomSheet<void>(

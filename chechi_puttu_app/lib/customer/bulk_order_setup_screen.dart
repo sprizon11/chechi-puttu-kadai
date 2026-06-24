@@ -232,7 +232,10 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
                         validator: (v) {
                           final d =
                               (v ?? '').replaceAll(RegExp(r'\D'), '');
-                          if (d.length < 10) return 'Enter valid 10-digit number';
+                          if (d.length != 10) return 'Enter valid 10-digit number';
+                          if (!RegExp(r'^[6-9]').hasMatch(d)) {
+                            return 'Enter a valid Indian mobile number';
+                          }
                           return null;
                         },
                       ),

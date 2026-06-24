@@ -76,7 +76,7 @@ class _AdminOrdersBodyState extends State<AdminOrdersBody> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Could not update order: $e',
+            'Could not update order status. Please check your connection and try again.',
             style: GoogleFonts.poppins(),
           ),
         ),

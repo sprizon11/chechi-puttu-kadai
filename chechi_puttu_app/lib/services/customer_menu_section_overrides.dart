@@ -23,8 +23,6 @@ class CustomerMenuSectionOverrides extends ChangeNotifier {
   static const _cloudSubcollection = 'section_snapshots';
   static const _cloudCustomCategoriesField = 'customCategoryIds';
 
-  static const _customPrefix = '__custom__';
-
   Map<String, AdminSectionEditSnapshot> _sectionMap = {};
   List<String> _customCategories = [];
   List<String> _sectionIds = [];

@@ -296,7 +296,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         readOnly: _phoneLocked,
                         validator: (v) {
                           final d = (v ?? '').replaceAll(RegExp(r'\D'), '');
-                          if (d.length < 10) return 'Enter 10-digit mobile';
+                          if (d.length != 10) return 'Enter 10-digit mobile';
+                          if (!RegExp(r'^[6-9]').hasMatch(d)) {
+                            return 'Enter a valid Indian mobile number';
+                          }
                           return null;
                         },
                       ),
@@ -310,7 +313,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         keyboard: TextInputType.emailAddress,
                         validator: (v) {
                           final e = v?.trim() ?? '';
-                          if (e.isEmpty || !e.contains('@')) {
+                          if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$')
+                              .hasMatch(e)) {
                             return 'Enter a valid email';
                           }
                           return null;

@@ -1612,7 +1612,6 @@ class _MenuItemCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final cardBg = cs.surface;
-    final borderCol = cs.outlineVariant;
     final titleCol = cs.onSurface;
     final mutedCol = cs.onSurfaceVariant;
     return Material(

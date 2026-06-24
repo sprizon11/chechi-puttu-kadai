@@ -198,6 +198,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               widget.navIndexNotifier.value = 2,
                           onCustomers: () =>
                               widget.navIndexNotifier.value = 3,
+                          onReports: () =>
+                              widget.navIndexNotifier.value = 4,
                           textColor: cs.onSurface,
                           borderColor: cs.outlineVariant,
                         ),
@@ -974,6 +976,7 @@ class _QuickActionsRow extends StatelessWidget {
     required this.onManageMenu,
     required this.onOrders,
     required this.onCustomers,
+    required this.onReports,
     required this.textColor,
     required this.borderColor,
   });
@@ -981,6 +984,7 @@ class _QuickActionsRow extends StatelessWidget {
   final VoidCallback onManageMenu;
   final VoidCallback onOrders;
   final VoidCallback onCustomers;
+  final VoidCallback onReports;
   final Color textColor;
   final Color borderColor;
 
@@ -1023,6 +1027,12 @@ class _QuickActionsRow extends StatelessWidget {
           iconColor: const Color(0xFFF9A825),
           textColor: textColor,
           borderColor: borderColor,
+          onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Offers feature coming soon!'),
+              duration: Duration(seconds: 2),
+            ),
+          ),
         ),
         _QuickAction(
           icon: Icons.bar_chart_rounded,
@@ -1031,6 +1041,7 @@ class _QuickActionsRow extends StatelessWidget {
           iconColor: const Color(0xFF7B1FA2),
           textColor: textColor,
           borderColor: borderColor,
+          onTap: onReports,
         ),
       ],
     );
