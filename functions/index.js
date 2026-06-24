@@ -306,7 +306,9 @@ function sanitizePhone(raw) {
   return /^[6-9]\d{9}$/.test(local) ? local : "9999999999";
 }
 
-exports.createCashfreeCheckout = onCall(async (request) => {
+exports.createCashfreeCheckout = onCall(
+    {secrets: ["CASHFREE_APP_ID", "CASHFREE_SECRET_KEY", "CASHFREE_ENV"]},
+    async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Sign in required");
   }
@@ -430,7 +432,9 @@ exports.createCashfreeCheckout = onCall(async (request) => {
   };
 });
 
-exports.cashfreeWebhook = onRequest(async (req, res) => {
+exports.cashfreeWebhook = onRequest(
+    {secrets: ["CASHFREE_APP_ID", "CASHFREE_SECRET_KEY", "CASHFREE_ENV"]},
+    async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).send("Method Not Allowed");
     return;
