@@ -2,6 +2,7 @@ const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {onRequest} = require("firebase-functions/v2/https");
 const {onDocumentCreated, onDocumentUpdated} = require("firebase-functions/v2/firestore");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
+const functionsV1 = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const {initializeFirestore} = require("firebase-admin/firestore");
 const Razorpay = require("razorpay");
@@ -855,7 +856,7 @@ exports.onOrderCreatedChatMessage = onDocumentCreated(
 });
 
 exports.onOrderStatusChangedChatMessage = onDocumentUpdated(
-    {document: "orders/{orderId}", database: FIRESTORE_DB},
+    {document: "orders/{orderId}", database: FIRESTORE_DB, region: "asia-south1"},
     async (event) => {
   const before = event.data?.before?.data();
   const after = event.data?.after?.data();
@@ -890,14 +891,19 @@ exports.onOrderStatusChangedChatMessage = onDocumentUpdated(
   }
 });
 
-exports.onSupportMessagePush = onDocumentCreated(
-    {
-      document: "support_inbox/{customerUid}/messages/{messageId}",
-      database: FIRESTORE_DB,
-    },
-    async (event) => {
-      const customerUid = String(event.params.customerUid || "").trim();
-      const msg = event.data?.data();
+// NOTE: onSupportMessagePush cannot be deployed as a Firestore trigger because
+// this project uses a named Firestore database ('default') in asia-south1.
+// Firebase v1 triggers require (default) database; v2 triggers hit an Eventarc
+// internal error for named databases in asia-south1. Chat messages still save
+// correctly — only push notifications for new chat messages are affected.
+// To fix: migrate support_inbox writes to the (default) database, or use an
+// HTTP callable triggered from the client after sending a message.
+exports.onSupportMessagePush = functionsV1
+    .region("asia-south1")
+    .firestore.document("support_inbox/{customerUid}/messages/{messageId}")
+    .onCreate(async (snap, context) => {
+      const customerUid = String(context.params.customerUid || "").trim();
+      const msg = snap.data();
       if (!customerUid || !msg) return;
 
       const sender = String(msg.sender || "").trim().toLowerCase();
@@ -943,8 +949,7 @@ exports.onSupportMessagePush = onDocumentCreated(
           customer_uid: customerUid,
         },
       });
-    },
-);
+    });
 
 const IST_TIMEZONE = "Asia/Kolkata";
 
