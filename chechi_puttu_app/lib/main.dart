@@ -5,8 +5,14 @@ import 'dart:ui' show ImageFilter;
 import 'package:chechi_puttu_app/admin/admin_auth.dart';
 import 'package:chechi_puttu_app/admin/admin_dashboard_screen.dart';
 import 'package:chechi_puttu_app/admin/admin_dish_models.dart';
+import 'package:chechi_puttu_app/customer/bulk_order_setup_screen.dart';
 import 'package:chechi_puttu_app/customer/customer_chat_screen.dart';
+import 'package:chechi_puttu_app/customer/edit_profile_screen.dart';
+import 'package:chechi_puttu_app/customer/order_type_selection_screen.dart';
+import 'package:chechi_puttu_app/models/customer_order_type.dart';
+import 'package:chechi_puttu_app/services/customer_order_type_service.dart';
 import 'package:chechi_puttu_app/delivery_location_sheet.dart';
+import 'package:chechi_puttu_app/services/advance_order_schedule.dart';
 import 'package:chechi_puttu_app/menu_catalog.dart';
 import 'package:chechi_puttu_app/firebase_options.dart';
 import 'package:chechi_puttu_app/services/auth_service.dart';
@@ -19,10 +25,11 @@ import 'package:chechi_puttu_app/services/birthday_chat_wish_service.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:chechi_puttu_app/theme/chechi_premium.dart';
 import 'package:chechi_puttu_app/widgets/birthday_home_banner.dart';
+import 'package:chechi_puttu_app/services/cashfree_checkout_service.dart';
 import 'package:chechi_puttu_app/services/notifications_service.dart';
 import 'package:chechi_puttu_app/services/orders_service.dart';
-import 'package:chechi_puttu_app/services/razorpay_checkout_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -30,8 +37,13 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cferrorresponse/cferrorresponse.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cfpayment/cfwebcheckoutpayment.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cfpaymentgateway/cfpaymentgatewayservice.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cfsession/cfsession.dart';
+import 'package:flutter_cashfree_pg_sdk/utils/cfenums.dart';
+import 'package:flutter_cashfree_pg_sdk/utils/cfexceptions.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -498,7 +510,7 @@ class _FirebaseInitErrorBody extends StatelessWidget {
               const SizedBox(height: 12),
               Text(
                 '1. In Firebase Console, add Android app package '
-                '`com.example.chechiputtuapp` and download `google-services.json` → '
+                '`com.chechiputtu.kadai` and download `google-services.json` → '
                 '`android/app/`\n'
                 '2. Run: dart pub global activate flutterfire_cli\n'
                 '   dart pub global run flutterfire_cli:flutterfire configure\n'
@@ -527,6 +539,7 @@ class _AuthGateHome extends StatefulWidget {
 
 class _AuthGateHomeState extends State<_AuthGateHome> {
   int _profileGateEpoch = 0;
+  int _orderTypeGateEpoch = 0;
   late final ValueNotifier<int> _homeNavIndexNotifier;
   late final ValueNotifier<int> _adminNavIndexNotifier;
   late final ValueNotifier<List<CartLineItem>> _cartLinesNotifier;
@@ -534,6 +547,9 @@ class _AuthGateHomeState extends State<_AuthGateHome> {
   String? _profileGateUid;
   bool? _needsProfileCompletion;
   Future<void>? _profileGateTask;
+  String? _orderTypeGateUid;
+  CustomerOrderTypeState? _orderTypeState;
+  Future<void>? _orderTypeGateTask;
 
   void _handlePushDeepLink(Map<String, String> data) {
     final type = (data['type'] ?? '').trim().toLowerCase();
@@ -557,6 +573,14 @@ class _AuthGateHomeState extends State<_AuthGateHome> {
     _notifications.init();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       MenuDeletedDishes.instance.reloadFromPrefs();
+      MenuDeletedDishes.instance.addListener(() {
+        CustomerMenuSectionOverrides.instance.rebuildFromDishOverrides();
+      });
+      authService.authStateChanges.listen((user) {
+        if (user != null) {
+          unawaited(userProfileService.syncPendingProfileIfAny(user));
+        }
+      });
     });
   }
 
@@ -575,6 +599,43 @@ class _AuthGateHomeState extends State<_AuthGateHome> {
       _needsProfileCompletion = false;
       _profileGateTask = null;
     });
+  }
+
+  void _onOrderTypeGateRefresh() {
+    setState(() {
+      _orderTypeGateEpoch++;
+      _orderTypeState = null;
+      _orderTypeGateTask = null;
+    });
+  }
+
+  Future<void> _onOrderTypeChosen(CustomerOrderType type) async {
+    final user = authService.currentUser;
+    if (user == null) return;
+    await customerOrderTypeService.saveOrderType(user: user, type: type);
+    if (!mounted || _orderTypeGateUid != user.uid) return;
+    final state = await customerOrderTypeService.loadState(user.uid);
+    if (!mounted || _orderTypeGateUid != user.uid) return;
+    setState(() => _orderTypeState = state);
+  }
+
+  void _ensureOrderTypeGateState(User user) {
+    if (_orderTypeGateUid == user.uid && _orderTypeState != null) return;
+    if (_orderTypeGateUid == user.uid && _orderTypeGateTask != null) return;
+
+    _orderTypeGateUid = user.uid;
+    _orderTypeState = null;
+    _orderTypeGateTask = customerOrderTypeService
+        .loadState(user.uid)
+        .then((state) {
+          if (!mounted || _orderTypeGateUid != user.uid) return;
+          setState(() => _orderTypeState = state);
+        })
+        .whenComplete(() {
+          if (mounted && _orderTypeGateUid == user.uid) {
+            _orderTypeGateTask = null;
+          }
+        });
   }
 
   void _ensureProfileGateState(User user) {
@@ -612,6 +673,9 @@ class _AuthGateHomeState extends State<_AuthGateHome> {
           _profileGateUid = null;
           _needsProfileCompletion = null;
           _profileGateTask = null;
+          _orderTypeGateUid = null;
+          _orderTypeState = null;
+          _orderTypeGateTask = null;
           return LoginScreen(
             isDark: widget.isDark,
             onToggleTheme: widget.onToggleTheme,
@@ -621,6 +685,33 @@ class _AuthGateHomeState extends State<_AuthGateHome> {
           return AdminDashboardScreen(
             onToggleTheme: widget.onToggleTheme,
             navIndexNotifier: _adminNavIndexNotifier,
+          );
+        }
+        _ensureOrderTypeGateState(user);
+        if (_orderTypeState == null) {
+          return const Scaffold(
+            backgroundColor: Colors.transparent,
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (_orderTypeState!.needsOrderTypeSelection) {
+          return OrderTypeSelectionScreen(
+            key: ValueKey<Object?>('ot_${user.uid}_$_orderTypeGateEpoch'),
+            onTypeChosen: _onOrderTypeChosen,
+          );
+        }
+        final bulkType = _orderTypeState!.orderType;
+        if (_orderTypeState!.needsBulkEnrollment && bulkType != null) {
+          return BulkOrderSetupScreen(
+            key: ValueKey<Object?>('bulk_${user.uid}_$_orderTypeGateEpoch'),
+            orderType: bulkType,
+            initial: _orderTypeState!.bulkEnrollment,
+            onCompleted: _onOrderTypeGateRefresh,
+            onChangeOrderType: () async {
+              await customerOrderTypeService.clearOrderTypeSelection(user.uid);
+              if (!mounted) return;
+              _onOrderTypeGateRefresh();
+            },
           );
         }
         _ensureProfileGateState(user);
@@ -651,10 +742,36 @@ class _AuthGateHomeState extends State<_AuthGateHome> {
 }
 
 String _readableAuthError(Object e) {
+  if (e is FirebaseException && e.plugin == 'cloud_firestore') {
+    switch (e.code) {
+      case 'unavailable':
+      case 'deadline-exceeded':
+        return 'Could not reach the server. Check mobile data or Wi‑Fi, '
+            'then tap FINISH again.';
+      case 'permission-denied':
+        return 'Profile could not be saved (permission denied). '
+            'Sign out and sign in again, or contact support.';
+      default:
+        final msg = e.message?.trim();
+        if (msg != null && msg.isNotEmpty) return msg;
+        return 'Could not save profile (${e.code}). Please try again.';
+    }
+  }
   if (e is FirebaseAuthException) {
     final code = e.code;
     final raw = e.message ?? '';
     final lower = raw.toLowerCase();
+    if (code == 'network-request-failed') {
+      return 'No internet connection. Check Wi‑Fi or mobile data and try again.';
+    }
+    if (code == 'invalid-app-credential' ||
+        code == 'missing-client-identifier' ||
+        lower.contains('play_integrity') ||
+        lower.contains('app check')) {
+      return 'Phone login is not configured for this build. '
+          'In Firebase, add your app SHA-1 (debug SHA for USB install, '
+          'Play signing SHA for Play Store). Then try again.';
+    }
     // Firebase phone abuse / rate limits (message text varies by SDK).
     if (code == 'too-many-requests' ||
         lower.contains('blocked all requests') ||
@@ -673,7 +790,8 @@ String _readableAuthError(Object e) {
 double _authScreenBottomGap(BuildContext context) {
   final sh = MediaQuery.sizeOf(context).height;
   final safe = MediaQuery.viewPaddingOf(context).bottom;
-  const footerOverlay = 188.0;
+  // Use a smaller footer overlap on compact screens to give the form more room.
+  final footerOverlay = sh < 950 ? 72.0 : 188.0;
   final minClear = footerOverlay + safe;
   final soft = (sh * 0.14 + safe + 14).clamp(100.0, 158.0);
   return soft >= minClear ? soft : minClear;
@@ -873,10 +991,15 @@ class _RoundThemeToggle extends StatelessWidget {
 Future<bool> _shouldPromptCompleteProfile(User user) async {
   final prefs = await SharedPreferences.getInstance();
   try {
-    final completeInFirestore = await userProfileService.isProfileComplete(user.uid);
+    final completeInFirestore = await userProfileService
+        .isProfileComplete(user.uid)
+        .timeout(const Duration(seconds: 12));
     if (completeInFirestore) return false;
     // If profile doc is missing in Firestore, always treat as a new user flow
     // even when older local prefs still exist on device.
+    return true;
+  } on TimeoutException {
+    if (prefs.getBool(_profileCompleteKey(user.uid)) == true) return false;
     return true;
   } catch (_) {
     // Offline/rules issue: fall back to device-only uid flag.
@@ -1172,7 +1295,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         _snack('Not signed in');
         return;
       }
-      await userProfileService.saveCustomerProfile(
+      final cloudSaved = await userProfileService.trySaveCustomerProfile(
         user: uFresh,
         displayName: name,
         contactEmail: contactEmail,
@@ -1198,7 +1321,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       await prefs.setString(_savedHomeKey(uid), home);
       await prefs.setString(_savedWorkKey(uid), office);
       await prefs.setString(_savedOtherKey(uid), other);
-      await prefs.setString(_deliveryLabelKey(uid), 'Home');
+      await prefs.setString(_deliveryLabelKey(uid), 'Delivery');
       await prefs.setString(_deliveryStreetKey(uid), home);
       await prefs.remove(_deliveryLatKey(uid));
       await prefs.remove(_deliveryLngKey(uid));
@@ -1213,7 +1336,15 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         await uFresh.updateDisplayName(name);
         await uFresh.reload();
       }
-      if (mounted) widget.onCompleted();
+      if (!mounted) return;
+      if (!cloudSaved) {
+        _snack(
+          'Saved on this phone. Server was busy — we will sync when online. '
+          'You can use the app now.',
+        );
+        unawaited(userProfileService.syncPendingProfileIfAny(uFresh));
+      }
+      widget.onCompleted();
     } catch (e) {
       if (mounted) _snack(_readableAuthError(e));
     } finally {
@@ -1291,6 +1422,57 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   }
 
   /// First signup step — matches “Create your account” marketing layout.
+  String _signupStepTitle(int step) {
+    switch (step) {
+      case 0:
+        return 'Name & phone';
+      case 1:
+        return 'Email';
+      case 2:
+        return 'Password';
+      default:
+        return 'Date of birth';
+    }
+  }
+
+  Widget _signupProgressStrip(Color active, Color inactive, Color labelColor) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 14, bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: List.generate(_kStepCount, (i) {
+              final on = i <= _step;
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: on ? active : inactive,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Step ${_step + 1} of $_kStepCount · ${_signupStepTitle(_step)}',
+            style: GoogleFonts.poppins(
+              color: labelColor,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _profileCreateSignupHeader(
     BuildContext context,
     Color orange,
@@ -1578,7 +1760,8 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                               titleMaroon,
                               bodyMuted,
                             ),
-                            const SizedBox(height: 8),
+                            _signupProgressStrip(btnBg, fieldBr, bodyMuted),
+                            const SizedBox(height: 4),
                           ],
                           if (widget.forProfileEdit)
                             Expanded(
@@ -2620,11 +2803,31 @@ class _LoginScreenState extends State<LoginScreen>
       _snack('Enter a valid 10-digit mobile number');
       return;
     }
+    if (_busy) return;
     setState(() => _busy = true);
+    _snack('Sending OTP…');
+    var finished = false;
+    void finish() {
+      if (finished) return;
+      finished = true;
+    }
+
+    final watchdog = Timer(const Duration(seconds: 75), () {
+      if (!mounted || finished) return;
+      finish();
+      setState(() => _busy = false);
+      _snack(
+        'OTP request timed out. Check internet, wait a minute, and try again. '
+        'If you installed via USB (flutter run), add debug SHA-1 in Firebase.',
+      );
+    });
+
     try {
       await authService.startPhoneVerification(
         phoneNumber: raw,
         onCodeSent: (id) {
+          finish();
+          watchdog.cancel();
           if (!mounted) return;
           setState(() {
             _verificationId = id;
@@ -2638,16 +2841,22 @@ class _LoginScreenState extends State<LoginScreen>
           });
         },
         onVerificationFailed: (e) {
+          finish();
+          watchdog.cancel();
           if (!mounted) return;
           setState(() => _busy = false);
           _snack(_readableAuthError(e));
         },
         onAutoSignedIn: (r) async {
+          finish();
+          watchdog.cancel();
           if (!mounted) return;
           setState(() => _busy = false);
         },
       );
     } catch (e) {
+      finish();
+      watchdog.cancel();
       if (mounted) {
         setState(() => _busy = false);
         _snack(_readableAuthError(e));
@@ -2758,16 +2967,33 @@ class _LoginScreenState extends State<LoginScreen>
               onPressed: () async {
                 final email = emailCtrl.text.trim();
                 final pass = passCtrl.text;
-                if (email.isEmpty || !email.contains('@')) return;
-                if (pass.length < 6) return;
+                if (email.isEmpty || !email.contains('@')) {
+                  ScaffoldMessenger.maybeOf(dialogContext)?.showSnackBar(
+                    const SnackBar(
+                      content: Text('Enter a valid email address'),
+                    ),
+                  );
+                  return;
+                }
+                if (pass.length < 6) {
+                  ScaffoldMessenger.maybeOf(dialogContext)?.showSnackBar(
+                    const SnackBar(
+                      content: Text('Password must be at least 6 characters'),
+                    ),
+                  );
+                  return;
+                }
                 Navigator.pop(dialogContext);
                 setState(() => _busy = true);
                 try {
-                  await authService.signInWithEmail(
-                    email: email,
-                    password: pass,
-                  );
+                  await authService
+                      .signInWithEmail(email: email, password: pass)
+                      .timeout(const Duration(seconds: 30));
                   if (!mounted) return;
+                } on TimeoutException {
+                  if (mounted) {
+                    _snack('Sign-in timed out. Check internet and try again.');
+                  }
                 } catch (e) {
                   if (mounted) _snack(_readableAuthError(e));
                 } finally {
@@ -2796,7 +3022,7 @@ class _LoginScreenState extends State<LoginScreen>
     const loginGlassBorder = _kAuthGlassBorder;
     final screenHeight = MediaQuery.sizeOf(context).height;
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
-    final compactLogin = screenHeight < 900;
+    final compactLogin = screenHeight < 950;
     final formTopOffset = compactLogin ? 0.0 : 10.0;
     final labelBrown = _AppColors.primary;
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -2830,17 +3056,20 @@ class _LoginScreenState extends State<LoginScreen>
                                 10,
                                 _authScreenBottomGap(context) + 12,
                               ),
-                              child: Column(
+                              child: SingleChildScrollView(
+                                physics: const ClampingScrollPhysics(),
+                                child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   SizedBox(
                                     height:
-                                        (screenHeight * (compactLogin ? 0.032 : 0.062))
+                                        (screenHeight * (compactLogin ? 0.09 : 0.062))
                                             .clamp(
-                                              compactLogin ? 10.0 : 28.0,
-                                              compactLogin ? 44.0 : 76.0,
+                                              compactLogin ? 40.0 : 28.0,
+                                              compactLogin ? 90.0 : 76.0,
                                             ) +
-                                        (compactLogin ? 6.0 : 12.0),
+                                        (compactLogin ? 2.0 : 12.0),
                                   ),
                                   Transform.scale(
                                     alignment: Alignment.centerLeft,
@@ -2852,27 +3081,21 @@ class _LoginScreenState extends State<LoginScreen>
                                             .clamp(142.0, 192.0);
                                         return SizedBox(
                                           width: brandW / scale,
-                                          child: const Padding(
+                                          child: Padding(
                                             padding: EdgeInsets.only(
-                                              top: 18,
+                                              top: compactLogin ? 6 : 18,
                                               right: 26,
                                             ),
-                                            child: _LoginLogoBlock(),
+                                            child: const _LoginLogoBlock(),
                                           ),
                                         );
                                       },
                                     ),
                                   ),
-                                  SizedBox(height: compactLogin ? 8 : 12),
-                                  Expanded(
-                                    child: Padding(
-                                      padding: EdgeInsets.only(
-                                        top: formTopOffset,
-                                        bottom: compactLogin ? 0 : 4,
-                                      ),
-                                      child: LayoutBuilder(
-                                        builder: (context, constraints) {
-                                          final formContent = SizedBox(
+                                  SizedBox(height: compactLogin ? 4 : 12),
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final formContent = SizedBox(
                                             width: constraints.maxWidth,
                                             child: Column(
                                                   crossAxisAlignment:
@@ -2912,7 +3135,7 @@ class _LoginScreenState extends State<LoginScreen>
                                                           ),
                                                     ),
                                                     SizedBox(
-                                                      height: compactLogin ? 8 : 10,
+                                                      height: compactLogin ? 6 : 10,
                                                     ),
                                                     Row(
                                                       children: [
@@ -3500,23 +3723,11 @@ class _LoginScreenState extends State<LoginScreen>
                                                   ],
                                                 ),
                                           );
-                                          return SingleChildScrollView(
-                                            keyboardDismissBehavior:
-                                                ScrollViewKeyboardDismissBehavior
-                                                    .onDrag,
-                                            padding: EdgeInsets.only(
-                                              bottom: keyboardInset + 16,
-                                            ),
-                                            child: Align(
-                                              alignment: Alignment.topCenter,
-                                              child: formContent,
-                                            ),
-                                          );
+                                          return formContent;
                                         },
-                                      ),
-                                    ),
                                   ),
                                 ],
+                                ),
                               ),
                             ),
                           ),
@@ -3566,14 +3777,16 @@ class _LoginLogoBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final sh = MediaQuery.sizeOf(context).height;
+    final compact = sh < 950;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 10),
+        SizedBox(height: compact ? 4 : 10),
         Text(
           'Chechi',
           style: GoogleFonts.pacifico(
-            fontSize: 46,
+            fontSize: compact ? 38 : 46,
             height: 1.0,
             color: _brandOrange,
             fontWeight: FontWeight.w400,
@@ -3584,15 +3797,20 @@ class _LoginLogoBlock extends StatelessWidget {
           child: Text(
             'Puttu Kadai',
             style: GoogleFonts.playfairDisplay(
-              fontSize: 26,
+              fontSize: compact ? 21 : 26,
               height: 1.08,
               color: _AppColors.primary,
               fontWeight: FontWeight.w700,
             ),
           ),
         ),
-        const SizedBox(height: 12),
-        const _LoginTaglineFlourish(),
+        if (!compact) ...[
+          const SizedBox(height: 12),
+          const _LoginTaglineFlourish(),
+        ] else ...[
+          const SizedBox(height: 4),
+          const _LoginTaglineFlourish(),
+        ],
       ],
     );
   }
@@ -3879,70 +4097,38 @@ class _HomeScreenState extends State<HomeScreen>
   late final List<GlobalKey> _menuSectionKeys;
   final GlobalKey<ScaffoldState> _homeScaffoldKey = GlobalKey<ScaffoldState>();
   final ValueNotifier<int> _ordersFilterNotifier = ValueNotifier<int>(0);
-  String _deliveryLabel = 'Add location';
   String _deliveryStreet = 'Choose delivery address';
   double? _deliveryLat;
   double? _deliveryLng;
-  String? _savedHomeStreet;
-  String? _savedWorkStreet;
-  String? _savedOtherStreet;
   Set<String> _favoriteDishKeys = <String>{};
   bool _forcingLocationPrompt = false;
   String? _activeSubscriptionPlan;
   Map<String, ({int startHour, int endHour})> _sectionSchedules = {};
 
-  bool get _hasSelectedDeliveryLocation =>
-      _deliveryStreet.trim().isNotEmpty &&
-      _deliveryStreet.trim().toLowerCase() != 'choose delivery address';
-
   bool get _hasExactDeliveryLocation =>
       _deliveryLat != null && _deliveryLng != null;
 
-  String get _deliveryLine => _hasSelectedDeliveryLocation
-      ? '$_deliveryLabel - $_deliveryStreet'
-      : _deliveryStreet;
+  String get _deliveryLine => _deliveryStreet;
 
   Future<void> _restoreDeliveryAddress() async {
     final p = await SharedPreferences.getInstance();
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
     final firstHomePopupDoneKey = 'chechi_first_home_location_popup_done_$uid';
-    final savedHome = p.getString(_savedHomeKey(uid));
-    final savedWork = p.getString(_savedWorkKey(uid));
-    final savedOther = p.getString(_savedOtherKey(uid));
     final persistedLat = p.getDouble(_deliveryLatKey(uid));
     final persistedLng = p.getDouble(_deliveryLngKey(uid));
     final persistedStreet = (p.getString(_deliveryStreetKey(uid)) ?? '').trim();
-    final persistedLabel = (p.getString(_deliveryLabelKey(uid)) ?? '').trim();
-    final hasPersisted = persistedStreet.isNotEmpty;
-    final fallbackStreet = (savedHome?.trim().isNotEmpty ?? false)
-        ? savedHome!.trim()
-        : (savedWork?.trim().isNotEmpty ?? false)
-        ? savedWork!.trim()
-        : (savedOther?.trim().isNotEmpty ?? false)
-        ? savedOther!.trim()
-        : 'Choose delivery address';
-    final fallbackLabel = (savedHome?.trim().isNotEmpty ?? false)
-        ? 'Home'
-        : (savedWork?.trim().isNotEmpty ?? false)
-        ? 'Work'
-        : (savedOther?.trim().isNotEmpty ?? false)
-        ? 'Other'
-        : 'Add location';
 
     if (!mounted) return;
     setState(() {
-      _deliveryLabel = hasPersisted ? persistedLabel : fallbackLabel;
-      _deliveryStreet = hasPersisted ? persistedStreet : fallbackStreet;
+      _deliveryStreet =
+          persistedStreet.isNotEmpty ? persistedStreet : 'Choose delivery address';
       _deliveryLat = persistedLat;
       _deliveryLng = persistedLng;
-      _savedHomeStreet = savedHome;
-      _savedWorkStreet = savedWork;
-      _savedOtherStreet = savedOther;
     });
 
-    if (!_hasExactDeliveryLocation) {
-      // Force a visible location popup on first Home open until exact
-      // coordinates are saved (lat/lng), as requested.
+    // Web cannot reliably capture exact GPS coordinates; skip the forced
+    // first-login map prompt there so the user is never stuck in a loop.
+    if (!kIsWeb && !_hasExactDeliveryLocation) {
       await _promptFirstLoginLocation();
       if (!mounted || !_hasExactDeliveryLocation) return;
       await p.setBool(firstHomePopupDoneKey, true);
@@ -3975,7 +4161,6 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _syncDeliveryLocationToProfile({
-    required String label,
     required String street,
     double? latitude,
     double? longitude,
@@ -3986,22 +4171,12 @@ class _HomeScreenState extends State<HomeScreen>
     if (cleanStreet.isEmpty || cleanStreet.toLowerCase() == 'choose delivery address') {
       return;
     }
-    String addressKey;
-    final cleanLabel = label.trim().toLowerCase();
-    if (cleanLabel == 'home') {
-      addressKey = 'home';
-    } else if (cleanLabel == 'work' || cleanLabel == 'office') {
-      addressKey = 'office';
-    } else {
-      addressKey = 'other';
-    }
     try {
       final lat = latitude;
       final lng = longitude;
-      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+      await chechiFirestore.collection('users').doc(uid).set({
         'uid': uid,
         'location': cleanStreet,
-        'addresses': {addressKey: cleanStreet},
         if (lat != null && lng != null) ...{
           'location_lat': lat,
           'location_lng': lng,
@@ -4028,25 +4203,13 @@ class _HomeScreenState extends State<HomeScreen>
       await p.remove(_deliveryLatKey(uid));
       await p.remove(_deliveryLngKey(uid));
     }
-    if (r.label == 'Home') {
-      await p.setString(_savedHomeKey(uid), r.street);
-    } else if (r.label == 'Work' || r.label == 'Office') {
-      await p.setString(_savedWorkKey(uid), r.street);
-    } else if (r.label == 'Other') {
-      await p.setString(_savedOtherKey(uid), r.street);
-    }
     if (!mounted) return;
     setState(() {
-      _deliveryLabel = r.label == 'Office' ? 'Office' : r.label;
       _deliveryStreet = r.street;
       _deliveryLat = r.latitude;
       _deliveryLng = r.longitude;
-      _savedHomeStreet = p.getString(_savedHomeKey(uid));
-      _savedWorkStreet = p.getString(_savedWorkKey(uid));
-      _savedOtherStreet = p.getString(_savedOtherKey(uid));
     });
     await _syncDeliveryLocationToProfile(
-      label: r.label,
       street: r.street,
       latitude: r.latitude,
       longitude: r.longitude,
@@ -4056,11 +4219,7 @@ class _HomeScreenState extends State<HomeScreen>
   Future<bool> _openDeliveryLocationSheet({bool required = false}) async {
     final r = await showDeliveryLocationSheet(
       context,
-      currentLabel: _deliveryLabel,
       currentStreet: _deliveryStreet,
-      savedHomeStreet: _savedHomeStreet,
-      savedWorkStreet: _savedWorkStreet,
-      savedOtherStreet: _savedOtherStreet,
       isDismissible: !required,
       enableDrag: !required,
     );
@@ -4070,16 +4229,6 @@ class _HomeScreenState extends State<HomeScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Please set your location to continue.'),
-          ),
-        );
-      }
-      return false;
-    }
-    if (required && (r.latitude == null || r.longitude == null)) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please use Current location or search result to save exact location.'),
           ),
         );
       }
@@ -4348,10 +4497,9 @@ class _HomeScreenState extends State<HomeScreen>
     if (!mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (ctx) => CompleteProfileScreen(
+        builder: (ctx) => EditProfileScreen(
           isDark: widget.isDark,
           onToggleTheme: widget.onToggleTheme,
-          forProfileEdit: true,
           onCompleted: () {
             Navigator.of(ctx).pop();
           },
@@ -4883,9 +5031,7 @@ class _HomeScreenState extends State<HomeScreen>
   Iterable<int> _iterVisibleMenuSectionIndices() sync* {
     final f = _homeSectionFilter;
     if (f == null) {
-      for (var i = 0; i < customerMenuSections.length; i++) {
-        yield i;
-      }
+      yield* customerVisibleMenuSectionIndices();
     } else {
       yield f.clamp(0, customerMenuSections.length - 1);
     }
@@ -4983,50 +5129,62 @@ class _HomeScreenState extends State<HomeScreen>
                       },
                     ),
                     Divider(height: 1, color: scheme.outlineVariant),
-                    for (var i = 0; i < customerMenuSections.length; i++) ...[
-                      ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 2,
-                        ),
-                        leading: Icon(
-                          Icons.category_outlined,
-                          color: _Theme.primary(ctx),
-                        ),
-                        title: Text(
-                          customerMenuSections[i].title,
-                          style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.w600,
-                            color: _Theme.text(ctx),
+                    ...() {
+                      final visibleSections =
+                          customerVisibleMenuSectionIndices();
+                      final tiles = <Widget>[];
+                      for (var vi = 0; vi < visibleSections.length; vi++) {
+                        if (vi > 0) {
+                          tiles.add(
+                            Divider(
+                              height: 1,
+                              indent: 56,
+                              color: scheme.outlineVariant,
+                            ),
+                          );
+                        }
+                        final i = visibleSections[vi];
+                        tiles.add(
+                          ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 2,
+                            ),
+                            leading: Icon(
+                              Icons.category_outlined,
+                              color: _Theme.primary(ctx),
+                            ),
+                            title: Text(
+                              customerMenuSections[i].title,
+                              style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.w600,
+                                color: _Theme.text(ctx),
+                              ),
+                            ),
+                            subtitle: Text(
+                              customerMenuSections[i].subtitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                color: _Theme.muted(ctx),
+                              ),
+                            ),
+                            trailing: _homeSectionFilter == i
+                                ? Icon(
+                                    Icons.check_rounded,
+                                    color: _Theme.primary(ctx),
+                                  )
+                                : null,
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              setState(() => _homeSectionFilter = i);
+                            },
                           ),
-                        ),
-                        subtitle: Text(
-                          customerMenuSections[i].subtitle,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            color: _Theme.muted(ctx),
-                          ),
-                        ),
-                        trailing: _homeSectionFilter == i
-                            ? Icon(
-                                Icons.check_rounded,
-                                color: _Theme.primary(ctx),
-                              )
-                            : null,
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          setState(() => _homeSectionFilter = i);
-                        },
-                      ),
-                      if (i < customerMenuSections.length - 1)
-                        Divider(
-                          height: 1,
-                          indent: 56,
-                          color: scheme.outlineVariant,
-                        ),
-                    ],
+                        );
+                      }
+                      return tiles;
+                    }(),
                     const SizedBox(height: 10),
                   ],
                 ),
@@ -5119,18 +5277,22 @@ class _HomeScreenState extends State<HomeScreen>
         ),
         const SizedBox(height: 8),
         ListenableBuilder(
-          listenable: CustomerMenuSectionOverrides.instance,
+          listenable: Listenable.merge([
+            CustomerMenuSectionOverrides.instance,
+            MenuDeletedDishes.instance,
+          ]),
           builder: (context, _) {
-            final catalogCount = kCustomerMenuSections.length;
+            final visible = customerVisibleMenuSectionIndices();
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: SizedBox(
                 height: 78,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
-                  itemCount: catalogCount,
+                  itemCount: visible.length,
                   separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, i) {
+                  itemBuilder: (context, chipIdx) {
+                    final i = visible[chipIdx];
                     final label = customerMenuSections[i].title;
                     final chipLabel = label.length > 14
                         ? '${label.substring(0, 12).trim()}…'
@@ -6378,41 +6540,16 @@ class _ProfileUserCard extends StatelessWidget {
               ],
             ),
           ),
-          Flexible(
-            child: Align(
-              alignment: Alignment.topRight,
-              child: OutlinedButton.icon(
-                onPressed: onEditProfile,
-                icon: Icon(
-                  Icons.edit_outlined,
-                  size: 16,
-                  color: _ProfilePalette.titleOf(context),
-                ),
-                label: Text(
-                  'Edit Profile',
-                  style: GoogleFonts.poppins(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: _ProfilePalette.titleOf(context),
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _ProfilePalette.titleOf(context),
-                  side: BorderSide(
-                    color: _ProfilePalette.titleOf(context),
-                    width: 1,
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 8,
-                  ),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
+          IconButton(
+            onPressed: onEditProfile,
+            tooltip: 'Edit profile',
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            icon: Icon(
+              Icons.edit_outlined,
+              size: 20,
+              color: _ProfilePalette.titleOf(context),
             ),
           ),
         ],
@@ -6835,8 +6972,6 @@ int _orderTimelineStepFromRaw(String raw) {
   }
 }
 
-enum _CheckoutDeliveryMode { deliverNow, schedule }
-
 enum _CheckoutPaymentMode { cashOnDelivery, onlinePayment }
 
 class _CartTab extends StatefulWidget {
@@ -6864,20 +6999,30 @@ class _CartTab extends StatefulWidget {
 
 class _CartTabState extends State<_CartTab> {
   late final OrdersService _orders;
-  late final RazorpayCheckoutService _rzCheckout;
-  Razorpay? _razorpay;
+  late final CashfreeCheckoutService _cfCheckout;
+  final CFPaymentGatewayService _cashfree = CFPaymentGatewayService();
+  Completer<bool>? _cfPayDone;
 
   @override
   void initState() {
     super.initState();
     _orders = OrdersService();
-    _rzCheckout = RazorpayCheckoutService();
+    _cfCheckout = CashfreeCheckoutService();
+    _cashfree.setCallback(_onCashfreeVerify, _onCashfreeError);
   }
 
-  @override
-  void dispose() {
-    _razorpay?.clear();
-    super.dispose();
+  // Cashfree SDK fires these once the in-app checkout finishes. The webhook is
+  // still the source of truth — we only use these to know the sheet closed.
+  void _onCashfreeVerify(String orderId) {
+    if (_cfPayDone != null && !_cfPayDone!.isCompleted) {
+      _cfPayDone!.complete(true);
+    }
+  }
+
+  void _onCashfreeError(CFErrorResponse error, String orderId) {
+    if (_cfPayDone != null && !_cfPayDone!.isCompleted) {
+      _cfPayDone!.complete(false);
+    }
   }
 
   int _deliveryFeeFor(List<CartLineItem> items) => items.isEmpty ? 0 : 30;
@@ -6890,90 +7035,7 @@ class _CartTabState extends State<_CartTab> {
   int _qtySum(List<CartLineItem> items) =>
       items.fold<int>(0, (s, e) => s + e.qty);
 
-  static const List<({int startHour, int endHour, String label})>
-      _deliverySlots = [
-    (startHour: 8, endHour: 10, label: '08:00 AM - 10:00 AM'),
-    (startHour: 10, endHour: 12, label: '10:00 AM - 12:00 PM'),
-    (startHour: 12, endHour: 14, label: '12:00 PM - 02:00 PM'),
-    (startHour: 14, endHour: 16, label: '02:00 PM - 04:00 PM'),
-    (startHour: 16, endHour: 18, label: '04:00 PM - 06:00 PM'),
-    (startHour: 18, endHour: 21, label: '06:00 PM - 09:00 PM'),
-  ];
-
-  Future<({DateTime when, String slotLabel})?> _pickScheduledSlot(
-    BuildContext context,
-  ) async {
-    final now = DateTime.now();
-    final date = await showDatePicker(
-      context: context,
-      initialDate: now,
-      firstDate: DateTime(now.year, now.month, now.day),
-      lastDate: now.add(const Duration(days: 30)),
-    );
-    if (!context.mounted || date == null) return null;
-
-    final slots = _deliverySlots.where((s) {
-      final start = DateTime(date.year, date.month, date.day, s.startHour);
-      return start.isAfter(now.add(const Duration(minutes: 20)));
-    }).toList();
-
-    if (slots.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'No slots left for this date. Please pick another date.',
-              style: GoogleFonts.poppins(),
-            ),
-          ),
-        );
-      }
-      return null;
-    }
-
-    final chosen = await showModalBottomSheet<({int startHour, int endHour, String label})>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Pick delivery slot',
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 10),
-              for (final s in slots) ...[
-                ListTile(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: Theme.of(ctx).colorScheme.outlineVariant),
-                  ),
-                  title: Text(
-                    s.label,
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                  ),
-                  onTap: () => Navigator.pop(ctx, s),
-                ),
-                const SizedBox(height: 8),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-    if (!context.mounted || chosen == null) return null;
-    final when = DateTime(date.year, date.month, date.day, chosen.startHour);
-    return (when: when, slotLabel: chosen.label);
-  }
-
-  String _razorpayCheckoutMessage(Object e) {
+  String _checkoutErrorMessage(Object e) {
     if (e is FirebaseFunctionsException) {
       return e.message ?? e.code;
     }
@@ -6999,12 +7061,8 @@ class _CartTabState extends State<_CartTab> {
 
     final p = await SharedPreferences.getInstance();
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
-    final label = (p.getString(_deliveryLabelKey(uid)) ?? '').trim();
     final street = (p.getString(_deliveryStreetKey(uid)) ?? '').trim();
-    final latest = street.isEmpty
-        ? ''
-        : (label.isEmpty ? street : '$label - $street');
-    if (_hasValidDeliveryLine(latest)) return latest;
+    if (_hasValidDeliveryLine(street)) return street;
     if (!context.mounted) return null;
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -7018,14 +7076,15 @@ class _CartTabState extends State<_CartTab> {
     return null;
   }
 
-  /// Razorpay UI → wait for server webhook before treating order as placed.
-  Future<void> _runOnlineRazorpayCheckout({
+  /// Cashfree in-app checkout → wait for server webhook before placing order.
+  Future<void> _runOnlineCashfreeCheckout({
     required BuildContext context,
     required ScaffoldMessengerState messenger,
     required List<CartLineItem> lines,
     required int total,
     required String deliveryLine,
     required String? scheduleLine,
+    required DateTime? scheduledAt,
   }) async {
     if (kIsWeb) {
       messenger.showSnackBar(
@@ -7048,18 +7107,19 @@ class _CartTabState extends State<_CartTab> {
         },
     ];
 
-    late final RazorpayCheckoutResult start;
+    late final CashfreeCheckoutResult start;
     try {
-      start = await _rzCheckout.createCheckout(
+      start = await _cfCheckout.createCheckout(
         items: items,
         deliveryLine: deliveryLine,
         scheduleLine: scheduleLine,
+        scheduledAt: scheduledAt,
       );
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            _razorpayCheckoutMessage(e),
+            _checkoutErrorMessage(e),
             style: GoogleFonts.poppins(),
           ),
         ),
@@ -7070,32 +7130,38 @@ class _CartTabState extends State<_CartTab> {
     if (!context.mounted) return;
 
     final payDone = Completer<bool>();
-    _razorpay?.clear();
-    _razorpay = Razorpay();
-    _razorpay!.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse r) {
-      if (!payDone.isCompleted) payDone.complete(true);
-    });
-    _razorpay!.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse r) {
-      if (!payDone.isCompleted) {
-        payDone.complete(false);
-      }
-    });
-    _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, (_) {});
-
-    _razorpay!.open(<String, dynamic>{
-      'key': start.keyId,
-      'amount': start.amountPaise,
-      'currency': 'INR',
-      'name': 'Chechi Puttu Kadai',
-      'description': 'Food order',
-      'order_id': start.razorpayOrderId,
-      'retry': <String, dynamic>{'enabled': true, 'max_count': 1},
-    });
+    _cfPayDone = payDone;
+    try {
+      final session = CFSessionBuilder()
+          .setEnvironment(
+            start.isProduction
+                ? CFEnvironment.PRODUCTION
+                : CFEnvironment.SANDBOX,
+          )
+          .setOrderId(start.orderId)
+          .setPaymentSessionId(start.paymentSessionId)
+          .build();
+      final payment =
+          CFWebCheckoutPaymentBuilder().setSession(session).build();
+      _cashfree.doPayment(payment);
+    } on CFException catch (e) {
+      _cfPayDone = null;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not open payment: ${e.message}',
+            style: GoogleFonts.poppins(),
+          ),
+        ),
+      );
+      return;
+    }
 
     var sdkOk = false;
     try {
       sdkOk = await payDone.future.timeout(const Duration(minutes: 12));
     } on TimeoutException {
+      _cfPayDone = null;
       messenger.showSnackBar(
         SnackBar(
           content: Text(
@@ -7104,13 +7170,12 @@ class _CartTabState extends State<_CartTab> {
           ),
         ),
       );
-      _razorpay?.clear();
       return;
     } catch (_) {
-      _razorpay?.clear();
+      _cfPayDone = null;
       return;
     }
-    _razorpay?.clear();
+    _cfPayDone = null;
 
     if (!sdkOk) {
       messenger.showSnackBar(
@@ -7154,7 +7219,7 @@ class _CartTabState extends State<_CartTab> {
 
     String? orderId;
     try {
-      orderId = await _rzCheckout.waitUntilPaid(start.sessionId);
+      orderId = await _cfCheckout.waitUntilPaid(start.sessionId);
     } finally {
       if (context.mounted) {
         Navigator.of(context, rootNavigator: true).pop();
@@ -7173,8 +7238,8 @@ class _CartTabState extends State<_CartTab> {
           content: Text(
             <String?>[
               scheduleLine,
-              'Delivering to: $deliveryLine',
-              'Paid online (Razorpay).',
+              'Address: $deliveryLine',
+              'Paid online (Cashfree).',
               'Order ref: $orderId',
               'Total: ₹$total',
             ].whereType<String>().join('\n\n'),
@@ -7198,7 +7263,7 @@ class _CartTabState extends State<_CartTab> {
         SnackBar(
           content: Text(
             'We could not confirm payment yet. If money was debited, wait a few '
-            'minutes or contact support with your Razorpay receipt. No kitchen '
+            'minutes or contact support with your Cashfree receipt. No kitchen '
             'order is placed until confirmation.',
             style: GoogleFonts.poppins(),
           ),
@@ -7214,82 +7279,8 @@ class _CartTabState extends State<_CartTab> {
     final deliveryLine = await _ensureDeliveryLineForCheckout(context);
     if (!context.mounted || deliveryLine == null) return;
 
-    final mode = await showModalBottomSheet<_CheckoutDeliveryMode>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) {
-        final bottom = MediaQuery.paddingOf(ctx).bottom;
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(20, 8, 20, 16 + bottom),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'How would you like your order?',
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                ListTile(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: Theme.of(ctx).colorScheme.outlineVariant,
-                    ),
-                  ),
-                  leading: const Icon(Icons.flash_on_rounded),
-                  title: Text(
-                    'Current delivery',
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
-                  ),
-                  subtitle: Text(
-                    'As soon as possible from the kitchen.',
-                    style: GoogleFonts.poppins(fontSize: 12),
-                  ),
-                  onTap: () =>
-                      Navigator.pop(ctx, _CheckoutDeliveryMode.deliverNow),
-                ),
-                const SizedBox(height: 10),
-                ListTile(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: Theme.of(ctx).colorScheme.outlineVariant,
-                    ),
-                  ),
-                  leading: const Icon(Icons.calendar_month_rounded),
-                  title: Text(
-                    'Schedule delivery',
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
-                  ),
-                  subtitle: Text(
-                    'Choose date, time, then confirm delivery location.',
-                    style: GoogleFonts.poppins(fontSize: 12),
-                  ),
-                  onTap: () =>
-                      Navigator.pop(ctx, _CheckoutDeliveryMode.schedule),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    if (!context.mounted || mode == null) return;
-
-    DateTime? scheduledAt;
-    String? scheduledSlotLabel;
-    if (mode == _CheckoutDeliveryMode.schedule) {
-      final picked = await _pickScheduledSlot(context);
-      if (!context.mounted || picked == null) return;
-      scheduledAt = picked.when;
-      scheduledSlotLabel = picked.slotLabel;
-    }
+    final booking = await AdvanceOrderSchedule.pickMealBooking(context);
+    if (!context.mounted || booking == null) return;
 
     final pay = await showModalBottomSheet<_CheckoutPaymentMode>(
       context: context,
@@ -7350,24 +7341,21 @@ class _CartTabState extends State<_CartTab> {
     );
     if (!context.mounted || pay == null) return;
 
-    String? scheduleLine;
-    if (scheduledAt != null) {
-      scheduleLine =
-          'Scheduled: ${scheduledAt.day}/${scheduledAt.month}/${scheduledAt.year} '
-          '${scheduledSlotLabel ?? TimeOfDay.fromDateTime(scheduledAt).format(context)}';
-    }
+    final scheduleLine = booking.displayLine;
+    final scheduledAt = booking.when;
 
     final total =
         _lineSum(lines) + _deliveryFeeFor(lines) + _packagingFeeFor(lines);
 
     if (pay == _CheckoutPaymentMode.onlinePayment) {
-      await _runOnlineRazorpayCheckout(
+      await _runOnlineCashfreeCheckout(
         context: context,
         messenger: messenger,
         lines: lines,
         total: total,
         deliveryLine: deliveryLine,
         scheduleLine: scheduleLine,
+        scheduledAt: scheduledAt,
       );
       return;
     }
@@ -7388,9 +7376,21 @@ class _CartTabState extends State<_CartTab> {
         deliveryLine: deliveryLine,
         paymentMode: 'cash_on_delivery',
         scheduleLine: scheduleLine,
+        scheduledAt: scheduledAt,
       );
-    } catch (_) {
-      // Order write failure should not block demo checkout UX.
+    } catch (e) {
+      // Booking failed to save — tell the customer and keep the cart so they
+      // can retry. Never show a fake "Order placed" confirmation.
+      if (!context.mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not place your order. Please check your internet and try again.',
+            style: GoogleFonts.poppins(),
+          ),
+        ),
+      );
+      return;
     }
 
     if (!context.mounted) return;
@@ -7403,9 +7403,9 @@ class _CartTabState extends State<_CartTab> {
         ),
         content: Text(
           <String>[
-            ?scheduleLine,
-            'Delivering to: $deliveryLine',
-            'Pay cash to the rider when your food arrives.',
+            scheduleLine,
+            'Address: $deliveryLine',
+            'Pay cash when your order is delivered.',
             'Total: ₹$total',
           ].join('\n\n'),
           style: GoogleFonts.poppins(height: 1.35),
@@ -7490,14 +7490,47 @@ class _CartTabState extends State<_CartTab> {
               Text(
                 lines.isEmpty
                     ? 'Add dishes from Home to see them here'
-                    : 'Review your items and place your order',
+                    : AdvanceOrderSchedule.policySummary(),
                 style: GoogleFonts.poppins(
                   color: muted,
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFFCC80)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.calendar_month_rounded,
+                      size: 20,
+                      color: Color(0xFFE65100),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Pre-book only — no same-day orders. '
+                        'Example: order at 9 PM today → tomorrow dinner.',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF5D4037),
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
               _CartDeliveryCard(
                 border: border,
                 fill: cardFill,
@@ -7645,7 +7678,7 @@ class _CartTabState extends State<_CartTab> {
                   ),
                   onPressed: lines.isEmpty ? null : () => _runCheckout(context),
                   child: Text(
-                    'Proceed to Checkout  →',
+                    'Book order  →',
                     style: GoogleFonts.poppins(
                       color: Colors.white,
                       fontSize: 18,
@@ -7705,7 +7738,7 @@ class _CartDeliveryCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Delivering to',
+                      'Delivery address',
                       style: GoogleFonts.poppins(
                         color: muted,
                         fontSize: 14,
@@ -8250,7 +8283,7 @@ class _OrdersTabState extends State<_OrdersTab> {
     widget.ordersFilterNotifier.addListener(_syncFilterFromNotifier);
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      _ordersStream = FirebaseFirestore.instance
+      _ordersStream = chechiFirestore
           .collection('orders')
           .where('uid', isEqualTo: uid)
           .limit(120)
@@ -8429,7 +8462,7 @@ class _OrdersTabState extends State<_OrdersTab> {
     );
     if (result == null || !mounted) return;
 
-    await FirebaseFirestore.instance.collection('order_reviews').add({
+    await chechiFirestore.collection('order_reviews').add({
       'uid': user.uid,
       'order_id': order.sourceId,
       'rating': result.rating,
@@ -8822,7 +8855,7 @@ class _OrdersTabState extends State<_OrdersTab> {
                         children: const [SizedBox(height: 120)],
                       );
                     }
-                    final stream = _ordersStream ??= FirebaseFirestore.instance
+                    final stream = _ordersStream ??= chechiFirestore
                         .collection('orders')
                         .where('uid', isEqualTo: user.uid)
                         .limit(120)
@@ -9658,9 +9691,21 @@ class _CategoriesTab extends StatelessWidget {
               child: AppPullToRefresh(
                 onRefresh: onRefresh,
                 child: ListenableBuilder(
-                  listenable: CustomerMenuSectionOverrides.instance,
+                  listenable: Listenable.merge([
+                    CustomerMenuSectionOverrides.instance,
+                    MenuDeletedDishes.instance,
+                  ]),
                   builder: (context, _) {
-                    final sections = customerMenuSections;
+                    final sections = customerMenuSections
+                        .asMap()
+                        .entries
+                        .where((e) {
+                          final id = customerMenuSectionIdAt(e.key);
+                          return MenuDeletedDishes.instance
+                              .sectionHasVisibleDishes(e.value, id);
+                        })
+                        .map((e) => (index: e.key, section: e.value))
+                        .toList();
                     return Column(
                     children: [
                       Padding(
@@ -9706,7 +9751,7 @@ class _CategoriesTab extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Expanded(
-                      child: sections.isEmpty
+                      child: sections.isEmpty // no visible categories
                           ? ListView(
                               physics: AppPullToRefresh.scrollPhysics,
                               children: [
@@ -9739,18 +9784,17 @@ class _CategoriesTab extends StatelessWidget {
                               itemCount: sections.length,
                               separatorBuilder: (context, index) =>
                                   const SizedBox(height: 14),
-                              itemBuilder: (context, i) {
-                                final sec = sections[i];
+                              itemBuilder: (context, listIdx) {
+                                final entry = sections[listIdx];
+                                final i = entry.index;
+                                final sec = entry.section;
                                 final sectionId = customerMenuSectionIdAt(i);
                                 final coverB64 = CustomerMenuSectionOverrides
                                     .instance
                                     .sectionOverrideFor(sectionId)
                                     ?.imageBase64;
                                 final fallbackAsset =
-                                    i < kCustomerMenuSectionDefaultImageAssets
-                                        .length
-                                    ? kCustomerMenuSectionDefaultImageAssets[i]
-                                    : null;
+                                    menuSectionFallbackAsset(sectionId);
                                 return SizedBox(
                                   height: 100,
                                   child: _CategoryGridCard(
@@ -10105,7 +10149,7 @@ class _TopLocationRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Deliver to',
+                    'Delivery address',
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: _Theme.muted(context),
                       fontWeight: FontWeight.w600,

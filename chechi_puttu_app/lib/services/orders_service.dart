@@ -1,9 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class OrdersService {
   OrdersService({FirebaseFirestore? firestore, FirebaseAuth? auth})
-      : _db = firestore ?? FirebaseFirestore.instance,
+      : _db = firestore ?? chechiFirestore,
         _auth = auth ?? FirebaseAuth.instance;
 
   final FirebaseFirestore _db;
@@ -14,7 +15,8 @@ class OrdersService {
     required int totalRupees,
     required String deliveryLine,
     required String paymentMode,
-    String? scheduleLine,
+    required String scheduleLine,
+    DateTime? scheduledAt,
   }) async {
     final user = _auth.currentUser;
     if (user == null) {
@@ -49,6 +51,8 @@ class OrdersService {
       'delivery_line': deliveryLine,
       'payment_mode': paymentMode,
       'schedule_line': scheduleLine,
+      if (scheduledAt != null)
+        'scheduled_at': Timestamp.fromDate(scheduledAt),
       'items': items,
       'created_at': FieldValue.serverTimestamp(),
     });

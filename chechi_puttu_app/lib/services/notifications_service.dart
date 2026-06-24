@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart'
@@ -15,7 +16,7 @@ class NotificationsService {
     FirebaseMessaging? messaging,
     FlutterLocalNotificationsPlugin? local,
     this.onDeepLink,
-  })  : _db = firestore ?? FirebaseFirestore.instance,
+  })  : _db = firestore ?? chechiFirestore,
         _auth = auth ?? FirebaseAuth.instance,
         _messaging = messaging ?? FirebaseMessaging.instance,
         _local = local ?? FlutterLocalNotificationsPlugin();

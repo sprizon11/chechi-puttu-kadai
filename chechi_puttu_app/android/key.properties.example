@@ -1,0 +1,4 @@
+storePassword=chechiputtukadai
+keyPassword=chechiputtukadai
+keyAlias=chechi
+storeFile=chechi-upload-keystore.jks

@@ -1,7 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:chechi_puttu_app/services/app_map_tiles.dart';
+import 'package:chechi_puttu_app/services/shop_location_service.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
@@ -37,6 +41,8 @@ class _CustomerLocationPickerScreenState
     extends State<CustomerLocationPickerScreen> {
   static const _maroon = Color(0xFF7C1D1B);
   static const _defaultCenter = LatLng(11.1271, 78.6569);
+  static const _nominatimUa =
+      'ChechiPuttuKadai/1.0 (location picker; +https://github.com)';
 
   final _mapController = MapController();
   StreamSubscription<MapEvent>? _mapSub;
@@ -61,8 +67,7 @@ class _CustomerLocationPickerScreenState
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _mapController.move(_pinCenter, 16);
-      _reverseGeocode(_pinCenter);
+      unawaited(_initMapCenter());
     });
   }
 
@@ -73,6 +78,22 @@ class _CustomerLocationPickerScreenState
       return LatLng(lat, lng);
     }
     return _defaultCenter;
+  }
+
+  Future<void> _initMapCenter() async {
+    var center = _pinCenter;
+    if (widget.initialLatitude == null && widget.initialLongitude == null) {
+      final shop = await ShopLocationService.load();
+      if (shop != null) {
+        center = LatLng(shop.latitude, shop.longitude);
+        if (mounted) {
+          setState(() => _pinCenter = center);
+        }
+      }
+    }
+    if (!mounted) return;
+    _mapController.move(center, AppMapTiles.defaultZoom);
+    _reverseGeocode(center);
   }
 
   @override
@@ -91,9 +112,58 @@ class _CustomerLocationPickerScreenState
     });
   }
 
+  Future<String?> _reverseGeocodeNominatim(LatLng point) async {
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+        'lat': point.latitude.toString(),
+        'lon': point.longitude.toString(),
+        'format': 'jsonv2',
+        'addressdetails': '1',
+        'zoom': '18',
+      });
+      final res = await http
+          .get(uri, headers: {'User-Agent': _nominatimUa})
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final addr = data['address'] as Map<String, dynamic>?;
+      if (addr == null) {
+        final name = (data['display_name'] as String?)?.trim();
+        return name?.isEmpty ?? true ? null : name;
+      }
+      final parts = <String>[];
+      void add(dynamic v) {
+        if (v is! String) return;
+        final t = v.trim();
+        if (t.isEmpty) return;
+        if (RegExp(r'^[0-9A-Z]{4}\+[0-9A-Z]{2,}$').hasMatch(t)) return;
+        parts.add(t);
+      }
+
+      add(addr['house_number']);
+      add(addr['road'] ?? addr['pedestrian'] ?? addr['residential']);
+      add(addr['neighbourhood'] ?? addr['suburb'] ?? addr['quarter']);
+      add(addr['village'] ?? addr['town'] ?? addr['city']);
+      add(addr['postcode']);
+      add(addr['state']);
+      if (parts.isNotEmpty) return parts.join(', ');
+      final display = (data['display_name'] as String?)?.trim();
+      return display?.isEmpty ?? true ? null : display;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _reverseGeocode(LatLng point) async {
     setState(() => _geocoding = true);
     try {
+      final nominatim = await _reverseGeocodeNominatim(point);
+      if (!mounted) return;
+      if (nominatim != null && nominatim.trim().isNotEmpty) {
+        setState(() => _addressLine = nominatim.trim());
+        return;
+      }
+
       final marks = await placemarkFromCoordinates(
         point.latitude,
         point.longitude,
@@ -112,11 +182,12 @@ class _CustomerLocationPickerScreenState
         if (s == null) return;
         final t = s.trim();
         if (t.isEmpty) return;
+        if (RegExp(r'^[0-9A-Z]{4}\+[0-9A-Z]{2,}$').hasMatch(t)) return;
         parts.add(t);
       }
 
-      add(p.street);
       add(p.subThoroughfare);
+      add(p.street);
       add(p.subLocality);
       add(p.locality);
       add(p.postalCode);
@@ -172,7 +243,7 @@ class _CustomerLocationPickerScreenState
         return;
       }
       final here = LatLng(pos.latitude, pos.longitude);
-      _mapController.move(here, 17);
+      _mapController.move(here, AppMapTiles.defaultZoom);
       _onMapCenterChanged(here);
     } finally {
       if (mounted) setState(() => _locating = false);
@@ -210,16 +281,13 @@ class _CustomerLocationPickerScreenState
             mapController: _mapController,
             options: MapOptions(
               initialCenter: _pinCenter,
-              initialZoom: 16,
-              interactionOptions: const InteractionOptions(
-                flags: InteractiveFlag.all,
-              ),
+              initialZoom: AppMapTiles.defaultZoom,
+              minZoom: 3,
+              maxZoom: AppMapTiles.maxZoom,
+              interactionOptions: AppMapTiles.interactions,
             ),
             children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.chechiputtuapp',
-              ),
+              ...AppMapTiles.labeledStreetLayers(),
             ],
           ),
           IgnorePointer(

@@ -142,12 +142,15 @@ int menuCatalogParseRupees(String displayPrice) {
   return int.tryParse(digits) ?? 0;
 }
 
-/// Flattened rows excluding dishes whose keys appear in [deletedKeys].
+/// Flattened rows excluding dishes whose keys appear in [deletedKeys]
+/// or whose section is in [deletedSectionIds].
 List<({String sectionTitle, MenuCatalogDish dish})> menuCatalogAllDishesHidingDeleted(
-  Set<String> deletedKeys,
-) {
+  Set<String> deletedKeys, {
+  Set<String> deletedSectionIds = const {},
+}) {
   final out = <({String sectionTitle, MenuCatalogDish dish})>[];
   for (final s in kCustomerMenuSections) {
+    if (deletedSectionIds.contains(s.title)) continue;
     for (final d in s.dishes) {
       if (!deletedKeys.contains(catalogDishStorageKey(s.title, d.title))) {
         out.add((sectionTitle: s.title, dish: d));

@@ -1,59 +1,74 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-class RazorpayCheckoutResult {
-  const RazorpayCheckoutResult({
+class CashfreeCheckoutResult {
+  const CashfreeCheckoutResult({
     required this.sessionId,
-    required this.razorpayOrderId,
-    required this.amountPaise,
-    required this.keyId,
+    required this.paymentSessionId,
+    required this.cfOrderId,
+    required this.orderId,
+    required this.mode,
+    required this.amountRupees,
   });
 
   final String sessionId;
-  final String razorpayOrderId;
-  final int amountPaise;
-  final String keyId;
+  final String paymentSessionId;
+  final String cfOrderId;
+
+  /// The order id Cashfree expects in the SDK session (== sessionId).
+  final String orderId;
+
+  /// 'production' or 'sandbox'.
+  final String mode;
+  final num amountRupees;
+
+  bool get isProduction => mode == 'production';
 }
 
-/// Server-side Razorpay order via Firebase Callable + `checkout_sessions` polling.
-class RazorpayCheckoutService {
-  RazorpayCheckoutService({
+/// Server-side Cashfree order via Firebase Callable + `checkout_sessions` polling.
+class CashfreeCheckoutService {
+  CashfreeCheckoutService({
     FirebaseFunctions? functions,
     FirebaseFirestore? firestore,
     FirebaseAuth? auth,
   })  : _fn = functions ?? FirebaseFunctions.instance,
-        _db = firestore ?? FirebaseFirestore.instance,
+        _db = firestore ?? chechiFirestore,
         _auth = auth ?? FirebaseAuth.instance;
 
   final FirebaseFunctions _fn;
   final FirebaseFirestore _db;
   final FirebaseAuth _auth;
 
-  Future<RazorpayCheckoutResult> createCheckout({
+  Future<CashfreeCheckoutResult> createCheckout({
     required List<Map<String, Object?>> items,
     required String deliveryLine,
     String? scheduleLine,
+    DateTime? scheduledAt,
   }) async {
     if (_auth.currentUser == null) {
       throw StateError('Not signed in');
     }
 
-    final callable = _fn.httpsCallable('createRazorpayCheckout');
+    final callable = _fn.httpsCallable('createCashfreeCheckout');
     final res = await callable.call({
       'items': items,
       'deliveryLine': deliveryLine,
       'scheduleLine': scheduleLine,
+      'scheduledAtIso': scheduledAt?.toUtc().toIso8601String(),
     });
 
-    final data = Map<String, dynamic>.from(res.data);
-    return RazorpayCheckoutResult(
+    final data = Map<String, dynamic>.from(res.data as Map);
+    return CashfreeCheckoutResult(
       sessionId: data['sessionId']! as String,
-      razorpayOrderId: data['razorpayOrderId']! as String,
-      amountPaise: (data['amountPaise'] as num).toInt(),
-      keyId: data['keyId']! as String,
+      paymentSessionId: data['paymentSessionId']! as String,
+      cfOrderId: data['cfOrderId']! as String,
+      orderId: data['orderId']! as String,
+      mode: (data['mode'] as String?) ?? 'sandbox',
+      amountRupees: (data['amountRupees'] as num?) ?? 0,
     );
   }
 

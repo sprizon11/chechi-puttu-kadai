@@ -1,6 +1,7 @@
 import 'package:chechi_puttu_app/services/app_refresh.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:chechi_puttu_app/services/orders_service.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -22,7 +23,7 @@ class _AdminOrdersBodyState extends State<AdminOrdersBody> {
   String _sortLabel = 'Newest';
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _stream() {
-    return FirebaseFirestore.instance
+    return chechiFirestore
         .collection('orders')
         .orderBy('created_at', descending: true)
         .limit(200)
@@ -30,7 +31,7 @@ class _AdminOrdersBodyState extends State<AdminOrdersBody> {
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _usersStream() {
-    return FirebaseFirestore.instance
+    return chechiFirestore
         .collection('users')
         .limit(700)
         .snapshots();
@@ -600,6 +601,7 @@ class _AdminOrderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final delivery = (data['delivery_line'] as String?) ?? '—';
+    final schedule = (data['schedule_line'] as String?)?.trim() ?? '';
     final items = data['items'];
     final list = items is List ? items : const [];
     final total = (data['total_rupees'] is int)
@@ -664,6 +666,14 @@ class _AdminOrderCard extends StatelessWidget {
               _rowIcon(Icons.person_outline_rounded, customerName, cs.onSurface),
               const SizedBox(height: 4),
               _rowIcon(Icons.phone_outlined, customerPhone, cs.onSurface),
+              if (schedule.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                _rowIcon(
+                  Icons.event_available_outlined,
+                  schedule,
+                  const Color(0xFFEA7A2C),
+                ),
+              ],
               const SizedBox(height: 4),
               _rowIcon(Icons.location_on_outlined, delivery, cs.onSurface),
               const SizedBox(height: 10),

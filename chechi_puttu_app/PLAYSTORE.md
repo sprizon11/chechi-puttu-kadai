@@ -5,7 +5,7 @@
 | Field | Value |
 |-------|--------|
 | **App name** | `Chechi Puttu Kadai` (or `chechi puttu kadai`) |
-| **Package name** | `com.example.chechiputtuapp` |
+| **Package name** | `com.chechiputtu.kadai` |
 | **Default language** | English (United States) |
 
 Tap **Check availability** — the package must be free and must **exactly match** the app ID in `android/app/build.gradle.kts`.
@@ -27,29 +27,45 @@ Play Store does **not** accept debug-signed builds on Production.
 
 ### Create upload keystore (once, on your PC)
 
-```bash
-keytool -genkey -pair -v -keystore chechi-upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias chechi
+```powershell
+cd D:\chechi-puttu\chechi_puttu_app\android
+& "C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe" -genkeypair -v -keystore chechi-upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias chechi
 ```
 
-Store the `.jks` file and passwords safely (password manager). **If you lose it, you cannot update the app.**
+Create `android/key.properties` (copy from `key.properties.example`) with your passwords.
 
-### Register signing in Codemagic (recommended)
-
-1. Codemagic → your app → **Team settings** → **Code signing identities** → Android.
-2. Upload the keystore or let Codemagic generate one.
-3. In the Android workflow, enable **Android code signing**.
+Store the `.jks` file and passwords safely. **If you lose them, you cannot update the app on Play Store.**
 
 ### Add SHA fingerprints to Firebase (phone login / Google Sign-In)
 
 After you have the upload certificate:
 
-```bash
-keytool -list -v -keystore chechi-upload-keystore.jks -alias chechi
+```powershell
+cd D:\chechi-puttu\chechi_puttu_app\android
+& "C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe" -list -v -keystore chechi-upload-keystore.jks -alias chechi
 ```
 
-Copy **SHA-1** and **SHA-256** → [Firebase Console](https://console.firebase.google.com) → Project → Project settings → Your apps → Android `com.example.chechiputtuapp` → Add fingerprint.
+Copy **SHA-1** and **SHA-256** → [Firebase Console](https://console.firebase.google.com) → Project → Project settings → Your apps → Android `com.chechiputtu.kadai` → Add fingerprint.
 
-Also add Play App Signing certificate SHA (from Play Console → Setup → App integrity) after first upload.
+Also add **Play App Signing** certificate SHA (from Play Console → **App integrity**) after first upload.
+
+### Installed from Play Store but phone OTP / Google login fails?
+
+Play re-signs your app. Firebase must have **all** of these for `com.chechiputtu.kadai`:
+
+| Source | Where to copy SHA-1 + SHA-256 |
+|--------|--------------------------------|
+| **App signing key** (required for Play installs) | Play Console → **Test and release** → **App integrity** → *App signing key certificate* |
+| **Upload key** (your `chechi-upload-keystore.jks`) | Same page → *Upload key certificate*, or `gradlew :app:signingReport` → `Variant: release` |
+| **Debug** (optional, for `flutter run`) | `signingReport` → `Variant: debug` |
+
+1. [Firebase Console](https://console.firebase.google.com) → Project settings → Android `com.chechiputtu.kadai` → **Add fingerprint** (paste SHA-1 and SHA-256 for each).
+2. **Download** `google-services.json` again → replace `android/app/google-services.json`.
+3. Wait **5–15 minutes**, then retry login on the **same** installed app (no new Play upload needed).
+
+Error like *“play_integrity_token … no matching SHA-256”* means the **App signing key** SHA-256 is missing in Firebase.
+
+**Google shows “cancelled”** on Play builds often means the Play signing SHA-1 is not registered (fix fingerprints above, then retry).
 
 ---
 
@@ -57,14 +73,14 @@ Also add Play App Signing certificate SHA (from Play Console → Setup → App i
 
 Google Play requires **Android App Bundle** (`.aab`) for new apps:
 
-```bash
-cd chechi_puttu_app
+```powershell
+cd D:\chechi-puttu\chechi_puttu_app
 flutter build appbundle --release --no-tree-shake-icons
 ```
 
 Output: `build/app/outputs/bundle/release/app-release.aab`
 
-Or download **`app-release.aab`** from Codemagic after the Android workflow runs (if AAB step is enabled).
+**You must have `android/key.properties` and the `.jks` file before building.** Without them, the bundle is still signed with the debug key and Play Console will reject it with: *“signed in debug mode”*.
 
 ---
 
@@ -101,6 +117,88 @@ In Play Console → **Main store listing**:
 
 Start with **Internal testing** (up to 100 testers) before Production.
 
+### Recommended path to **Production** (real publish)
+
+| Step | Track | Who tests | Goal |
+|------|--------|-----------|------|
+| 1 | **Internal testing** | You + 1–2 trusted people | Login, admin, menu, orders |
+| 2 | **Closed testing** (optional) | 5–20 customers | Real orders, COD, notifications |
+| 3 | **Production** | Everyone | Public listing live |
+
+Do **not** skip internal testing on **1.1.0+7** — this build includes Firestore database fix, admin dashboard rules, menu category delete sync, and menu image cloud sync.
+
+---
+
+## 7b. Pre-production test checklist (run on Play-installed build)
+
+Use a phone with the app installed **from Play Console** (not USB debug). Test with **mobile data** and **Wi‑Fi**.
+
+### Install & login
+
+- [ ] App opens without crash
+- [ ] **Customer** — phone OTP login works
+- [ ] **Customer** — Google sign-in works (if enabled)
+- [ ] **Admin** — email `chechiputtukadai@gmail.com` + password opens admin dashboard
+- [ ] **Admin** — phone OTP `7358888437` opens admin dashboard
+- [ ] Sign out and sign in again (token refresh)
+
+### Customer menu & ordering
+
+- [ ] Home shows categories (Puttu, Gravies, etc.)
+- [ ] Menu tab → **Explore Categories** loads
+- [ ] Dish details, search, add to cart
+- [ ] Place **Cash on Delivery** order — success message / order in **My Orders**
+- [ ] Profile edit (name, address) saves
+
+### Admin (after admin login)
+
+- [ ] Dashboard loads (**no** `permission-denied` error)
+- [ ] **Menu** — edit dish title/price/image → Save → “synced to cloud” snackbar
+- [ ] **Menu** — delete one dish → hidden on customer phone (pull to refresh or reopen app)
+- [ ] **Menu** — **Delete category & all dishes** → category gone on admin **and** customer
+- [ ] **Orders** tab shows test order
+- [ ] **Customers** tab loads
+- [ ] **Settings** — theme toggle works
+
+### Push / chat (if used)
+
+- [ ] Notification permission prompt (Android 13+)
+- [ ] Customer ↔ admin chat sends/receives
+
+### Before Production rollout
+
+- [ ] Firebase **App signing** SHA-1 + SHA-256 in Firebase (see section 3)
+- [ ] `firebase deploy --only firestore:rules` run from `D:\chechi-puttu`
+- [ ] Privacy policy URL live in Play Console
+- [ ] Data safety + content rating forms **complete**
+- [ ] Store listing: icon, feature graphic, ≥2 screenshots, descriptions
+- [ ] Release notes written for users
+
+---
+
+## 7c. Build command for this release
+
+```powershell
+cd D:\chechi-puttu\chechi_puttu_app
+flutter clean
+flutter pub get
+flutter analyze
+flutter build appbundle --release --no-tree-shake-icons
+```
+
+Upload: `build\app\outputs\bundle\release\app-release.aab`
+
+**Version for production:** `1.1.0` (versionCode **7**)
+
+Example release notes:
+
+```
+• Fixed admin dashboard and menu sync with Firebase
+• Menu category delete now hides categories on all customer phones
+• Improved login reliability on Play Store builds
+• Bug fixes and stability improvements
+```
+
 ---
 
 ## 8. App content that may need review
@@ -113,6 +211,6 @@ Start with **Internal testing** (up to 100 testers) before Production.
 
 ## Quick reference
 
-- Package name: `com.example.chechiputtuapp`
+- Package name: `com.chechiputtu.kadai`
 - App label on device: `Chechi Puttu`
-- Current version: `1.0.0+1` in `pubspec.yaml` (bump `+1` for each Play upload)
+- Current version: `1.2.1+9` in `pubspec.yaml` (bump `+N` for each Play upload)

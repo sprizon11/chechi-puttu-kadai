@@ -1,10 +1,13 @@
 import 'dart:convert';
 
 import 'package:chechi_puttu_app/admin/admin_dish_models.dart';
+import 'package:chechi_puttu_app/admin/admin_shop_location_screen.dart';
+import 'package:chechi_puttu_app/services/shop_location_service.dart';
 import 'package:chechi_puttu_app/services/app_refresh.dart';
 import 'package:chechi_puttu_app/services/customer_menu_section_overrides.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -28,8 +31,34 @@ class AdminSettingsBody extends StatefulWidget {
 
 class _AdminSettingsBodyState extends State<AdminSettingsBody> {
   String _language = 'English';
+  String _shopLocationSubtitle = 'Set kadai location on map';
   static const _prefsCustomCategoriesKey = 'chechi_admin_custom_categories_v1';
   static const _prefsSectionScheduleKey = 'chechi_menu_section_schedule_v1';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadShopLocationSubtitle();
+  }
+
+  Future<void> _loadShopLocationSubtitle() async {
+    final shop = await ShopLocationService.load();
+    if (!mounted) return;
+    setState(() {
+      _shopLocationSubtitle = shop == null
+          ? 'Set kadai location on map'
+          : shop.address;
+    });
+  }
+
+  Future<void> _openShopLocation() async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const AdminShopLocationScreen()),
+    );
+    if (saved == true) {
+      await _loadShopLocationSubtitle();
+    }
+  }
 
   void _snack(String text) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
@@ -169,7 +198,7 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
       _snack('Not signed in.');
       return;
     }
-    final ref = FirebaseFirestore.instance.collection('users').doc(user.uid);
+    final ref = chechiFirestore.collection('users').doc(user.uid);
     final snap = await ref.get();
     if (!mounted) return;
     final data = snap.data() ?? const <String, dynamic>{};
@@ -475,6 +504,14 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
             title: 'Business Settings',
             children: [
               _SettingsTile(
+                icon: Icons.store_mall_directory_outlined,
+                iconBg: const Color(0xFFFFF0E6),
+                iconColor: const Color(0xFF9A4632),
+                title: 'Shop location',
+                subtitle: _shopLocationSubtitle,
+                onTap: _openShopLocation,
+              ),
+              _SettingsTile(
                 icon: Icons.storefront_outlined,
                 iconBg: const Color(0xFFFFF0E6),
                 iconColor: const Color(0xFF9A4632),
@@ -585,7 +622,7 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
           const SizedBox(height: 8),
           Center(
             child: Text(
-              'App Version 1.2.0',
+              'App Version 1.2.1',
               style: GoogleFonts.poppins(
                 fontSize: 10.5,
                 fontWeight: FontWeight.w500,

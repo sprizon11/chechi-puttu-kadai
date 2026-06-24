@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:chechi_puttu_app/admin/admin_dish_models.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:chechi_puttu_app/services/customer_menu_section_overrides.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -71,7 +72,7 @@ class CustomerMenuOverrides extends ChangeNotifier {
 
   Future<Map<String, AdminDishEditSnapshot>?> _readCloudSnapshotsOnce() async {
     try {
-      final root = FirebaseFirestore.instance
+      final root = chechiFirestore
           .collection(_cloudMenuOverridesCollection)
           .doc(_cloudMenuOverridesDoc);
       final snapDocs = await root.collection(_cloudSnapshotsSubcollection).get();
@@ -106,7 +107,7 @@ class CustomerMenuOverrides extends ChangeNotifier {
     if (_cloudSyncStarted) return;
     _cloudSyncStarted = true;
     _cloudRetryTimer?.cancel();
-    final root = FirebaseFirestore.instance
+    final root = chechiFirestore
         .collection(_cloudMenuOverridesCollection)
         .doc(_cloudMenuOverridesDoc);
     _cloudSub?.cancel();

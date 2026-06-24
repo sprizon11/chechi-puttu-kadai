@@ -11,6 +11,7 @@ import 'package:chechi_puttu_app/services/menu_image_utils.dart';
 import 'package:chechi_puttu_app/theme/chechi_premium.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -58,6 +59,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
   ];
 
   bool _sectionHasVisibleMenuItems(String sectionId) {
+    if (MenuDeletedDishes.instance.isSectionDeleted(sectionId)) return false;
     final catalog = _catalogSectionForId(sectionId);
     if (catalog != null) {
       for (final d in catalog.dishes) {
@@ -78,7 +80,9 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
       final t = _thumbForSection(s.title);
       return (icon: t.icon, label: _displayLabelForSectionId(s.title));
     }),
-    ..._customCategories.map(
+    ..._customCategories
+        .where((c) => !MenuDeletedDishes.instance.isSectionDeleted(c))
+        .map(
       (c) => (icon: Icons.category_outlined, label: _displayLabelForSectionId(c)),
     ),
   ];
@@ -125,10 +129,13 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
   String? _sectionIdForChip(int chipIndex) {
     if (chipIndex <= 0) return null;
     final idx = chipIndex - 1;
-    if (idx < kCustomerMenuSections.length) {
-      return kCustomerMenuSections[idx].title;
+    var visibleCatalog = 0;
+    for (final s in kCustomerMenuSections) {
+      if (!_sectionHasVisibleMenuItems(s.title)) continue;
+      if (visibleCatalog == idx) return s.title;
+      visibleCatalog++;
     }
-    final customIdx = idx - kCustomerMenuSections.length;
+    final customIdx = idx - visibleCatalog;
     if (customIdx >= 0 && customIdx < _customCategories.length) {
       return _customCategories[customIdx];
     }
@@ -296,7 +303,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
 
   Future<Map<String, AdminDishEditSnapshot>> _readCloudSnapshots() async {
     try {
-      final root = FirebaseFirestore.instance
+      final root = chechiFirestore
           .collection(_cloudMenuOverridesCollection)
           .doc(_cloudMenuOverridesDoc);
       final snapDocs = await root.collection(_cloudSnapshotsSubcollection).get();
@@ -327,7 +334,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
 
   Future<bool> _syncSnapshotsToCloud(Map<String, dynamic> snapshotsJson) async {
     try {
-      final firestore = FirebaseFirestore.instance;
+      final firestore = chechiFirestore;
       final root = firestore
           .collection(_cloudMenuOverridesCollection)
           .doc(_cloudMenuOverridesDoc);
@@ -436,7 +443,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
 
   Future<Map<String, AdminSectionEditSnapshot>> _readCloudSectionOverrides() async {
     try {
-      final root = FirebaseFirestore.instance
+      final root = chechiFirestore
           .collection(_cloudMenuOverridesCollection)
           .doc(_cloudMenuOverridesDoc);
       final snapDocs =
@@ -490,7 +497,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
 
   Future<bool> _syncSectionOverridesToCloud(Map<String, dynamic> json) async {
     try {
-      final firestore = FirebaseFirestore.instance;
+      final firestore = chechiFirestore;
       final root = firestore
           .collection(_cloudMenuOverridesCollection)
           .doc(_cloudMenuOverridesDoc);
@@ -602,6 +609,8 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
   }
 
   Future<void> _deleteCategory(String sectionId) async {
+    await MenuDeletedDishes.instance.markSectionDeleted(sectionId);
+
     final catalog = _catalogSectionForId(sectionId);
     if (catalog != null) {
       await MenuDeletedDishes.instance.markAllCatalogDishesDeleted(
@@ -630,6 +639,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
     await _persistSectionOverrides(syncCloud: true);
     await CustomerMenuOverrides.instance.reloadFromPrefs();
     await CustomerMenuSectionOverrides.instance.reloadFromPrefs();
+    await MenuDeletedDishes.instance.syncLocalToCloud();
 
     if (!mounted) return;
     setState(() {
@@ -715,9 +725,8 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
   }
 
   Future<void> _persistCustomCategories() async {
-    final p = await SharedPreferences.getInstance();
-    await p.setStringList(kAdminCustomCategoriesPrefsKey, _customCategories);
-    await CustomerMenuSectionOverrides.instance.reloadFromPrefs();
+    await CustomerMenuSectionOverrides.instance
+        .setCustomCategoriesAndSync(_customCategories);
   }
 
   Future<void> _loadSectionSchedules() async {
@@ -999,6 +1008,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
         if (!row.isCustom) {
           await MenuDeletedDishes.instance
               .markDeleted(row.sectionTitle, row.dish.title);
+          await CustomerMenuOverrides.instance.reloadFromPrefs();
         }
         break;
       case 'unavailable':
@@ -1114,6 +1124,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
     final rows = <_MenuRow>[
       ...menuCatalogAllDishesHidingDeleted(
         MenuDeletedDishes.instance.keys,
+        deletedSectionIds: MenuDeletedDishes.instance.deletedSectionIds,
       ).map(
         (e) => _MenuRow(
           sectionTitle: e.sectionTitle,
@@ -1193,6 +1204,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
     _searchCtrl.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await MenuDeletedDishes.instance.reloadFromPrefs();
+      await MenuDeletedDishes.instance.syncLocalToCloud();
       await _loadCustomCategories();
       await _loadSectionSchedules();
       await _loadSectionOverrides();
@@ -1225,6 +1237,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
         final rowsLive = _visibleRows();
         final catalogActive = menuCatalogAllDishesHidingDeleted(
           MenuDeletedDishes.instance.keys,
+          deletedSectionIds: MenuDeletedDishes.instance.deletedSectionIds,
         ).length;
         final cs = Theme.of(context).colorScheme;
         final bodyMuted = cs.onSurfaceVariant;

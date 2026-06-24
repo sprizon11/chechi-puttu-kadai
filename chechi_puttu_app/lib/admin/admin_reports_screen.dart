@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:chechi_puttu_app/services/app_refresh.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -172,7 +173,7 @@ class _AdminReportsBodyState extends State<AdminReportsBody> {
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _ordersStream() {
-    return FirebaseFirestore.instance
+    return chechiFirestore
         .collection('orders')
         .orderBy('created_at', descending: true)
         .limit(1200)
@@ -180,7 +181,7 @@ class _AdminReportsBodyState extends State<AdminReportsBody> {
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _usersStream() {
-    return FirebaseFirestore.instance.collection('users').limit(1200).snapshots();
+    return chechiFirestore.collection('users').limit(1200).snapshots();
   }
 
   @override
@@ -1458,6 +1459,10 @@ String _paymentLabel(String raw) {
     case 'cash_on_delivery':
     case 'cod':
       return 'Cash on Delivery';
+    case 'cashfree':
+      return 'Cashfree (Online)';
+    case 'razorpay':
+      return 'Razorpay (Online)';
     case 'upi':
       return 'UPI';
     case 'card':

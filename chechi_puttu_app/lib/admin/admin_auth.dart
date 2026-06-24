@@ -1,13 +1,13 @@
 import 'package:firebase_auth/firebase_auth.dart';
 
 /// Reserved admin account (Firebase Auth email/password).
-const String kChechiAdminEmail = 'sprizon1311@gmail.com';
+const String kChechiAdminEmail = 'chechiputtukadai@gmail.com';
 
-/// Password for that account (first-time bootstrap from the app).
-const String kChechiAdminPassword = 'chechi123';
+/// Password for first-time bootstrap from the app (change in Firebase Console later).
+const String kChechiAdminPassword = 'ChechiPuttu@7358';
 
 /// Reserved admin phone — OTP login with this number opens admin dashboard.
-const String kChechiAdminPhone = '9994229860';
+const String kChechiAdminPhone = '7358888437';
 
 String normalizeAdminPhone(String raw) {
   final t = raw.trim().replaceAll(RegExp(r'\s'), '');

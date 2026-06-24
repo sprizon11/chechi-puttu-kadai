@@ -7,7 +7,9 @@
   "main": "index.js",
   "scripts": {
     "serve": "firebase emulators:start --only functions",
-    "deploy": "firebase deploy --only functions"
+    "deploy": "firebase deploy --only functions",
+    "reset-firebase": "node ../scripts/reset_firebase_data.cjs",
+    "set-admin-claim": "node ../scripts/set_admin_claim.cjs"
   },
   "dependencies": {
     "firebase-admin": "^12.7.0",

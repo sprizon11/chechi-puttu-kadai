@@ -1,5 +1,6 @@
 import 'package:chechi_puttu_app/admin/admin_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -52,7 +53,7 @@ class BirthdayChatWishService {
     if (uid.isEmpty) return null;
     try {
       final snap =
-          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+          await chechiFirestore.collection('users').doc(uid).get();
       final fromCloud = snap.data()?['dateOfBirth'] as String?;
       if (fromCloud != null && fromCloud.trim().length >= 10) {
         return fromCloud.trim();
@@ -73,7 +74,7 @@ class BirthdayChatWishService {
   Future<String> firstNameForUid(String customerUid) async {
     try {
       final snap =
-          await FirebaseFirestore.instance.collection('users').doc(customerUid).get();
+          await chechiFirestore.collection('users').doc(customerUid).get();
       final name = (snap.data()?['displayName'] as String?)?.trim();
       if (name != null && name.isNotEmpty) return firstNameFrom(name);
     } catch (_) {}
@@ -106,14 +107,14 @@ class BirthdayChatWishService {
 
   Future<void> _ensureLocallyForAdmin(String customerUid) async {
     final userSnap =
-        await FirebaseFirestore.instance.collection('users').doc(customerUid).get();
+        await chechiFirestore.collection('users').doc(customerUid).get();
     final user = userSnap.data();
     final dob = user?['dateOfBirth'] as String?;
     if (!isBirthdayToday(dob)) return;
 
     final dayKey = todayKey();
     final threadRef =
-        FirebaseFirestore.instance.collection('support_inbox').doc(customerUid);
+        chechiFirestore.collection('support_inbox').doc(customerUid);
     final thread = await threadRef.get();
     if (thread.data()?['birthday_wish_sent_on'] == dayKey) return;
 

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:chechi_puttu_app/services/birthday_chat_wish_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -64,10 +65,10 @@ class _CustomerChatScreenState extends State<CustomerChatScreen> {
     final currentUser = FirebaseAuth.instance.currentUser;
     setState(() => _sending = true);
     try {
-      final threadRef = FirebaseFirestore.instance
+      final threadRef = chechiFirestore
           .collection('support_inbox')
           .doc(uid);
-      await FirebaseFirestore.instance
+      await chechiFirestore
           .collection('support_inbox')
           .doc(uid)
           .collection('messages')
@@ -134,7 +135,7 @@ class _CustomerChatScreenState extends State<CustomerChatScreen> {
       );
     }
 
-    final stream = FirebaseFirestore.instance
+    final stream = chechiFirestore
         .collection('support_inbox')
         .doc(user.uid)
         .collection('messages')

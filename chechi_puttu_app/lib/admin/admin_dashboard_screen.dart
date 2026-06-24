@@ -8,6 +8,7 @@ import 'package:chechi_puttu_app/services/app_refresh.dart';
 import 'package:chechi_puttu_app/theme/chechi_premium.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -38,7 +39,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _ordersStream() {
-    return FirebaseFirestore.instance
+    return chechiFirestore
         .collection('orders')
         .orderBy('created_at', descending: true)
         .limit(250)
@@ -46,7 +47,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _usersStream() {
-    return FirebaseFirestore.instance
+    return chechiFirestore
         .collection('users')
         .limit(400)
         .snapshots();

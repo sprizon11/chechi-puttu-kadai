@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:chechi_puttu_app/services/app_map_tiles.dart';
+import 'package:chechi_puttu_app/services/shop_location_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -31,7 +33,8 @@ class _AdminCustomerMapScreenState extends State<AdminCustomerMapScreen> {
   static const _maroon = Color(0xFF7C1D1B);
 
   final _mapController = MapController();
-  LatLng? _adminPoint;
+  LatLng? _originPoint;
+  bool _originIsShop = false;
   List<LatLng> _routePoints = [];
   String? _routeSummary;
   bool _loadingRoute = true;
@@ -119,41 +122,53 @@ class _AdminCustomerMapScreenState extends State<AdminCustomerMapScreen> {
       _routeSummary = null;
     });
 
-    final admin = await _readAdminLocation();
+    final shop = await ShopLocationService.load();
+    LatLng? origin;
+    var originIsShop = false;
+
+    if (shop != null) {
+      origin = LatLng(shop.latitude, shop.longitude);
+      originIsShop = true;
+    } else {
+      origin = await _readAdminLocation();
+    }
     if (!mounted) return;
 
-    if (admin == null) {
+    if (origin == null) {
       setState(() {
         _loadingRoute = false;
-        _adminPoint = null;
+        _originPoint = null;
+        _originIsShop = false;
         _routeError =
-            'Enable location to draw directions from your current position.';
+            'Set shop location in Settings, or enable GPS for your position.';
       });
       _fitMapToPoints([_customerPoint]);
       return;
     }
 
-    final route = await _fetchDrivingRoute(admin, _customerPoint);
+    final route = await _fetchDrivingRoute(origin, _customerPoint);
     if (!mounted) return;
 
     if (route == null) {
       setState(() {
-        _adminPoint = admin;
+        _originPoint = origin;
+        _originIsShop = originIsShop;
         _loadingRoute = false;
         _routeError = 'Could not load route. You can still open Google Maps.';
       });
-      _fitMapToPoints([admin, _customerPoint]);
+      _fitMapToPoints([origin, _customerPoint]);
       return;
     }
 
     setState(() {
-      _adminPoint = admin;
+      _originPoint = origin;
+      _originIsShop = originIsShop;
       _routePoints = route.points;
       _routeSummary =
-          '${route.km.toStringAsFixed(1)} km · ~${route.minutes} min drive';
+          '${originIsShop ? 'From shop' : 'From you'} · ${route.km.toStringAsFixed(1)} km · ~${route.minutes} min';
       _loadingRoute = false;
     });
-    _fitMapToPoints([admin, _customerPoint, ...route.points]);
+    _fitMapToPoints([origin, _customerPoint, ...route.points]);
   }
 
   void _fitMapToPoints(List<LatLng> points) {
@@ -172,9 +187,9 @@ class _AdminCustomerMapScreenState extends State<AdminCustomerMapScreen> {
 
   Future<void> _openGoogleMapsDirections() async {
     final dest = '${widget.latitude},${widget.longitude}';
-    final origin = _adminPoint == null
+    final origin = _originPoint == null
         ? null
-        : '${_adminPoint!.latitude},${_adminPoint!.longitude}';
+        : '${_originPoint!.latitude},${_originPoint!.longitude}';
     final uri = origin == null
         ? Uri.parse(
             'https://www.google.com/maps/dir/?api=1&destination=$dest&travelmode=driving',
@@ -209,16 +224,13 @@ class _AdminCustomerMapScreenState extends State<AdminCustomerMapScreen> {
             mapController: _mapController,
             options: MapOptions(
               initialCenter: _customerPoint,
-              initialZoom: 15,
-              interactionOptions: const InteractionOptions(
-                flags: InteractiveFlag.all,
-              ),
+              initialZoom: AppMapTiles.defaultZoom,
+              minZoom: 3,
+              maxZoom: AppMapTiles.maxZoom,
+              interactionOptions: AppMapTiles.interactions,
             ),
             children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.chechiputtuapp',
-              ),
+              ...AppMapTiles.labeledStreetLayers(),
               if (_routePoints.length >= 2)
                 PolylineLayer(
                   polylines: [
@@ -233,20 +245,24 @@ class _AdminCustomerMapScreenState extends State<AdminCustomerMapScreen> {
                 ),
               MarkerLayer(
                 markers: [
-                  if (_adminPoint != null)
+                  if (_originPoint != null)
                     Marker(
-                      point: _adminPoint!,
-                      width: 40,
-                      height: 40,
+                      point: _originPoint!,
+                      width: 44,
+                      height: 44,
                       alignment: Alignment.center,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1565C0),
+                          color: _originIsShop
+                              ? const Color(0xFF2E7D32)
+                              : const Color(0xFF1565C0),
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 2),
                         ),
-                        child: const Icon(
-                          Icons.navigation_rounded,
+                        child: Icon(
+                          _originIsShop
+                              ? Icons.storefront_rounded
+                              : Icons.navigation_rounded,
                           color: Colors.white,
                           size: 22,
                         ),
@@ -382,7 +398,7 @@ class _AdminCustomerMapScreenState extends State<AdminCustomerMapScreen> {
                             child: Text(
                               _routeSummary ??
                                   (_routeError ??
-                                      'Pinch to zoom · drag to move map'),
+                                      'Pinch to zoom · street names on map'),
                               style: GoogleFonts.poppins(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w600,

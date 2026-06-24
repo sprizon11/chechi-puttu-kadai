@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -29,7 +30,7 @@ class _AdminChatsScreenState extends State<AdminChatsScreen> {
   @override
   void initState() {
     super.initState();
-    _usersSub = FirebaseFirestore.instance
+    _usersSub = chechiFirestore
         .collection('users')
         .limit(700)
         .snapshots()
@@ -45,7 +46,7 @@ class _AdminChatsScreenState extends State<AdminChatsScreen> {
             _gotUsers = true;
           }),
         );
-    _msgsSub = FirebaseFirestore.instance
+    _msgsSub = chechiFirestore
         .collection('support_inbox')
         .orderBy('last_at', descending: true)
         .limit(1200)
@@ -73,7 +74,7 @@ class _AdminChatsScreenState extends State<AdminChatsScreen> {
   }
 
   Future<void> _openThread(_ChatThread t) async {
-    await FirebaseFirestore.instance.collection('support_inbox').doc(t.uid).set({
+    await chechiFirestore.collection('support_inbox').doc(t.uid).set({
       'customer_uid': t.uid,
       'unread_customer_to_admin': 0,
       'updated_at': FieldValue.serverTimestamp(),
@@ -133,7 +134,7 @@ class _AdminChatsScreenState extends State<AdminChatsScreen> {
 
     setState(() => _broadcasting = true);
     try {
-      final db = FirebaseFirestore.instance;
+      final db = chechiFirestore;
       const chunkSize = 180; // 2 writes/user -> <= 360 ops per batch
       for (var i = 0; i < users.length; i += chunkSize) {
         final end = (i + chunkSize < users.length) ? i + chunkSize : users.length;

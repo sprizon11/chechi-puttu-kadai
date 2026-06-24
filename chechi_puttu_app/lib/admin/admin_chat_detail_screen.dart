@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:chechi_puttu_app/services/birthday_chat_wish_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -94,10 +95,10 @@ class _AdminChatDetailScreenState extends State<AdminChatDetailScreen> {
     if (text.isEmpty || _sending) return;
     setState(() => _sending = true);
     try {
-      final threadRef = FirebaseFirestore.instance
+      final threadRef = chechiFirestore
           .collection('support_inbox')
           .doc(widget.args.customerUid);
-      await FirebaseFirestore.instance
+      await chechiFirestore
           .collection('support_inbox')
           .doc(widget.args.customerUid)
           .collection('messages')
@@ -173,7 +174,7 @@ class _AdminChatDetailScreenState extends State<AdminChatDetailScreen> {
         ? cs.onSurface.withValues(alpha: 0.72)
         : const Color(0xFF7A6A62);
 
-    final messagesQuery = FirebaseFirestore.instance
+    final messagesQuery = chechiFirestore
         .collection('support_inbox')
         .doc(widget.args.customerUid)
         .collection('messages')
@@ -219,7 +220,7 @@ class _AdminChatDetailScreenState extends State<AdminChatDetailScreen> {
                                   ? 'Firestore blocked this chat (permission denied).\n\n'
                                         'Fix: deploy the latest `firestore.rules` from this '
                                         'project, then tap Retry. You must be signed in as '
-                                        'the admin account (sprizon1311@gmail.com).'
+                                        'the admin account (chechiputtukadai@gmail.com).'
                                   : 'Could not load messages.\n$err',
                               textAlign: TextAlign.center,
                               style: GoogleFonts.poppins(

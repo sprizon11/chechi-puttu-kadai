@@ -3,12 +3,15 @@ const {onRequest} = require("firebase-functions/v2/https");
 const {onDocumentCreated, onDocumentUpdated} = require("firebase-functions/v2/firestore");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const admin = require("firebase-admin");
+const {initializeFirestore} = require("firebase-admin/firestore");
 const Razorpay = require("razorpay");
 
-admin.initializeApp();
-const db = admin.firestore();
-const ADMIN_EMAIL = "sprizon1311@gmail.com";
-const ADMIN_PHONE = "+919994229860";
+const app = admin.initializeApp();
+/** asia-south1 database (Console: `default`). Not (default)/nam5. */
+const FIRESTORE_DB = "default";
+const db = initializeFirestore(app, {preferRest: true}, FIRESTORE_DB);
+const ADMIN_EMAIL = "chechiputtukadai@gmail.com";
+const ADMIN_PHONE = "+917358888437";
 
 /** Set in Firebase Console → Functions → each function → Runtime env vars, or Secret Manager. */
 function razorpayKeys() {
@@ -105,7 +108,6 @@ exports.createRazorpayCheckout = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Invalid cart");
   }
 
-  const db = admin.firestore();
   const sessionRef = db.collection("checkout_sessions").doc();
   const sessionId = sessionRef.id;
 
@@ -199,8 +201,6 @@ exports.razorpayWebhook = onRequest(async (req, res) => {
   const paymentId = pay?.id;
   const amount = Number(pay?.amount);
 
-  const db = admin.firestore();
-
   if (event === "payment.captured" && orderId && paymentId) {
     const mapSnap = await db.collection("rzp_order_map").doc(orderId).get();
     if (!mapSnap.exists) {
@@ -281,6 +281,270 @@ exports.razorpayWebhook = onRequest(async (req, res) => {
   res.json({ignored: true, event: event ?? null});
 });
 
+// ─────────────────────────── Cashfree Payments ───────────────────────────
+// Set in Firebase Console → Functions runtime env vars / Secret Manager:
+//   CASHFREE_APP_ID, CASHFREE_SECRET_KEY, CASHFREE_ENV ("production"|"sandbox")
+// Optional: CASHFREE_WEBHOOK_URL (https URL of cashfreeWebhook below).
+function cashfreeKeys() {
+  const appId = process.env.CASHFREE_APP_ID || "";
+  const secretKey = process.env.CASHFREE_SECRET_KEY || "";
+  const env = (process.env.CASHFREE_ENV || "sandbox").toLowerCase();
+  return {appId, secretKey, env};
+}
+
+function cashfreeBaseUrl(env) {
+  return env === "production"
+    ? "https://api.cashfree.com/pg"
+    : "https://sandbox.cashfree.com/pg";
+}
+
+function sanitizePhone(raw) {
+  const digits = String(raw || "").replace(/\D/g, "");
+  // Cashfree wants a 10-digit Indian number; strip a leading 91 if present.
+  const local = digits.length > 10 ? digits.slice(-10) : digits;
+  return /^[6-9]\d{9}$/.test(local) ? local : "9999999999";
+}
+
+exports.createCashfreeCheckout = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  const uid = request.auth.uid;
+  const {appId, secretKey, env} = cashfreeKeys();
+  if (!appId || !secretKey) {
+    throw new HttpsError("failed-precondition", "Cashfree keys not configured");
+  }
+
+  const body = request.data || {};
+  const deliveryLine = String(body.deliveryLine ?? "").trim();
+  const scheduleLine =
+    body.scheduleLine == null ? null : String(body.scheduleLine).trim();
+  const scheduledAtIso =
+    body.scheduledAtIso == null ? null : String(body.scheduledAtIso).trim();
+  if (!deliveryLine || deliveryLine.length > 500) {
+    throw new HttpsError("invalid-argument", "Invalid delivery");
+  }
+
+  let scheduledAtTs = null;
+  if (scheduledAtIso) {
+    const d = new Date(scheduledAtIso);
+    if (!Number.isNaN(d.getTime())) {
+      scheduledAtTs = admin.firestore.Timestamp.fromDate(d);
+    }
+  }
+
+  let computed;
+  try {
+    computed = computeServerOrder(body.items);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "bad cart";
+    if (msg.startsWith("UNKNOWN_ITEM")) {
+      throw new HttpsError("invalid-argument", "Unknown menu item or price mismatch");
+    }
+    throw new HttpsError("invalid-argument", "Invalid cart");
+  }
+
+  // Resolve the customer's phone from their profile (server-trusted).
+  let customerPhone = request.auth.token?.phone_number || "";
+  try {
+    const profile = await db.collection("users").doc(uid).get();
+    const p = profile.data() || {};
+    customerPhone = p.mobile || p.authPhone || customerPhone;
+  } catch (_) {
+    // Non-fatal; fall back below.
+  }
+  customerPhone = sanitizePhone(customerPhone);
+
+  const sessionRef = db.collection("checkout_sessions").doc();
+  const sessionId = sessionRef.id;
+
+  await sessionRef.set({
+    uid,
+    status: "pending_payment",
+    items: computed.lines,
+    total_rupees: computed.totalRupees,
+    total_paise: computed.totalPaise,
+    delivery_line: deliveryLine,
+    schedule_line: scheduleLine,
+    scheduled_at: scheduledAtTs,
+    payment_mode: "cashfree",
+    created_at: admin.firestore.FieldValue.serverTimestamp(),
+    updated_at: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  const orderPayload = {
+    order_id: sessionId,
+    order_amount: computed.totalRupees,
+    order_currency: "INR",
+    customer_details: {
+      customer_id: uid,
+      customer_phone: customerPhone,
+    },
+    order_note: "Chechi Puttu Kadai order",
+    order_tags: {session_id: sessionId},
+  };
+  const notifyUrl = process.env.CASHFREE_WEBHOOK_URL || "";
+  if (notifyUrl) {
+    orderPayload.order_meta = {notify_url: notifyUrl};
+  }
+
+  let cfData;
+  try {
+    const resp = await fetch(`${cashfreeBaseUrl(env)}/orders`, {
+      method: "POST",
+      headers: {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "x-api-version": "2023-08-01",
+        "x-client-id": appId,
+        "x-client-secret": secretKey,
+      },
+      body: JSON.stringify(orderPayload),
+    });
+    cfData = await resp.json().catch(() => ({}));
+    if (!resp.ok || !cfData.payment_session_id) {
+      throw new Error(cfData.message || `Cashfree HTTP ${resp.status}`);
+    }
+  } catch (e) {
+    await sessionRef.update({
+      status: "error",
+      error_message: e instanceof Error ? e.message : "cashfree failed",
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    throw new HttpsError("internal", "Could not start payment");
+  }
+
+  await sessionRef.update({
+    cf_order_id: cfData.cf_order_id != null ? String(cfData.cf_order_id) : null,
+    updated_at: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return {
+    sessionId,
+    paymentSessionId: cfData.payment_session_id,
+    cfOrderId: String(cfData.cf_order_id ?? sessionId),
+    orderId: sessionId,
+    mode: env === "production" ? "production" : "sandbox",
+    amountRupees: computed.totalRupees,
+  };
+});
+
+exports.cashfreeWebhook = onRequest(async (req, res) => {
+  if (req.method !== "POST") {
+    res.status(405).send("Method Not Allowed");
+    return;
+  }
+  const {secretKey} = cashfreeKeys();
+  if (!secretKey) {
+    res.status(503).send("Cashfree secret not configured");
+    return;
+  }
+
+  const rawBody = req.rawBody ? req.rawBody.toString("utf8") : "";
+  const crypto = require("crypto");
+  const ts = req.get("x-webhook-timestamp") || "";
+  const sig = req.get("x-webhook-signature") || "";
+  const expected = crypto
+    .createHmac("sha256", secretKey)
+    .update(ts + rawBody)
+    .digest("base64");
+  if (!timingSafeEqual(expected, sig)) {
+    res.status(400).send("Invalid signature");
+    return;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    res.status(400).send("Bad JSON");
+    return;
+  }
+
+  const type = payload.type;
+  const order = payload.data?.order;
+  const payment = payload.data?.payment;
+  const sessionId = order?.order_id;
+  const paymentStatus = payment?.payment_status;
+  const cfPaymentId =
+    payment?.cf_payment_id != null ? String(payment.cf_payment_id) : "";
+  const paidAmount = Number(payment?.payment_amount);
+
+  if (type === "PAYMENT_SUCCESS_WEBHOOK" &&
+      paymentStatus === "SUCCESS" && sessionId && cfPaymentId) {
+    const sessRef = db.collection("checkout_sessions").doc(sessionId);
+    const sessSnap = await sessRef.get();
+    if (!sessSnap.exists) {
+      res.json({ok: false, reason: "session_missing"});
+      return;
+    }
+    const s = sessSnap.data();
+    if (s.status !== "pending_payment") {
+      res.json({ok: true, duplicate: true});
+      return;
+    }
+    if (Math.round(Number(s.total_rupees) * 100) !== Math.round(paidAmount * 100)) {
+      console.error("amount mismatch", s.total_rupees, paidAmount);
+      res.json({ok: false, reason: "amount_mismatch"});
+      return;
+    }
+
+    const firestoreOrderId = `cf_${cfPaymentId}`;
+    const orderRef = db.collection("orders").doc(firestoreOrderId);
+    try {
+      await orderRef.create({
+        uid: s.uid,
+        status: "placed",
+        total_rupees: s.total_rupees,
+        delivery_line: s.delivery_line,
+        payment_mode: "cashfree",
+        payment_status: "captured",
+        cf_order_id: s.cf_order_id ?? null,
+        cf_payment_id: cfPaymentId,
+        checkout_session_id: sessionId,
+        schedule_line: s.schedule_line ?? null,
+        scheduled_at: s.scheduled_at ?? null,
+        items: s.items,
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      if (e.code === 6 || e.code === "already-exists") {
+        res.json({ok: true, duplicate: true});
+        return;
+      }
+      console.error(e);
+      res.status(500).send("Order insert failed");
+      return;
+    }
+
+    await sessRef.update({
+      status: "paid",
+      order_id: firestoreOrderId,
+      cf_payment_id: cfPaymentId,
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    res.json({ok: true});
+    return;
+  }
+
+  if (type === "PAYMENT_FAILED_WEBHOOK" && sessionId) {
+    const sessRef = db.collection("checkout_sessions").doc(sessionId);
+    const sessSnap = await sessRef.get();
+    if (sessSnap.exists && sessSnap.data().status === "pending_payment") {
+      await sessRef.update({
+        status: "failed",
+        fail_reason: "payment_failed",
+        updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+    res.json({ok: true});
+    return;
+  }
+
+  res.json({ignored: true, type: type ?? null});
+});
+
 function isAdminRequest(request) {
   if (!request.auth) return false;
   const email = String(request.auth.token?.email || "").trim().toLowerCase();
@@ -300,15 +564,41 @@ async function deleteQueryInBatches(query, batchSize = 250) {
   }
 }
 
+async function deleteQueryInBatchesSafe(label, query) {
+  try {
+    await deleteQueryInBatches(query);
+  } catch (e) {
+    console.error(`adminDeleteCustomer: ${label} query failed`, e);
+    throw e;
+  }
+}
+
 async function deleteCustomerDataEverywhere(uid) {
   const cleanUid = String(uid || "").trim();
   if (!cleanUid) return;
 
-  await deleteQueryInBatches(db.collection("orders").where("uid", "==", cleanUid));
-  await deleteQueryInBatches(db.collection("checkout_sessions").where("uid", "==", cleanUid));
-  await deleteQueryInBatches(db.collection("rzp_order_map").where("uid", "==", cleanUid));
-  await deleteQueryInBatches(db.collection("push_tokens").where("uid", "==", cleanUid));
-  await deleteQueryInBatches(
+  await deleteQueryInBatchesSafe(
+      "orders",
+      db.collection("orders").where("uid", "==", cleanUid),
+  );
+  await deleteQueryInBatchesSafe(
+      "order_reviews",
+      db.collection("order_reviews").where("uid", "==", cleanUid),
+  );
+  await deleteQueryInBatchesSafe(
+      "checkout_sessions",
+      db.collection("checkout_sessions").where("uid", "==", cleanUid),
+  );
+  await deleteQueryInBatchesSafe(
+      "rzp_order_map",
+      db.collection("rzp_order_map").where("uid", "==", cleanUid),
+  );
+  await deleteQueryInBatchesSafe(
+      "push_tokens",
+      db.collection("push_tokens").where("uid", "==", cleanUid),
+  );
+  await deleteQueryInBatchesSafe(
+      "support_messages",
       db.collection("support_inbox").doc(cleanUid).collection("messages"),
   );
   await db.collection("support_inbox").doc(cleanUid).delete().catch(() => null);
@@ -338,8 +628,14 @@ exports.adminDeleteCustomer = onCall(async (request) => {
     throw new HttpsError("failed-precondition", "You cannot delete your own admin account");
   }
 
-  await deleteCustomerDataEverywhere(uid);
-  return {ok: true};
+  try {
+    await deleteCustomerDataEverywhere(uid);
+    return {ok: true};
+  } catch (e) {
+    console.error("adminDeleteCustomer failed for", uid, e);
+    const msg = e instanceof Error ? e.message : "Could not delete customer data";
+    throw new HttpsError("internal", msg);
+  }
 });
 
 function orderRef(orderId) {
@@ -541,7 +837,9 @@ exports.nightlyDataCleanup = onSchedule("every day 03:15", async () => {
   });
 });
 
-exports.onOrderCreatedChatMessage = onDocumentCreated("orders/{orderId}", async (event) => {
+exports.onOrderCreatedChatMessage = onDocumentCreated(
+    {document: "orders/{orderId}", database: FIRESTORE_DB},
+    async (event) => {
   const data = event.data?.data();
   if (!data) return;
   const uid = String(data.uid || "").trim();
@@ -556,7 +854,9 @@ exports.onOrderCreatedChatMessage = onDocumentCreated("orders/{orderId}", async 
   });
 });
 
-exports.onOrderStatusChangedChatMessage = onDocumentUpdated("orders/{orderId}", async (event) => {
+exports.onOrderStatusChangedChatMessage = onDocumentUpdated(
+    {document: "orders/{orderId}", database: FIRESTORE_DB},
+    async (event) => {
   const before = event.data?.before?.data();
   const after = event.data?.after?.data();
   if (!before || !after) return;
@@ -591,7 +891,10 @@ exports.onOrderStatusChangedChatMessage = onDocumentUpdated("orders/{orderId}", 
 });
 
 exports.onSupportMessagePush = onDocumentCreated(
-    "support_inbox/{customerUid}/messages/{messageId}",
+    {
+      document: "support_inbox/{customerUid}/messages/{messageId}",
+      database: FIRESTORE_DB,
+    },
     async (event) => {
       const customerUid = String(event.params.customerUid || "").trim();
       const msg = event.data?.data();
@@ -787,7 +1090,10 @@ exports.ensureBirthdayChatWish = onCall(async (request) => {
 });
 
 exports.onSupportAbuseGuard = onDocumentCreated(
-    "support_inbox/{customerUid}/messages/{messageId}",
+    {
+      document: "support_inbox/{customerUid}/messages/{messageId}",
+      database: FIRESTORE_DB,
+    },
     async (event) => {
       const customerUid = String(event.params.customerUid || "").trim();
       const msg = event.data?.data();

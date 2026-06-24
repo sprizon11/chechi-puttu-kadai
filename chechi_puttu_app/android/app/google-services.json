@@ -7,17 +7,33 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:316102307451:android:e6e31a57592f375a633cde",
+        "mobilesdk_app_id": "1:316102307451:android:54fe98632396bee6633cde",
         "android_client_info": {
-          "package_name": "com.example.chechiputtuapp"
+          "package_name": "com.chechiputtu.kadai"
         }
       },
       "oauth_client": [
         {
-          "client_id": "316102307451-9o5ua4v3tftndnmuocaa3oa1l2fvggj7.apps.googleusercontent.com",
+          "client_id": "316102307451-0ffqdgdpsbngf3j821s2p8s9tmihavfk.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.example.chechiputtuapp",
+            "package_name": "com.chechiputtu.kadai",
+            "certificate_hash": "608cb4e0e090ba85cd3d204c5a0e120d46640efe"
+          }
+        },
+        {
+          "client_id": "316102307451-5cbdbfc360ghm1n9kpmq0lsgt55opabu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.chechiputtu.kadai",
+            "certificate_hash": "9b82026c1beb48780492806e3395dccdf8ad9b56"
+          }
+        },
+        {
+          "client_id": "316102307451-albcm02bn904qrso1k5bq0s28hh51juf.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.chechiputtu.kadai",
             "certificate_hash": "195f761352d92fe2bba798bb1548adc0716d7a49"
           }
         },

@@ -1,4 +1,4 @@
-package com.example.chechiputtuapp
+package com.chechiputtu.kadai
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -4,8 +4,10 @@ import 'package:chechi_puttu_app/services/app_refresh.dart';
 import 'package:chechi_puttu_app/services/birthday_chat_wish_service.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
+import 'package:chechi_puttu_app/services/app_map_tiles.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
@@ -42,7 +44,7 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
   @override
   void initState() {
     super.initState();
-    _usersSub = FirebaseFirestore.instance
+    _usersSub = chechiFirestore
         .collection('users')
         .limit(500)
         .snapshots()
@@ -58,7 +60,7 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
             _gotUsers = true;
           }),
         );
-    _ordersSub = FirebaseFirestore.instance
+    _ordersSub = chechiFirestore
         .collection('orders')
         .orderBy('created_at', descending: true)
         .limit(500)
@@ -401,9 +403,22 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
       );
     } on FirebaseFunctionsException catch (e) {
       if (!mounted) return;
-      final msg = (e.message?.trim().isNotEmpty ?? false)
-          ? e.message!.trim()
-          : 'Delete failed. Please check admin permissions.';
+      final msg = switch (e.code) {
+        'permission-denied' => 'Admin access required to delete customers.',
+        'unauthenticated' => 'Sign in again, then retry.',
+        'failed-precondition' =>
+          e.message?.trim().isNotEmpty == true
+              ? e.message!.trim()
+              : 'Cannot delete this account.',
+        'invalid-argument' => 'Invalid customer id.',
+        'internal' =>
+          (e.message?.trim().isNotEmpty ?? false)
+              ? e.message!.trim()
+              : 'Server error while deleting. Try again in a moment.',
+        _ => (e.message?.trim().isNotEmpty ?? false)
+            ? e.message!.trim()
+            : 'Delete failed (${e.code}).',
+      };
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(msg, style: GoogleFonts.poppins()),
@@ -1583,16 +1598,14 @@ class _CustomerLocationMapPreview extends StatelessWidget {
     return FlutterMap(
       options: MapOptions(
         initialCenter: point,
-        initialZoom: 16,
+        initialZoom: AppMapTiles.defaultZoom,
+        maxZoom: AppMapTiles.maxZoom,
         interactionOptions: const InteractionOptions(
           flags: InteractiveFlag.none,
         ),
       ),
       children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.example.chechiputtuapp',
-        ),
+        ...AppMapTiles.labeledStreetLayers(),
         MarkerLayer(
           markers: [
             Marker(
