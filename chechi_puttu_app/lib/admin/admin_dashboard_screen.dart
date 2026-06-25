@@ -1289,7 +1289,7 @@ class _OrderRow extends StatelessWidget {
           Expanded(
             flex: 12,
             child: Align(
-              alignment: Alignment.centerRight,
+              alignment: Alignment.centerLeft,
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
