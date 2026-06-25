@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { collection, query, limit, onSnapshot, orderBy, deleteDoc, doc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { format } from 'date-fns'
@@ -21,101 +21,94 @@ function readCreatedAt(m) {
 
 function readTotal(m) { return m.totalRupees ?? m.total ?? m.amount ?? 0 }
 
-// Read location coords from Firestore user doc — mirrors Flutter's _coordsFromUserMap
+// Mirrors Flutter's _coordsFromUserMap
 function readCoords(u) {
-  // location_geo is a Firestore GeoPoint — JS SDK gives it as { latitude, longitude }
   if (u.location_geo && typeof u.location_geo.latitude === 'number') {
     return { lat: u.location_geo.latitude, lng: u.location_geo.longitude }
   }
-  const readNum = v => (typeof v === 'number' ? v : typeof v === 'string' ? parseFloat(v) || null : null)
-  const lat = readNum(u.location_lat) ?? readNum(u.latitude) ?? readNum(u.lat)
-  const lng = readNum(u.location_lng) ?? readNum(u.longitude) ?? readNum(u.lng)
+  const n = v => (typeof v === 'number' ? v : typeof v === 'string' ? parseFloat(v) || null : null)
+  const lat = n(u.location_lat) ?? n(u.latitude) ?? n(u.lat)
+  const lng = n(u.location_lng) ?? n(u.longitude) ?? n(u.lng)
   if (lat != null && lng != null) return { lat, lng }
   return null
 }
 
-// Read address string — mirrors Flutter's _locationFromUserMap
+// Mirrors Flutter's _locationFromUserMap
 function readAddressLine(u) {
-  if (u.location && u.location.trim()) return u.location.trim()
+  const loc = (u.location || '').trim()
+  if (loc) return loc
   if (u.addresses && typeof u.addresses === 'object') {
     for (const k of ['home', 'office', 'other']) {
-      const s = u.addresses[k]
-      if (s && s.trim()) return s.trim()
+      const s = (u.addresses[k] || '').trim()
+      if (s) return s
     }
   }
   return null
 }
 
+// Free Nominatim geocoding (OpenStreetMap)
+async function geocode(address) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=in`
+    const res  = await fetch(url, { headers: { 'Accept-Language': 'en', 'User-Agent': 'ChechiPuttuAdmin/1.0' } })
+    const data = await res.json()
+    if (data?.[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
+  } catch (_) {}
+  return null
+}
+
 function MapEmbed({ lat, lng }) {
-  const delta = 0.012
-  const bbox  = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`
-  const src   = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`
+  const d   = 0.012
+  const bbox = `${lng - d},${lat - d},${lng + d},${lat + d}`
   return (
-    <div className="relative w-full rounded-xl overflow-hidden border border-cream-border" style={{ height: 240 }}>
+    <div className="w-full rounded-xl overflow-hidden border border-cream-border" style={{ height: 220 }}>
       <iframe
-        src={src}
-        title="Customer location"
+        title="map"
+        src={`https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`}
         className="w-full h-full border-0"
         loading="lazy"
-        referrerPolicy="no-referrer"
-      />
-      {/* overlay prevents accidental scroll-hijack, opens map on click */}
-      <a
-        href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`}
-        target="_blank" rel="noopener noreferrer"
-        className="absolute inset-0"
-        style={{ opacity: 0 }}
-        title="Open in OpenStreetMap"
       />
     </div>
   )
 }
 
 export default function Customers() {
-  const [users, setUsers]     = useState([])
-  const [orders, setOrders]   = useState([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch]   = useState('')
+  const [users, setUsers]       = useState([])
+  const [orders, setOrders]     = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [search, setSearch]     = useState('')
   const [selected, setSelected] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  // geocoded coords cache: uid → {lat,lng} | null
+  const [geocoded, setGeocoded] = useState({})
+  const geocodingRef = useRef(new Set())
 
   useEffect(() => {
-    let usersLoaded = false, ordersLoaded = false
+    let ul = false, ol = false
     const u1 = onSnapshot(query(collection(db, 'users'), limit(500)), snap => {
       setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-      usersLoaded = true
-      if (ordersLoaded) setLoading(false)
+      ul = true; if (ol) setLoading(false)
     })
     const u2 = onSnapshot(
       query(collection(db, 'orders'), orderBy('created_at', 'desc'), limit(500)),
       snap => {
         setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-        ordersLoaded = true
-        if (usersLoaded) setLoading(false)
+        ol = true; if (ul) setLoading(false)
       }
     )
     return () => { u1(); u2() }
   }, [])
 
-  // Enrich users with order stats + parsed location
   const enriched = users.map(u => {
-    const userOrders = orders.filter(o => o.uid === u.id)
-    const totalSpent = userOrders.reduce((s, o) => s + readTotal(o), 0)
+    const userOrders  = orders.filter(o => o.uid === u.id)
+    const totalSpent  = userOrders.reduce((s, o) => s + readTotal(o), 0)
     const lastOrderDoc = userOrders[0] || null
     const lastOrder    = lastOrderDoc ? readCreatedAt(lastOrderDoc) : null
-    // Address: prefer last order's delivery_line, else user profile
-    const deliveryLine = lastOrderDoc?.delivery_line?.trim() || null
+    const deliveryLine = (lastOrderDoc?.delivery_line || '').trim() || null
     const profileAddr  = readAddressLine(u)
     const addressLine  = deliveryLine || profileAddr || null
-    return {
-      ...u,
-      orderCount: userOrders.length,
-      totalSpent,
-      lastOrder,
-      userOrders,
-      coords:      readCoords(u),
-      addressLine,
-    }
+    return { ...u, orderCount: userOrders.length, totalSpent, lastOrder, userOrders,
+      coords: readCoords(u), addressLine }
   })
 
   const filtered = enriched.filter(u => {
@@ -130,23 +123,36 @@ export default function Customers() {
 
   const selectedUser = selected ? enriched.find(u => u.id === selected) : null
 
+  // Geocode text address when detail panel opens and user has no GPS
+  useEffect(() => {
+    if (!selectedUser) return
+    if (selectedUser.coords) return          // already has GPS
+    const addr = selectedUser.addressLine
+    if (!addr) return
+    const uid = selectedUser.id
+    if (geocoded[uid] !== undefined) return  // already cached
+    if (geocodingRef.current.has(uid)) return
+    geocodingRef.current.add(uid)
+    geocode(addr).then(coords => {
+      setGeocoded(prev => ({ ...prev, [uid]: coords }))
+      geocodingRef.current.delete(uid)
+    })
+  }, [selectedUser?.id])
+
+  // Resolved coords: GPS first, geocoded fallback
+  const resolvedCoords = selectedUser
+    ? selectedUser.coords ?? geocoded[selectedUser.id] ?? null
+    : null
+  const geocoding = selectedUser && !selectedUser.coords && selectedUser.addressLine && geocoded[selectedUser.id] === undefined
+
   async function handleDelete(user) {
-    if (!confirm(`Delete customer "${user.displayName || user.id}"?\n\nThis removes their profile from the database. Their past orders will remain.`)) return
+    if (!confirm(`Delete "${user.displayName || user.id}"?\n\nRemoves their profile from the database. Past orders are kept.`)) return
     setDeleting(true)
     try {
       await deleteDoc(doc(db, 'users', user.id))
       setSelected(null)
-    } catch (e) {
-      alert(`Failed to delete: ${e.message}`)
-    } finally {
-      setDeleting(false)
-    }
-  }
-
-  function googleMapsUrl(coords, address) {
-    if (coords) return `https://www.google.com/maps/dir/?api=1&destination=${coords.lat},${coords.lng}&travelmode=driving`
-    if (address) return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
-    return null
+    } catch (e) { alert(`Failed: ${e.message}`) }
+    finally { setDeleting(false) }
   }
 
   if (loading) return (
@@ -166,18 +172,15 @@ export default function Customers() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Customer table */}
+        {/* Table */}
         <div className={`section-card ${selected ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-cream/60 border-b border-cream-border">
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Customer</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Mobile</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Orders</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Spent</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Last Order</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Location</th>
+                  {['Customer', 'Mobile', 'Orders', 'Total Spent', 'Last Order'].map(h => (
+                    <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -193,146 +196,157 @@ export default function Customers() {
                         <div>
                           <p className="font-semibold text-gray-900">{u.displayName || '—'}</p>
                           <p className="text-xs text-gray-400">{u.contactEmail || u.authEmail || ''}</p>
+                          {u.addressLine && (
+                            <p className="text-xs text-gray-400 truncate max-w-[180px]">{u.addressLine}</p>
+                          )}
                         </div>
                       </div>
                     </td>
                     <td className="px-5 py-3.5 font-mono text-xs text-gray-700">{u.mobile || u.authPhone || '—'}</td>
-                    <td className="px-5 py-3.5 text-gray-700 font-semibold">{u.orderCount}</td>
+                    <td className="px-5 py-3.5 font-semibold text-gray-700">{u.orderCount}</td>
                     <td className="px-5 py-3.5 font-bold text-gray-900">{fmtInr(u.totalSpent)}</td>
                     <td className="px-5 py-3.5 text-gray-500 text-xs">{u.lastOrder ? format(u.lastOrder, 'd MMM yyyy') : '—'}</td>
-                    <td className="px-5 py-3.5">
-                      {u.coords
-                        ? <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 px-2 py-1 rounded-lg">
-                            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                            GPS
-                          </span>
-                        : u.addressLine
-                          ? <span className="text-xs text-gray-500 truncate max-w-[120px] block">{u.addressLine}</span>
-                          : <span className="text-xs text-gray-300">—</span>}
-                    </td>
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400 text-sm">No customers found</td></tr>
+                  <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-400 text-sm">No customers found</td></tr>
                 )}
               </tbody>
             </table>
           </div>
           <div className="px-5 py-3 border-t border-cream-border bg-cream/40 text-xs text-gray-400">
-            Showing {filtered.length} of {users.length} customers
+            Showing {filtered.length} of {users.length} customers &nbsp;·&nbsp; Click a row to view details
           </div>
         </div>
 
-        {/* Customer detail panel */}
+        {/* Detail panel */}
         {selectedUser && (
-          <div className="section-card p-6 space-y-5 lg:col-span-1">
-            {/* Header */}
-            <div className="flex items-center justify-between">
+          <div className="section-card lg:col-span-1 flex flex-col max-h-screen overflow-y-auto">
+            <div className="px-6 py-5 border-b border-cream-border flex items-center justify-between sticky top-0 bg-white z-10">
               <h3 className="font-display font-bold text-lg text-maroon-deep">Customer Details</h3>
-              <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
+              <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
             </div>
 
-            {/* Avatar + name */}
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-maroon/10 flex items-center justify-center text-maroon font-bold text-xl shrink-0">
-                {(selectedUser.displayName || '?').charAt(0).toUpperCase()}
+            <div className="p-6 space-y-5 flex-1">
+              {/* Avatar + name */}
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-maroon/10 flex items-center justify-center text-maroon font-bold text-xl shrink-0">
+                  {(selectedUser.displayName || '?').charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900 text-base">{selectedUser.displayName || '—'}</p>
+                  <p className="text-sm text-gray-500">{selectedUser.mobile || selectedUser.authPhone || '—'}</p>
+                  {selectedUser.contactEmail && <p className="text-xs text-gray-400">{selectedUser.contactEmail}</p>}
+                </div>
               </div>
-              <div>
-                <p className="font-bold text-gray-900">{selectedUser.displayName || '—'}</p>
-                <p className="text-xs text-gray-500">{selectedUser.mobile || selectedUser.authPhone || '—'}</p>
-                {selectedUser.contactEmail && <p className="text-xs text-gray-400">{selectedUser.contactEmail}</p>}
-              </div>
-            </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-cream rounded-xl p-3 text-center">
-                <p className="text-xl font-bold text-maroon-deep">{selectedUser.orderCount}</p>
-                <p className="text-xs text-gray-500 mt-0.5">Orders</p>
+              {/* Stats */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-cream rounded-xl p-3 text-center">
+                  <p className="text-2xl font-bold text-maroon-deep">{selectedUser.orderCount}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Orders</p>
+                </div>
+                <div className="bg-cream rounded-xl p-3 text-center">
+                  <p className="text-xl font-bold text-maroon-deep">{fmtInr(selectedUser.totalSpent)}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Total Spent</p>
+                </div>
               </div>
-              <div className="bg-cream rounded-xl p-3 text-center">
-                <p className="text-lg font-bold text-maroon-deep">{fmtInr(selectedUser.totalSpent)}</p>
-                <p className="text-xs text-gray-500 mt-0.5">Total Spent</p>
-              </div>
-            </div>
 
-            {/* Location / Map */}
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Location</p>
+              {/* Map section */}
+              {(selectedUser.coords || selectedUser.addressLine) && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Location</p>
 
-              {selectedUser.coords ? (
-                <div className="space-y-2">
-                  <MapEmbed lat={selectedUser.coords.lat} lng={selectedUser.coords.lng} />
-                  <p className="text-xs text-gray-500 font-mono">
-                    {selectedUser.coords.lat.toFixed(6)}, {selectedUser.coords.lng.toFixed(6)}
-                  </p>
+                  {/* Address text */}
                   {selectedUser.addressLine && (
-                    <p className="text-xs text-gray-600">{selectedUser.addressLine}</p>
+                    <p className="text-sm text-gray-700 mb-2 leading-snug">{selectedUser.addressLine}</p>
                   )}
-                  <a
-                    href={googleMapsUrl(selectedUser.coords, selectedUser.addressLine)}
-                    target="_blank" rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-maroon text-white text-xs font-bold hover:bg-maroon-deep transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    Get Directions in Google Maps
-                  </a>
-                </div>
-              ) : selectedUser.addressLine ? (
-                <div className="space-y-2">
-                  <div className="bg-cream rounded-xl p-3">
-                    <p className="text-sm text-gray-700">{selectedUser.addressLine}</p>
-                  </div>
-                  <a
-                    href={googleMapsUrl(null, selectedUser.addressLine)}
-                    target="_blank" rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-maroon text-white text-xs font-bold hover:bg-maroon-deep transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    Search in Google Maps
-                  </a>
-                </div>
-              ) : (
-                <p className="text-xs text-gray-400 py-2">No location data for this customer</p>
-              )}
-            </div>
 
-            {/* Recent orders */}
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Recent Orders</p>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {selectedUser.userOrders.slice(0, 10).map(o => {
-                  const t = readCreatedAt(o)
-                  return (
-                    <div key={o.id} className="flex justify-between items-center text-xs py-1.5 border-b border-cream-border">
-                      <span className="font-mono text-gray-600">#{o.id.slice(0, 8)}</span>
-                      <span className="text-gray-500">{t ? format(t, 'd MMM') : '—'}</span>
-                      <span className="font-bold text-gray-900">{fmtInr(readTotal(o))}</span>
+                  {/* Map */}
+                  {geocoding ? (
+                    <div className="w-full rounded-xl border border-cream-border bg-cream flex items-center justify-center gap-2 text-sm text-gray-400" style={{ height: 220 }}>
+                      <div className="w-4 h-4 border-2 border-maroon border-t-transparent rounded-full animate-spin" />
+                      Finding on map...
                     </div>
-                  )
-                })}
-                {selectedUser.userOrders.length === 0 && (
-                  <p className="text-xs text-gray-400">No orders yet</p>
-                )}
-              </div>
-            </div>
+                  ) : resolvedCoords ? (
+                    <MapEmbed lat={resolvedCoords.lat} lng={resolvedCoords.lng} />
+                  ) : (
+                    <div className="w-full rounded-xl border border-cream-border bg-cream flex items-center justify-center text-sm text-gray-400" style={{ height: 100 }}>
+                      Could not locate on map
+                    </div>
+                  )}
 
-            {/* Delete */}
-            <div className="pt-2 border-t border-cream-border">
-              <button
-                onClick={() => handleDelete(selectedUser)}
-                disabled={deleting}
-                className="w-full py-2.5 rounded-xl bg-red-50 border border-red-100 text-red-700 text-xs font-bold hover:bg-red-100 transition-colors disabled:opacity-50"
-              >
-                {deleting ? 'Deleting...' : 'Delete Customer Profile'}
-              </button>
-              <p className="text-xs text-gray-400 mt-1.5 text-center">Orders are kept. Only the profile is removed.</p>
+                  {/* GPS badge or geocoded note */}
+                  {selectedUser.coords ? (
+                    <p className="text-xs text-green-600 font-semibold mt-1.5">GPS location (exact)</p>
+                  ) : resolvedCoords ? (
+                    <p className="text-xs text-gray-400 mt-1.5">Approximate location from address</p>
+                  ) : null}
+
+                  {/* Google Maps directions button */}
+                  {(resolvedCoords || selectedUser.addressLine) && (
+                    <a
+                      href={
+                        resolvedCoords
+                          ? `https://www.google.com/maps/dir/?api=1&destination=${resolvedCoords.lat},${resolvedCoords.lng}&travelmode=driving`
+                          : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedUser.addressLine)}`
+                      }
+                      target="_blank" rel="noopener noreferrer"
+                      className="mt-3 flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-maroon text-white text-sm font-bold hover:bg-maroon-deep transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                      </svg>
+                      Get Directions in Google Maps
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {!selectedUser.coords && !selectedUser.addressLine && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Location</p>
+                  <p className="text-sm text-gray-400">No location saved for this customer</p>
+                </div>
+              )}
+
+              {/* Recent orders */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Recent Orders</p>
+                <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                  {selectedUser.userOrders.slice(0, 10).map(o => {
+                    const t = readCreatedAt(o)
+                    return (
+                      <div key={o.id} className="flex justify-between items-center text-xs py-1.5 border-b border-cream-border">
+                        <span className="font-mono text-gray-600">#{o.id.slice(0, 8)}</span>
+                        <span className="text-gray-500">{t ? format(t, 'd MMM') : '—'}</span>
+                        <span className="font-bold text-gray-900">{fmtInr(readTotal(o))}</span>
+                        <span className={`badge text-xs capitalize ${
+                          (o.status || '') === 'delivered' ? 'bg-green-50 text-green-700' :
+                          (o.status || '') === 'cancelled' ? 'bg-gray-100 text-gray-500' :
+                          'bg-amber-50 text-amber-700'
+                        }`}>{o.status || 'placed'}</span>
+                      </div>
+                    )
+                  })}
+                  {selectedUser.userOrders.length === 0 && <p className="text-xs text-gray-400">No orders yet</p>}
+                </div>
+              </div>
+
+              {/* Delete */}
+              <div className="pt-4 border-t border-cream-border">
+                <button
+                  onClick={() => handleDelete(selectedUser)}
+                  disabled={deleting}
+                  className="w-full py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-bold hover:bg-red-100 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  {deleting ? 'Deleting...' : 'Delete Customer Profile'}
+                </button>
+                <p className="text-xs text-gray-400 mt-1.5 text-center">Orders are kept. Only the profile is removed.</p>
+              </div>
             </div>
           </div>
         )}
