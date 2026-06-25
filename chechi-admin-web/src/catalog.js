@@ -46,16 +46,6 @@ export const CATALOG = [
       { title: 'Ghee Rice',           subtitle: 'Aromatic neichoru',                 price: '₹120' },
     ],
   },
-  {
-    section: 'Combo Offers',
-    subtitle: 'Value meals & bundled favourites',
-    dishes: [
-      { title: 'Puttu + Kadala Combo',      subtitle: 'Rice puttu with kadala curry',              price: '₹140', badge: 'Combo' },
-      { title: 'Family Breakfast Combo',    subtitle: '2 puttu + kadala + green peas curry',        price: '₹320', badge: 'Best value' },
-      { title: 'Evening Snack Combo',       subtitle: 'Wheat puttu + potato stew + payasam',       price: '₹220', badge: 'Combo' },
-      { title: 'Party Combo Pack',          subtitle: 'Assorted puttu & gravies (serves 4–5)',      price: '₹599', badge: 'Party' },
-    ],
-  },
 ]
 
 /** key used in Firestore snapshots subcollection */
