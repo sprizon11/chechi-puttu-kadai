@@ -108,15 +108,13 @@ export default function Reports() {
     .map(([name, value]) => ({ name, value }))
   const PAYMENT_COLORS = ['#4CAF50', '#5C6BC0', '#C9A227', '#E64E12', '#7C1D1B', '#9CA3AF']
 
-  // ── Meal time breakdown ────────────────────────────────────────────────────
-  // Breakfast 5–11, Lunch 12–15, Dinner 16–21, Night 22–4
+  // ── Meal time breakdown (3 slots only) ────────────────────────────────────
   const MEAL_SLOTS = [
-    { label: 'Breakfast', hours: [5,6,7,8,9,10,11], color: '#F59E0B', emoji: '🌅' },
-    { label: 'Lunch',     hours: [12,13,14,15],      color: '#EF4444', emoji: '☀️' },
-    { label: 'Dinner',    hours: [16,17,18,19,20,21],color: '#7C1D1B', emoji: '🌙' },
-    { label: 'Night',     hours: [22,23,0,1,2,3,4],  color: '#6366F1', emoji: '🌃' },
+    { label: 'Breakfast', time: '5 AM – 12 PM', hours: [5,6,7,8,9,10,11],                      color: '#F59E0B', bg: '#FFFBEB', emoji: '🌅' },
+    { label: 'Lunch',     time: '12 PM – 4 PM', hours: [12,13,14,15],                           color: '#EF4444', bg: '#FFF5F5', emoji: '☀️' },
+    { label: 'Dinner',    time: '4 PM onwards', hours: [16,17,18,19,20,21,22,23,0,1,2,3,4],    color: '#7C1D1B', bg: '#FDF8F6', emoji: '🌙' },
   ]
-  const mealCounts = { Breakfast: 0, Lunch: 0, Dinner: 0, Night: 0 }
+  const mealCounts = { Breakfast: 0, Lunch: 0, Dinner: 0 }
   rangeOrders.forEach(o => {
     const t = readCreatedAt(o)
     if (!t) return
@@ -125,6 +123,7 @@ export default function Reports() {
     if (slot) mealCounts[slot.label]++
   })
   const mealData = MEAL_SLOTS.map(s => ({ ...s, count: mealCounts[s.label] }))
+  const mealTotal = mealData.reduce((s, m) => s + m.count, 0)
   const peakMeal = mealData.reduce((best, m) => m.count > best.count ? m : best, mealData[0])
 
   function exportCSV() {
@@ -281,26 +280,35 @@ export default function Reports() {
       {/* Payment method donut + Meal time */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-        {/* Revenue by Payment Method — donut */}
-        <div className="section-card p-6">
-          <h2 className="font-display font-bold text-lg text-maroon-deep mb-1">Revenue by Payment Method</h2>
-          <p className="text-sm text-gray-500 mb-4">Last {range} days · by revenue</p>
+        {/* Revenue by Payment Method — premium donut */}
+        <div className="section-card p-6 flex flex-col">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-2xl bg-green-50 flex items-center justify-center text-xl shrink-0">💳</div>
+            <div>
+              <h2 className="font-display font-bold text-lg text-maroon-deep leading-tight">Revenue by Payment</h2>
+              <p className="text-xs text-gray-400 mt-0.5">Last {range} days</p>
+            </div>
+          </div>
+
           {paymentData.length === 0 ? (
-            <p className="text-sm text-gray-400 py-8 text-center">No payment data in this range</p>
+            <div className="flex-1 flex items-center justify-center py-10">
+              <p className="text-sm text-gray-400">No payment data in this range</p>
+            </div>
           ) : (
-            <div className="flex items-center gap-4">
-              {/* Donut */}
-              <div className="shrink-0" style={{ width: 180, height: 180 }}>
+            <div className="flex flex-col items-center gap-5">
+              {/* Donut with center total */}
+              <div className="relative" style={{ width: 200, height: 200 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={paymentData}
                       dataKey="value"
-                      innerRadius={52}
-                      outerRadius={82}
-                      paddingAngle={2}
+                      innerRadius={62}
+                      outerRadius={92}
+                      paddingAngle={3}
                       startAngle={90}
                       endAngle={-270}
+                      strokeWidth={0}
                     >
                       {paymentData.map((_, i) => (
                         <Cell key={i} fill={PAYMENT_COLORS[i % PAYMENT_COLORS.length]} />
@@ -308,28 +316,36 @@ export default function Reports() {
                     </Pie>
                     <Tooltip
                       formatter={v => [fmtInr(v), 'Revenue']}
-                      contentStyle={{ borderRadius: 10, border: '1px solid #E4D7C7', fontSize: 12 }}
+                      contentStyle={{ borderRadius: 12, border: '1px solid #E4D7C7', fontSize: 12, boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
+                {/* Center label */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total</p>
+                  <p className="text-xl font-bold text-maroon-deep mt-0.5">{fmtInr(totalRevenue)}</p>
+                </div>
               </div>
-              {/* Legend */}
-              <div className="flex-1 space-y-2.5 min-w-0">
+
+              {/* Legend rows */}
+              <div className="w-full space-y-3">
                 {paymentData.map((d, i) => {
-                  const totalPay = paymentData.reduce((s, x) => s + x.value, 0)
-                  const pct = totalPay > 0 ? Math.round((d.value / totalPay) * 100) : 0
+                  const pct = totalRevenue > 0 ? Math.round((d.value / totalRevenue) * 100) : 0
+                  const color = PAYMENT_COLORS[i % PAYMENT_COLORS.length]
                   return (
-                    <div key={d.name} className="flex items-center gap-2 min-w-0">
-                      <span className="w-3 h-3 rounded-full shrink-0" style={{ background: PAYMENT_COLORS[i % PAYMENT_COLORS.length] }} />
+                    <div key={d.name} className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ background: color }} />
                       <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-baseline gap-1">
-                          <span className="text-xs font-semibold text-gray-700 truncate">{d.name}</span>
-                          <span className="text-xs font-bold text-gray-500 shrink-0">{pct}%</span>
+                        <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                          <span className="text-sm font-semibold text-gray-700 truncate">{d.name}</span>
+                          <div className="flex items-baseline gap-2 shrink-0">
+                            <span className="text-xs text-gray-400">{fmtInr(d.value)}</span>
+                            <span className="text-xs font-bold" style={{ color }}>{pct}%</span>
+                          </div>
                         </div>
-                        <div className="mt-0.5 h-1.5 bg-cream-border rounded-full overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: PAYMENT_COLORS[i % PAYMENT_COLORS.length] }} />
+                        <div className="h-2 rounded-full overflow-hidden" style={{ background: color + '20' }}>
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
                         </div>
-                        <p className="text-xs text-gray-400 mt-0.5">{fmtInr(d.value)}</p>
                       </div>
                     </div>
                   )
@@ -339,51 +355,81 @@ export default function Reports() {
           )}
         </div>
 
-        {/* Meal Time Analysis */}
-        <div className="section-card p-6">
-          <div className="flex items-center justify-between mb-1">
-            <h2 className="font-display font-bold text-lg text-maroon-deep">Orders by Meal Time</h2>
-            {rangeOrders.length > 0 && (
-              <span className="text-xs font-bold px-2.5 py-1 rounded-lg" style={{ background: peakMeal.color + '20', color: peakMeal.color }}>
-                {peakMeal.emoji} {peakMeal.label} is peak
-              </span>
-            )}
+        {/* Meal Time — 3 big cards */}
+        <div className="section-card p-6 flex flex-col">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-2xl bg-amber-50 flex items-center justify-center text-xl shrink-0">⏰</div>
+            <div>
+              <h2 className="font-display font-bold text-lg text-maroon-deep leading-tight">Orders by Meal Time</h2>
+              <p className="text-xs text-gray-400 mt-0.5">Last {range} days &middot; when customers order most</p>
+            </div>
           </div>
-          <p className="text-sm text-gray-500 mb-5">Last {range} days · by order count</p>
+
           {rangeOrders.length === 0 ? (
-            <p className="text-sm text-gray-400 py-8 text-center">No data in this range</p>
+            <div className="flex-1 flex items-center justify-center py-10">
+              <p className="text-sm text-gray-400">No data in this range</p>
+            </div>
           ) : (
-            <div className="space-y-4">
-              {mealData.map(slot => {
-                const totalMeal = mealData.reduce((s, m) => s + m.count, 0)
-                const pct = totalMeal > 0 ? Math.round((slot.count / totalMeal) * 100) : 0
-                const isPeak = slot.label === peakMeal.label && slot.count > 0
-                return (
-                  <div key={slot.label} className={`rounded-xl p-3 ${isPeak ? 'border-2' : 'border border-cream-border'}`}
-                    style={{ borderColor: isPeak ? slot.color : undefined }}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">{slot.emoji}</span>
-                        <div>
-                          <span className="text-sm font-bold text-gray-800">{slot.label}</span>
-                          <span className="text-xs text-gray-400 ml-2">
-                            {slot.label === 'Breakfast' ? '5 AM – 12 PM' :
-                             slot.label === 'Lunch'     ? '12 PM – 4 PM' :
-                             slot.label === 'Dinner'    ? '4 PM – 10 PM' : '10 PM – 5 AM'}
-                          </span>
+            <div className="flex flex-col gap-4 flex-1">
+              {/* Three slot cards in a row */}
+              <div className="grid grid-cols-3 gap-3">
+                {mealData.map(slot => {
+                  const pct = mealTotal > 0 ? Math.round((slot.count / mealTotal) * 100) : 0
+                  const isPeak = slot.label === peakMeal.label && slot.count > 0
+                  return (
+                    <div key={slot.label}
+                      className="rounded-2xl p-4 text-center relative overflow-hidden flex flex-col items-center"
+                      style={{
+                        background: isPeak ? slot.color + '12' : '#FAF6F0',
+                        border: isPeak ? `2px solid ${slot.color}60` : '1.5px solid #EDE3D8',
+                      }}>
+                      {isPeak && (
+                        <div className="absolute top-2 right-2">
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                            style={{ background: slot.color + '25', color: slot.color }}>Peak</span>
                         </div>
+                      )}
+                      <span className="text-2xl mb-2">{slot.emoji}</span>
+                      <p className="text-xs font-bold text-gray-600 mb-1">{slot.label}</p>
+                      <p className="text-3xl font-bold leading-none" style={{ color: isPeak ? slot.color : '#1F2937' }}>
+                        {slot.count}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1 mb-3">orders</p>
+                      <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: slot.color + '20' }}>
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: slot.color }} />
                       </div>
-                      <div className="text-right">
-                        <p className="text-base font-bold text-gray-900">{slot.count}</p>
-                        <p className="text-xs text-gray-400">{pct}%</p>
-                      </div>
+                      <p className="text-xs font-bold mt-1.5" style={{ color: slot.color }}>{pct}%</p>
                     </div>
-                    <div className="h-2 bg-cream-border rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: slot.color }} />
-                    </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
+
+              {/* Time labels below */}
+              <div className="grid grid-cols-3 gap-3 text-center">
+                {mealData.map(slot => (
+                  <p key={slot.label} className="text-[11px] text-gray-400">{slot.time}</p>
+                ))}
+              </div>
+
+              {/* Summary bar */}
+              {mealTotal > 0 && (
+                <div className="mt-2 rounded-xl overflow-hidden bg-cream-border flex" style={{ height: 8 }}>
+                  {mealData.map(slot => {
+                    const pct = mealTotal > 0 ? (slot.count / mealTotal) * 100 : 0
+                    return <div key={slot.label} style={{ width: `${pct}%`, background: slot.color }} />
+                  })}
+                </div>
+              )}
+              {mealTotal > 0 && (
+                <div className="flex justify-between text-xs text-gray-400 px-0.5">
+                  {mealData.map(slot => (
+                    <span key={slot.label} className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full" style={{ background: slot.color }} />
+                      {slot.label}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
