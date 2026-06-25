@@ -25,13 +25,12 @@ export default function Settings() {
   })
 
   useEffect(() => {
-    getDoc(doc(db, 'admin_public', '__settings__')).then(snap => {
-      if (snap.exists()) {
-        const d = snap.data()
-        setForm(f => ({ ...f, ...d }))
-      }
-      setLoading(false)
-    })
+    getDoc(doc(db, 'admin_public', '__settings__'))
+      .then(snap => {
+        if (snap.exists()) setForm(f => ({ ...f, ...snap.data() }))
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [])
 
   async function handleSave(e) {
