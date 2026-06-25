@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  body {
+    @apply bg-cream text-gray-900 font-sans;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-cream-border rounded-full; }
+}
+
+@layer components {
+  .stat-card {
+    @apply bg-white rounded-2xl border border-cream-border p-5 shadow-sm;
+  }
+  .page-title {
+    @apply font-display text-2xl font-bold text-maroon-deep;
+  }
+  .page-subtitle {
+    @apply text-sm text-gray-500 mt-0.5;
+  }
+  .btn-primary {
+    @apply bg-maroon hover:bg-maroon-deep text-white font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm;
+  }
+  .btn-ghost {
+    @apply border border-cream-border hover:bg-cream text-gray-700 font-medium px-4 py-2 rounded-xl transition-colors text-sm;
+  }
+  .input {
+    @apply w-full border border-cream-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-maroon/30 focus:border-maroon transition bg-white;
+  }
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold;
+  }
+  .table-row {
+    @apply border-b border-cream-border last:border-0 hover:bg-cream/60 transition-colors;
+  }
+  .section-card {
+    @apply bg-white rounded-2xl border border-cream-border shadow-sm overflow-hidden;
+  }
+}
