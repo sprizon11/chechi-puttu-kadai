@@ -204,13 +204,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           borderColor: cs.outlineVariant,
                         ),
                         const SizedBox(height: 22),
-                        _RecentOrdersHeader(
+                        _PeakDishesHeader(
                           onViewAll: () =>
                               widget.navIndexNotifier.value = 2,
                           titleColor: cs.onSurface,
                         ),
                         const SizedBox(height: 10),
-                        _FirestoreRecentOrdersTable(docs: docs),
+                        _PeakDishesWidget(docs: docs),
                         ],
                       ),
                     ),
@@ -1108,8 +1108,8 @@ class _QuickAction extends StatelessWidget {
   }
 }
 
-class _RecentOrdersHeader extends StatelessWidget {
-  const _RecentOrdersHeader({
+class _PeakDishesHeader extends StatelessWidget {
+  const _PeakDishesHeader({
     required this.onViewAll,
     required this.titleColor,
   });
@@ -1121,8 +1121,14 @@ class _RecentOrdersHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
+        const Icon(
+          Icons.local_fire_department_rounded,
+          color: Color(0xFFE65100),
+          size: 22,
+        ),
+        const SizedBox(width: 6),
         Text(
-          'Recent Orders',
+          'Peak Dishes',
           style: GoogleFonts.playfairDisplay(
             fontSize: 20,
             fontWeight: FontWeight.w700,
@@ -1133,7 +1139,7 @@ class _RecentOrdersHeader extends StatelessWidget {
         InkWell(
           onTap: onViewAll,
           child: Text(
-            'View All Orders >',
+            'All Orders >',
             style: GoogleFonts.poppins(
               fontSize: 12,
               fontWeight: FontWeight.w700,
@@ -1146,15 +1152,65 @@ class _RecentOrdersHeader extends StatelessWidget {
   }
 }
 
-class _FirestoreRecentOrdersTable extends StatelessWidget {
-  const _FirestoreRecentOrdersTable({required this.docs});
+class _PeakDishesWidget extends StatelessWidget {
+  const _PeakDishesWidget({required this.docs});
 
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+
+  static const _rankColors = [
+    Color(0xFFFFB300),
+    Color(0xFF9E9E9E),
+    Color(0xFFBF8970),
+    Color(0xFF5D1F1A),
+    Color(0xFF5D1F1A),
+  ];
+
+  Map<String, int> _aggregateDishes() {
+    final counts = <String, int>{};
+    for (final doc in docs) {
+      final m = doc.data();
+      final items = m['items'];
+      if (items is! List) continue;
+      for (final item in items) {
+        if (item is! Map) continue;
+        final name = (item['name'] as String? ?? '').trim();
+        if (name.isEmpty) continue;
+        final qty = (item['qty'] as num?)?.toInt() ?? 1;
+        counts[name] = (counts[name] ?? 0) + qty;
+      }
+    }
+    return counts;
+  }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final rows = docs.take(8).toList();
+    final counts = _aggregateDishes();
+
+    if (counts.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: cs.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: cs.outlineVariant),
+        ),
+        child: Center(
+          child: Text(
+            'No order data yet.',
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final sorted = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final top = sorted.take(6).toList();
+    final maxQty = top.first.value;
 
     return Container(
       decoration: BoxDecoration(
@@ -1165,146 +1221,144 @@ class _FirestoreRecentOrdersTable extends StatelessWidget {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
             child: Row(
               children: [
-                _h('Order ID', 1, cs),
-                _h('Customer', 2, cs),
-                _h('Items', 1, cs),
-                _h('Amount', 1, cs),
-                _h('Status', 1.2, cs),
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    'Dish',
+                    style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 5,
+                  child: Text(
+                    'Popularity',
+                    style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 48,
+                  child: Text(
+                    'Orders',
+                    textAlign: TextAlign.right,
+                    style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
           Divider(height: 1, color: cs.outlineVariant),
-          if (rows.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                'No orders yet.',
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: cs.onSurfaceVariant,
-                ),
+          for (var i = 0; i < top.length; i++) ...[
+            if (i > 0)
+              Divider(
+                height: 1,
+                indent: 14,
+                endIndent: 14,
+                color: cs.outlineVariant.withValues(alpha: 0.5),
               ),
-            )
-          else
-            for (var i = 0; i < rows.length; i++) ...[
-              if (i > 0)
-                Divider(
-                  height: 1,
-                  color: cs.outlineVariant.withValues(alpha: 0.7),
-                ),
-              _OrderRow(doc: rows[i], cs: cs),
-            ],
+            _PeakDishRow(
+              rank: i + 1,
+              name: top[i].key,
+              qty: top[i].value,
+              maxQty: maxQty,
+              rankColor: _rankColors[i.clamp(0, _rankColors.length - 1)],
+              cs: cs,
+            ),
+          ],
         ],
-      ),
-    );
-  }
-
-  static Widget _h(String t, double flex, ColorScheme cs) {
-    return Expanded(
-      flex: (flex * 10).round(),
-      child: Text(
-        t,
-        style: GoogleFonts.poppins(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: cs.onSurfaceVariant,
-        ),
       ),
     );
   }
 }
 
-class _OrderRow extends StatelessWidget {
-  const _OrderRow({
-    required this.doc,
+class _PeakDishRow extends StatelessWidget {
+  const _PeakDishRow({
+    required this.rank,
+    required this.name,
+    required this.qty,
+    required this.maxQty,
+    required this.rankColor,
     required this.cs,
   });
 
-  final QueryDocumentSnapshot<Map<String, dynamic>> doc;
+  final int rank;
+  final String name;
+  final int qty;
+  final int maxQty;
+  final Color rankColor;
   final ColorScheme cs;
 
   @override
   Widget build(BuildContext context) {
-    final m = doc.data();
-    final idShort = doc.id.length > 6 ? doc.id.substring(0, 6) : doc.id;
-    final uid = _readUid(m);
-    final customer = uid.isEmpty
-        ? '—'
-        : (uid.length <= 6 ? uid : '…${uid.substring(uid.length - 6)}');
-    final items = '${_readItemCount(m)}';
-    final amt = _fmtInr(_readTotalRupees(m));
-    final status = _formatStatus(_readStatusRaw(m));
-    final chipBg = _statusChipFill(_readStatusRaw(m), cs);
-
+    final ratio = maxQty > 0 ? qty / maxQty : 0.0;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(
         children: [
-          Expanded(
-            flex: 10,
+          SizedBox(
+            width: 22,
             child: Text(
-              '#$idShort',
+              '#$rank',
               style: GoogleFonts.poppins(
                 fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: cs.onSurface,
+                fontWeight: FontWeight.w800,
+                color: rankColor,
               ),
             ),
           ),
+          const SizedBox(width: 6),
           Expanded(
-            flex: 20,
+            flex: 3,
             child: Text(
-              customer,
+              name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: GoogleFonts.poppins(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
                 color: cs.onSurface,
               ),
             ),
           ),
+          const SizedBox(width: 10),
           Expanded(
-            flex: 10,
-            child: Text(
-              items,
-              style: GoogleFonts.poppins(fontSize: 11, color: cs.onSurface),
+            flex: 5,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: ratio,
+                minHeight: 7,
+                backgroundColor: cs.outlineVariant.withValues(alpha: 0.35),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  rankColor.withValues(alpha: 0.85),
+                ),
+              ),
             ),
           ),
-          Expanded(
-            flex: 10,
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 40,
             child: Text(
-              amt,
+              '$qty',
+              textAlign: TextAlign.right,
               style: GoogleFonts.poppins(
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: FontWeight.w700,
                 color: cs.onSurface,
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 12,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: chipBg,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  status,
-                  style: GoogleFonts.poppins(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                    color: cs.onSurface,
-                  ),
-                ),
               ),
             ),
           ),
@@ -1427,22 +1481,9 @@ int _readTotalRupees(Map<String, dynamic> data) {
   return 0;
 }
 
-int _readItemCount(Map<String, dynamic> data) {
-  final items = data['items'];
-  if (items is List) return items.length;
-  return 0;
-}
-
 String? _readStatusRaw(Map<String, dynamic> data) {
   final s = data['status'];
   return s is String ? s : null;
-}
-
-String _formatStatus(String? raw) {
-  if (raw == null || raw.isEmpty) return 'Unknown';
-  final s = raw.trim();
-  if (s.length == 1) return s.toUpperCase();
-  return s[0].toUpperCase() + s.substring(1).toLowerCase();
 }
 
 String _readUid(Map<String, dynamic> data) {
@@ -1459,21 +1500,6 @@ String _fmtInr(int rupees) {
     buf.write(s[i]);
   }
   return buf.toString();
-}
-
-Color _statusChipFill(String? status, ColorScheme cs) {
-  final st = (status ?? '').toLowerCase();
-  switch (st) {
-    case 'delivered':
-      return cs.primaryContainer.withValues(alpha: 0.65);
-    case 'cancelled':
-      return cs.surfaceContainerHighest;
-    case 'placed':
-    case 'pending':
-      return cs.errorContainer.withValues(alpha: 0.55);
-    default:
-      return cs.secondaryContainer.withValues(alpha: 0.65);
-  }
 }
 
 List<FlSpot> _spotsForChart(
