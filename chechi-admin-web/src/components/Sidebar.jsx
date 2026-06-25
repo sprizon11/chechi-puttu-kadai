@@ -53,22 +53,28 @@ export default function Sidebar({ open, onClose }) {
         <div className="fixed inset-0 bg-black/40 z-20 lg:hidden" onClick={onClose} />
       )}
 
-      <aside className={`
-        fixed top-0 left-0 h-full w-64 z-30 flex flex-col
-        bg-maroon-deep text-white shadow-2xl
-        transition-transform duration-300
-        ${open ? 'translate-x-0' : '-translate-x-full'}
-        lg:translate-x-0 lg:static lg:z-auto
-      `}>
+      <aside
+        className={`
+          fixed top-0 left-0 h-full w-64 z-30 flex flex-col text-white shadow-2xl
+          transition-transform duration-300
+          ${open ? 'translate-x-0' : '-translate-x-full'}
+          lg:translate-x-0 lg:static lg:z-auto
+        `}
+        style={{ background: 'linear-gradient(175deg, #5D1F1A 0%, #360F0D 100%)' }}
+      >
         {/* Logo */}
-        <div className="px-6 pt-7 pb-5 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center text-xl shrink-0">
+        <div className="px-6 pt-7 pb-5 border-b border-white/10 relative">
+          {/* Decorative glow */}
+          <div className="absolute top-0 right-0 w-32 h-32 rounded-full pointer-events-none"
+            style={{ background: 'radial-gradient(circle, rgba(234,122,44,0.15) 0%, transparent 70%)', transform: 'translate(30%, -30%)' }} />
+          <div className="flex items-center gap-3 relative">
+            <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-xl shrink-0 shadow-lg"
+              style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.08) 100%)', border: '1px solid rgba(255,255,255,0.15)' }}>
               🍽️
             </div>
             <div>
-              <p className="font-display font-bold text-base leading-tight text-white">Chechi Puttu</p>
-              <p className="text-xs text-white/50 font-medium">Admin Panel</p>
+              <p className="font-display font-bold text-base leading-tight text-white tracking-tight">Chechi Puttu</p>
+              <p className="text-[10px] text-white/40 font-semibold uppercase tracking-widest">Admin Panel</p>
             </div>
           </div>
         </div>
@@ -105,7 +111,7 @@ export default function Sidebar({ open, onClose }) {
         </nav>
 
         {/* Logout */}
-        <div className="px-3 pb-5 border-t border-white/10 pt-3">
+        <div className="px-3 pb-5 border-t border-white/10 pt-3 relative">
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold text-white/60 hover:text-white hover:bg-white/10 transition-all"

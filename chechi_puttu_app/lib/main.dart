@@ -5284,28 +5284,56 @@ class _HomeScreenState extends State<HomeScreen>
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: SizedBox(
-                height: 78,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: visible.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, chipIdx) {
-                    final i = visible[chipIdx];
-                    final label = customerMenuSections[i].title;
-                    final chipLabel = label.length > 14
-                        ? '${label.substring(0, 12).trim()}…'
-                        : label;
-                    return SizedBox(
-                      width: 76,
-                      child: _CategoryChip(
-                        label: chipLabel.replaceAll(' & ', ' &\n'),
-                        icon: _exploreMenuChipIcon(label),
-                        margin: EdgeInsets.zero,
-                        onTap: () => setState(() => _homeSectionFilter = i),
+                height: 88,
+                child: visible.length <= 6
+                    ? Row(
+                        children: List.generate(visible.length, (chipIdx) {
+                          final i = visible[chipIdx];
+                          final label = customerMenuSections[i].title;
+                          final chipLabel = label.length > 14
+                              ? '${label.substring(0, 12).trim()}…'
+                              : label;
+                          return Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                  right: chipIdx < visible.length - 1 ? 8 : 0),
+                              child: _CategoryChip(
+                                label: chipLabel.replaceAll(' & ', ' &\n'),
+                                icon: _exploreMenuChipIcon(label),
+                                selected: _homeSectionFilter == i,
+                                margin: EdgeInsets.zero,
+                                onTap: () => setState(() =>
+                                    _homeSectionFilter =
+                                        _homeSectionFilter == i ? null : i),
+                              ),
+                            ),
+                          );
+                        }),
+                      )
+                    : ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: visible.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, chipIdx) {
+                          final i = visible[chipIdx];
+                          final label = customerMenuSections[i].title;
+                          final chipLabel = label.length > 14
+                              ? '${label.substring(0, 12).trim()}…'
+                              : label;
+                          return SizedBox(
+                            width: 76,
+                            child: _CategoryChip(
+                              label: chipLabel.replaceAll(' & ', ' &\n'),
+                              icon: _exploreMenuChipIcon(label),
+                              selected: _homeSectionFilter == i,
+                              margin: EdgeInsets.zero,
+                              onTap: () => setState(() =>
+                                  _homeSectionFilter =
+                                      _homeSectionFilter == i ? null : i),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             );
           },
@@ -5350,13 +5378,59 @@ class _HomeScreenState extends State<HomeScreen>
             MenuDeletedDishes.instance,
           ]),
           builder: (context, _) {
+            final dishes = _visibleDishes(sec, sectionId);
+            if (_homeSectionFilter != null) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 0.76,
+                  ),
+                  itemCount: dishes.length,
+                  itemBuilder: (context, idx) {
+                    final m = _mergedDish(sectionId, dishes[idx]);
+                    return LayoutBuilder(
+                      builder: (context, constraints) {
+                        final h = constraints.maxWidth / 0.76;
+                        return _ProductCard(
+                          height: h.isFinite ? h : 210,
+                          badge: m.badge,
+                          title: m.title,
+                          subtitle: m.subtitle,
+                          price: m.price,
+                          imageBase64: m.imageBase64,
+                          available: m.available,
+                          isFavorite: _isFavoriteDish(m.title, m.subtitle),
+                          onToggleFavorite: () =>
+                              _toggleFavoriteDish(m.title, m.subtitle),
+                          qty: _qtyInCart(m.title, m.subtitle),
+                          onAdd: () => _addDishToCart(
+                            m.title,
+                            m.subtitle,
+                            m.price,
+                            imageBase64: m.imageBase64,
+                          ),
+                          onRemove: () =>
+                              _removeDishFromCart(m.title, m.subtitle),
+                        );
+                      },
+                    );
+                  },
+                ),
+              );
+            }
             return SizedBox(
               height: _kHomeDishCardHeight,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 children: [
-                  ..._visibleDishes(sec, sectionId).map((d) {
+                  ...dishes.map((d) {
                     final m = _mergedDish(sectionId, d);
                     return Align(
                       alignment: Alignment.topCenter,
@@ -7105,6 +7179,30 @@ class _CartTabState extends State<_CartTab> {
         },
     ];
 
+    // Show loading immediately so the user isn't staring at a frozen screen
+    // while the Firebase function + Cashfree API call completes (~3-5 s).
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          content: Row(
+            children: [
+              const SizedBox(
+                height: 28,
+                width: 28,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 16),
+              Text('Opening payment…', style: GoogleFonts.poppins(fontSize: 14)),
+            ],
+          ),
+        ),
+      ),
+    );
+
     late final CashfreeCheckoutResult start;
     try {
       start = await _cfCheckout.createCheckout(
@@ -7114,6 +7212,7 @@ class _CartTabState extends State<_CartTab> {
         scheduledAt: scheduledAt,
       );
     } catch (e) {
+      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
       messenger.showSnackBar(
         SnackBar(
           content: Text(
@@ -7126,6 +7225,7 @@ class _CartTabState extends State<_CartTab> {
     }
 
     if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
 
     final payDone = Completer<bool>();
     _cfPayDone = payDone;
@@ -10823,12 +10923,14 @@ class _CategoryChip extends StatelessWidget {
     this.onTap,
     this.margin,
     this.icon,
+    this.selected = false,
   });
 
   final String label;
   final VoidCallback? onTap;
   final EdgeInsetsGeometry? margin;
   final IconData? icon;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -10836,43 +10938,63 @@ class _CategoryChip extends StatelessWidget {
     final accent = isDark ? _Theme.text(context) : _AppColors.primary;
     return ChechiPressable(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
+      borderRadius: BorderRadius.circular(16),
+      child: AnimatedContainer(
+        duration: ChechiBrand.fast,
+        curve: ChechiBrand.ease,
         margin: margin ?? const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
         decoration: BoxDecoration(
-          color: isDark
-              ? _Theme.surfaceLow(context)
-              : const Color(0xFFFFFCF8),
-          borderRadius: BorderRadius.circular(14),
+          color: selected
+              ? (isDark
+                  ? _AppColors.primary.withValues(alpha: 0.25)
+                  : const Color(0xFFFFEFE6))
+              : (isDark
+                  ? _Theme.surfaceLow(context)
+                  : const Color(0xFFFFFCF8)),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: _Theme.border(context).withValues(alpha: 0.9),
+            color: selected
+                ? _AppColors.primary.withValues(alpha: 0.55)
+                : _Theme.border(context).withValues(alpha: 0.9),
+            width: selected ? 1.5 : 1.0,
           ),
-          boxShadow: [
-            if (!isDark)
-              BoxShadow(
-                color: const Color(0xFF5D1109).withValues(alpha: 0.04),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-          ],
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: _AppColors.primary.withValues(alpha: 0.18),
+                    blurRadius: 14,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : [
+                  if (!isDark)
+                    BoxShadow(
+                      color: const Color(0xFF5D1109).withValues(alpha: 0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                ],
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              height: 32,
-              width: 32,
+              height: 36,
+              width: 36,
               decoration: BoxDecoration(
-                color: const Color(0xFFFFEFE6),
+                color: selected
+                    ? _AppColors.primary.withValues(alpha: 0.12)
+                    : const Color(0xFFFFEFE6),
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: _AppColors.primary.withValues(alpha: 0.12),
+                  color: _AppColors.primary.withValues(
+                      alpha: selected ? 0.3 : 0.12),
                 ),
               ),
               child: Icon(
                 icon ?? Icons.rice_bowl_rounded,
-                size: 17,
+                size: 18,
                 color: _AppColors.primary,
               ),
             ),
@@ -10885,9 +11007,10 @@ class _CategoryChip extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.poppins(
-                  fontSize: 10,
+                  fontSize: 10.5,
                   color: accent,
-                  fontWeight: FontWeight.w700,
+                  fontWeight:
+                      selected ? FontWeight.w800 : FontWeight.w700,
                   height: 1.05,
                 ),
               ),
@@ -11064,10 +11187,10 @@ class _ProductCardState extends State<_ProductCard> {
                                 maxLines: titleMaxLines,
                                 softWrap: true,
                                 overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.labelMedium
-                                    ?.copyWith(
-                                  fontWeight: FontWeight.w900,
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.w800,
                                   color: _Theme.text(context),
+                                  fontSize: compactHeight ? 12.5 : 13.5,
                                   height: 1.12,
                                 ),
                               ),
@@ -11081,7 +11204,7 @@ class _ProductCardState extends State<_ProductCard> {
                                     ?.copyWith(
                                   color: _Theme.muted(context),
                                   fontWeight: FontWeight.w600,
-                                  fontSize: compactHeight ? 9 : 10.2,
+                                  fontSize: compactHeight ? 9.5 : 10.5,
                                   height: 1.08,
                                 ),
                               ),
@@ -11497,87 +11620,120 @@ class _BottomNavBar extends StatelessWidget {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-        child: SizedBox(
-          height: 58,
-          child: Row(
-            children: [
-              Expanded(
-                child: _NavPillItem(
-                  icon: Icons.home_rounded,
-                  label: 'Home',
-                  selected: index == 0,
-                  onTap: () => onChanged(0),
-                  activeColor: dark
-                      ? theme.colorScheme.primaryContainer
-                      : const Color(0xFFFFEEE7),
-                  activeTextColor: dark
-                      ? theme.colorScheme.onPrimaryContainer
-                      : const Color(0xFF5D1F1A),
-                  inactiveColor: inactiveColor,
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(30),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+            child: AnimatedContainer(
+              duration: ChechiBrand.fast,
+              curve: ChechiBrand.ease,
+              height: 62,
+              decoration: BoxDecoration(
+                color: dark
+                    ? Colors.black.withValues(alpha: 0.45)
+                    : Colors.white.withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(
+                  color: dark
+                      ? Colors.white.withValues(alpha: 0.10)
+                      : Colors.white.withValues(alpha: 0.90),
+                  width: 1.2,
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: dark ? 0.35 : 0.10),
+                    blurRadius: 32,
+                    offset: const Offset(0, 6),
+                  ),
+                  if (!dark)
+                    BoxShadow(
+                      color: const Color(0xFF7C1D1B).withValues(alpha: 0.06),
+                      blurRadius: 16,
+                      offset: const Offset(0, 2),
+                    ),
+                ],
               ),
-              Expanded(
-                child: _NavPillItem(
-                  icon: Icons.grid_view_rounded,
-                  label: 'Menu',
-                  selected: index == 1,
-                  onTap: () => onChanged(1),
-                  activeColor: dark
-                      ? theme.colorScheme.primaryContainer
-                      : const Color(0xFFFFEEE7),
-                  activeTextColor: dark
-                      ? theme.colorScheme.onPrimaryContainer
-                      : warmSelected,
-                  inactiveColor: inactiveColor,
-                ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _NavPillItem(
+                      icon: Icons.home_rounded,
+                      label: 'Home',
+                      selected: index == 0,
+                      onTap: () => onChanged(0),
+                      activeColor: dark
+                          ? theme.colorScheme.primaryContainer
+                          : const Color(0xFFFFEEE7),
+                      activeTextColor: dark
+                          ? theme.colorScheme.onPrimaryContainer
+                          : const Color(0xFF5D1F1A),
+                      inactiveColor: inactiveColor,
+                    ),
+                  ),
+                  Expanded(
+                    child: _NavPillItem(
+                      icon: Icons.grid_view_rounded,
+                      label: 'Menu',
+                      selected: index == 1,
+                      onTap: () => onChanged(1),
+                      activeColor: dark
+                          ? theme.colorScheme.primaryContainer
+                          : const Color(0xFFFFEEE7),
+                      activeTextColor: dark
+                          ? theme.colorScheme.onPrimaryContainer
+                          : warmSelected,
+                      inactiveColor: inactiveColor,
+                    ),
+                  ),
+                  Expanded(
+                    child: _NavPillItem(
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Orders',
+                      selected: index == 3,
+                      onTap: () => onChanged(3),
+                      activeColor: dark
+                          ? theme.colorScheme.primaryContainer
+                          : const Color(0xFFFFEEE7),
+                      activeTextColor: dark
+                          ? theme.colorScheme.onPrimaryContainer
+                          : warmSelected,
+                      inactiveColor: inactiveColor,
+                    ),
+                  ),
+                  Expanded(
+                    child: _NavPillItem(
+                      icon: Icons.chat_bubble_outline_rounded,
+                      label: 'Chat',
+                      selected: false,
+                      onTap: onChat,
+                      activeColor: dark
+                          ? theme.colorScheme.primaryContainer
+                          : const Color(0xFFFFEEE7),
+                      activeTextColor: dark
+                          ? theme.colorScheme.onPrimaryContainer
+                          : warmSelected,
+                      inactiveColor: inactiveColor,
+                    ),
+                  ),
+                  Expanded(
+                    child: _NavPillItem(
+                      icon: Icons.person_outline_rounded,
+                      label: 'Profile',
+                      selected: index == 4,
+                      onTap: () => onChanged(4),
+                      activeColor: dark
+                          ? theme.colorScheme.primaryContainer
+                          : const Color(0xFFFFEEE7),
+                      activeTextColor: dark
+                          ? theme.colorScheme.onPrimaryContainer
+                          : profileSelected,
+                      inactiveColor: inactiveColor,
+                    ),
+                  ),
+                ],
               ),
-              Expanded(
-                child: _NavPillItem(
-                  icon: Icons.receipt_long_outlined,
-                  label: 'Orders',
-                  selected: index == 3,
-                  onTap: () => onChanged(3),
-                  activeColor: dark
-                      ? theme.colorScheme.primaryContainer
-                      : const Color(0xFFFFEEE7),
-                  activeTextColor: dark
-                      ? theme.colorScheme.onPrimaryContainer
-                      : warmSelected,
-                  inactiveColor: inactiveColor,
-                ),
-              ),
-              Expanded(
-                child: _NavPillItem(
-                  icon: Icons.chat_bubble_outline_rounded,
-                  label: 'Chat',
-                  selected: false,
-                  onTap: onChat,
-                  activeColor: dark
-                      ? theme.colorScheme.primaryContainer
-                      : const Color(0xFFFFEEE7),
-                  activeTextColor: dark
-                      ? theme.colorScheme.onPrimaryContainer
-                      : warmSelected,
-                  inactiveColor: inactiveColor,
-                ),
-              ),
-              Expanded(
-                child: _NavPillItem(
-                  icon: Icons.person_outline_rounded,
-                  label: 'Profile',
-                  selected: index == 4,
-                  onTap: () => onChanged(4),
-                  activeColor: dark
-                      ? theme.colorScheme.primaryContainer
-                      : const Color(0xFFFFEEE7),
-                  activeTextColor: dark
-                      ? theme.colorScheme.onPrimaryContainer
-                      : profileSelected,
-                  inactiveColor: inactiveColor,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -11607,45 +11763,42 @@ class _NavPillItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fg = selected ? activeTextColor : inactiveColor;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
-          child: AnimatedContainer(
-            duration: ChechiBrand.normal,
-            curve: ChechiBrand.ease,
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
-            decoration: BoxDecoration(
-              color: Colors.transparent,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AnimatedScale(
-                  scale: selected ? 1.05 : 1,
-                  duration: ChechiBrand.normal,
-                  curve: ChechiBrand.ease,
-                  child: Icon(icon, color: fg, size: 18),
-                ),
-                const SizedBox(height: 2),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: fg,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 9,
-                    ),
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
+        child: AnimatedContainer(
+          duration: ChechiBrand.fast,
+          curve: ChechiBrand.ease,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+          decoration: BoxDecoration(
+            color: selected ? activeColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedScale(
+                scale: selected ? 1.08 : 1,
+                duration: ChechiBrand.fast,
+                curve: ChechiBrand.ease,
+                child: Icon(icon, color: fg, size: 20),
+              ),
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: GoogleFonts.poppins(
+                    color: fg,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    fontSize: 9.5,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
