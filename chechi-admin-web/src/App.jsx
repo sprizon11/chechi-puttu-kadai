@@ -10,6 +10,7 @@ import Customers from './pages/Customers'
 import Menu from './pages/Menu'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
+import Chats from './pages/Chats'
 
 const ADMIN_EMAIL = 'chechiputtukadai@gmail.com'
 const ADMIN_PHONE = '+917358888437'
@@ -57,6 +58,7 @@ export default function App() {
           <Route path="menu" element={<Menu />} />
           <Route path="reports" element={<Reports />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="chats" element={<Chats />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -8,6 +8,7 @@ const titles = {
   '/customers': 'Customers',
   '/menu': 'Menu',
   '/reports': 'Reports',
+  '/chats': 'Support Chats',
   '/settings': 'Settings',
 }
 
