@@ -5718,93 +5718,104 @@ class _HomeScreenState extends State<HomeScreen>
         Scaffold(
           key: _homeScaffoldKey,
           backgroundColor: Colors.transparent,
-          extendBody: true,
           drawer: Builder(
             builder: (drawerContext) =>
                 _buildAppNavigationDrawer(drawerContext),
           ),
-          body: SafeArea(
-            child: ListenableBuilder(
-              listenable: widget.navIndexNotifier,
-              builder: (context, _) {
-                final tabCurve = CurvedAnimation(
-                  parent: _tabAnim,
-                  curve: Curves.easeOutCubic,
-                  reverseCurve: Curves.easeInCubic,
-                );
-                return FadeTransition(
-                  opacity: Tween<double>(begin: 0.94, end: 1).animate(tabCurve),
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0, 0.014),
-                      end: Offset.zero,
-                    ).animate(tabCurve),
-                    child: IndexedStack(
-                      index: widget.navIndexNotifier.value.clamp(0, 4),
-                      sizing: StackFit.expand,
-                      children: [
-                        _buildHomeTab(),
-                        _CategoriesTab(
-                          cartLinesNotifier: widget.cartLinesNotifier,
-                          onMenu: _openAppMenu,
-                          onCartTap: () => widget.navIndexNotifier.value = 2,
-                          onOpenCartTab: () =>
-                              widget.navIndexNotifier.value = 2,
-                          isDark: widget.isDark,
-                          onToggleTheme: widget.onToggleTheme,
-                          onRefresh: _handlePullToRefresh,
+          body: Stack(
+            children: [
+              SafeArea(
+                child: ListenableBuilder(
+                  listenable: widget.navIndexNotifier,
+                  builder: (context, _) {
+                    final tabCurve = CurvedAnimation(
+                      parent: _tabAnim,
+                      curve: Curves.easeOutCubic,
+                      reverseCurve: Curves.easeInCubic,
+                    );
+                    return FadeTransition(
+                      opacity:
+                          Tween<double>(begin: 0.94, end: 1).animate(tabCurve),
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.014),
+                          end: Offset.zero,
+                        ).animate(tabCurve),
+                        child: IndexedStack(
+                          index: widget.navIndexNotifier.value.clamp(0, 4),
+                          sizing: StackFit.expand,
+                          children: [
+                            _buildHomeTab(),
+                            _CategoriesTab(
+                              cartLinesNotifier: widget.cartLinesNotifier,
+                              onMenu: _openAppMenu,
+                              onCartTap: () =>
+                                  widget.navIndexNotifier.value = 2,
+                              onOpenCartTab: () =>
+                                  widget.navIndexNotifier.value = 2,
+                              isDark: widget.isDark,
+                              onToggleTheme: widget.onToggleTheme,
+                              onRefresh: _handlePullToRefresh,
+                            ),
+                            _CartTab(
+                              cartLinesNotifier: widget.cartLinesNotifier,
+                              onBack: () => widget.navIndexNotifier.value = 0,
+                              isDark: widget.isDark,
+                              onToggleTheme: widget.onToggleTheme,
+                              deliveryLine: _deliveryLine,
+                              onOpenDeliveryLocation:
+                                  _openDeliveryLocationSheet,
+                              onRefresh: _handlePullToRefresh,
+                            ),
+                            _OrdersTab(
+                              cartLinesNotifier: widget.cartLinesNotifier,
+                              onMenu: _openAppMenu,
+                              onCartTap: () =>
+                                  widget.navIndexNotifier.value = 2,
+                              isDark: widget.isDark,
+                              onToggleTheme: widget.onToggleTheme,
+                              ordersFilterNotifier: _ordersFilterNotifier,
+                              onRefresh: _handlePullToRefresh,
+                            ),
+                            _ProfileTab(
+                              cartLinesNotifier: widget.cartLinesNotifier,
+                              onMenu: _openAppMenu,
+                              onCartTap: () =>
+                                  widget.navIndexNotifier.value = 2,
+                              onViewAllOrders: () {
+                                _ordersFilterNotifier.value = 0;
+                                widget.navIndexNotifier.value = 3;
+                              },
+                              onEditProfile: () {
+                                _openEditProfile();
+                              },
+                              onSettingsTap: _handleProfileSettingsTap,
+                              onOrdersStatTap: _goToOrdersWithFilter,
+                              isDark: widget.isDark,
+                              onToggleTheme: widget.onToggleTheme,
+                              onRefresh: _handlePullToRefresh,
+                            ),
+                          ],
                         ),
-                        _CartTab(
-                          cartLinesNotifier: widget.cartLinesNotifier,
-                          onBack: () => widget.navIndexNotifier.value = 0,
-                          isDark: widget.isDark,
-                          onToggleTheme: widget.onToggleTheme,
-                          deliveryLine: _deliveryLine,
-                          onOpenDeliveryLocation: _openDeliveryLocationSheet,
-                          onRefresh: _handlePullToRefresh,
-                        ),
-                        _OrdersTab(
-                          cartLinesNotifier: widget.cartLinesNotifier,
-                          onMenu: _openAppMenu,
-                          onCartTap: () => widget.navIndexNotifier.value = 2,
-                          isDark: widget.isDark,
-                          onToggleTheme: widget.onToggleTheme,
-                          ordersFilterNotifier: _ordersFilterNotifier,
-                          onRefresh: _handlePullToRefresh,
-                        ),
-                        _ProfileTab(
-                          cartLinesNotifier: widget.cartLinesNotifier,
-                          onMenu: _openAppMenu,
-                          onCartTap: () => widget.navIndexNotifier.value = 2,
-                          onViewAllOrders: () {
-                            _ordersFilterNotifier.value = 0;
-                            widget.navIndexNotifier.value = 3;
-                          },
-                          onEditProfile: () {
-                            _openEditProfile();
-                          },
-                          onSettingsTap: _handleProfileSettingsTap,
-                          onOrdersStatTap: _goToOrdersWithFilter,
-                          isDark: widget.isDark,
-                          onToggleTheme: widget.onToggleTheme,
-                          onRefresh: _handlePullToRefresh,
-                        ),
-                      ],
-                    ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: ListenableBuilder(
+                  listenable: widget.navIndexNotifier,
+                  builder: (context, _) => _BottomNavBar(
+                    index: widget.navIndexNotifier.value,
+                    onChanged: (i) => widget.navIndexNotifier.value = i,
+                    onChat: _openCustomerChat,
                   ),
-                );
-              },
-            ),
-          ),
-          bottomNavigationBar: ListenableBuilder(
-            listenable: widget.navIndexNotifier,
-            builder: (context, _) {
-              return _BottomNavBar(
-                index: widget.navIndexNotifier.value,
-                onChanged: (i) => widget.navIndexNotifier.value = i,
-                onChat: _openCustomerChat,
-              );
-            },
+                ),
+              ),
+            ],
           ),
         ),
       ],
