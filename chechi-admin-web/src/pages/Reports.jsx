@@ -3,7 +3,7 @@ import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestor
 import { db } from '../firebase'
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, Cell
+  CartesianGrid, Cell, PieChart, Pie, Legend
 } from 'recharts'
 import { format, subDays, startOfDay, startOfWeek, startOfMonth, eachDayOfInterval } from 'date-fns'
 
@@ -85,6 +85,47 @@ export default function Reports() {
   const avgOrderValue = rangeOrders.length > 0 ? totalRevenue / rangeOrders.length : 0
   const deliveredCount = rangeOrders.filter(o => ['delivered', 'completed'].includes((o.status || '').toLowerCase())).length
   const cancelledCount = rangeOrders.filter(o => o.status === 'cancelled').length
+
+  // ── Payment method breakdown (mirrors Flutter's _paymentBreakdown) ──────────
+  function paymentLabel(raw) {
+    const r = (raw || '').toLowerCase().trim()
+    if (r === 'cash_on_delivery' || r === 'cod') return 'Cash on Delivery'
+    if (r === 'cashfree') return 'Cashfree (Online)'
+    if (r === 'razorpay') return 'Razorpay (Online)'
+    if (r === 'upi') return 'UPI'
+    if (r === 'card') return 'Card'
+    const title = r.replace(/_/g, ' ').trim()
+    if (!title) return 'Other'
+    return title.replace(/\b\w/g, c => c.toUpperCase())
+  }
+  const paymentMap = {}
+  rangeOrders.forEach(o => {
+    const key = paymentLabel(o.payment_mode || '')
+    paymentMap[key] = (paymentMap[key] || 0) + readTotal(o)
+  })
+  const paymentData = Object.entries(paymentMap)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, value]) => ({ name, value }))
+  const PAYMENT_COLORS = ['#4CAF50', '#5C6BC0', '#C9A227', '#E64E12', '#7C1D1B', '#9CA3AF']
+
+  // ── Meal time breakdown ────────────────────────────────────────────────────
+  // Breakfast 5–11, Lunch 12–15, Dinner 16–21, Night 22–4
+  const MEAL_SLOTS = [
+    { label: 'Breakfast', hours: [5,6,7,8,9,10,11], color: '#F59E0B', emoji: '🌅' },
+    { label: 'Lunch',     hours: [12,13,14,15],      color: '#EF4444', emoji: '☀️' },
+    { label: 'Dinner',    hours: [16,17,18,19,20,21],color: '#7C1D1B', emoji: '🌙' },
+    { label: 'Night',     hours: [22,23,0,1,2,3,4],  color: '#6366F1', emoji: '🌃' },
+  ]
+  const mealCounts = { Breakfast: 0, Lunch: 0, Dinner: 0, Night: 0 }
+  rangeOrders.forEach(o => {
+    const t = readCreatedAt(o)
+    if (!t) return
+    const h = t.getHours()
+    const slot = MEAL_SLOTS.find(s => s.hours.includes(h))
+    if (slot) mealCounts[slot.label]++
+  })
+  const mealData = MEAL_SLOTS.map(s => ({ ...s, count: mealCounts[s.label] }))
+  const peakMeal = mealData.reduce((best, m) => m.count > best.count ? m : best, mealData[0])
 
   function exportCSV() {
     const rows = [
@@ -228,6 +269,117 @@ export default function Reports() {
                       <div className="h-2 bg-cream-border rounded-full overflow-hidden">
                         <div className="h-full rounded-full bg-maroon" style={{ width: `${(qty / maxQ) * 100}%`, opacity: 0.8 - i * 0.06 }} />
                       </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Payment method donut + Meal time */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* Revenue by Payment Method — donut */}
+        <div className="section-card p-6">
+          <h2 className="font-display font-bold text-lg text-maroon-deep mb-1">Revenue by Payment Method</h2>
+          <p className="text-sm text-gray-500 mb-4">Last {range} days · by revenue</p>
+          {paymentData.length === 0 ? (
+            <p className="text-sm text-gray-400 py-8 text-center">No payment data in this range</p>
+          ) : (
+            <div className="flex items-center gap-4">
+              {/* Donut */}
+              <div className="shrink-0" style={{ width: 180, height: 180 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={paymentData}
+                      dataKey="value"
+                      innerRadius={52}
+                      outerRadius={82}
+                      paddingAngle={2}
+                      startAngle={90}
+                      endAngle={-270}
+                    >
+                      {paymentData.map((_, i) => (
+                        <Cell key={i} fill={PAYMENT_COLORS[i % PAYMENT_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={v => [fmtInr(v), 'Revenue']}
+                      contentStyle={{ borderRadius: 10, border: '1px solid #E4D7C7', fontSize: 12 }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              {/* Legend */}
+              <div className="flex-1 space-y-2.5 min-w-0">
+                {paymentData.map((d, i) => {
+                  const totalPay = paymentData.reduce((s, x) => s + x.value, 0)
+                  const pct = totalPay > 0 ? Math.round((d.value / totalPay) * 100) : 0
+                  return (
+                    <div key={d.name} className="flex items-center gap-2 min-w-0">
+                      <span className="w-3 h-3 rounded-full shrink-0" style={{ background: PAYMENT_COLORS[i % PAYMENT_COLORS.length] }} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-baseline gap-1">
+                          <span className="text-xs font-semibold text-gray-700 truncate">{d.name}</span>
+                          <span className="text-xs font-bold text-gray-500 shrink-0">{pct}%</span>
+                        </div>
+                        <div className="mt-0.5 h-1.5 bg-cream-border rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: PAYMENT_COLORS[i % PAYMENT_COLORS.length] }} />
+                        </div>
+                        <p className="text-xs text-gray-400 mt-0.5">{fmtInr(d.value)}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Meal Time Analysis */}
+        <div className="section-card p-6">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-display font-bold text-lg text-maroon-deep">Orders by Meal Time</h2>
+            {rangeOrders.length > 0 && (
+              <span className="text-xs font-bold px-2.5 py-1 rounded-lg" style={{ background: peakMeal.color + '20', color: peakMeal.color }}>
+                {peakMeal.emoji} {peakMeal.label} is peak
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-gray-500 mb-5">Last {range} days · by order count</p>
+          {rangeOrders.length === 0 ? (
+            <p className="text-sm text-gray-400 py-8 text-center">No data in this range</p>
+          ) : (
+            <div className="space-y-4">
+              {mealData.map(slot => {
+                const totalMeal = mealData.reduce((s, m) => s + m.count, 0)
+                const pct = totalMeal > 0 ? Math.round((slot.count / totalMeal) * 100) : 0
+                const isPeak = slot.label === peakMeal.label && slot.count > 0
+                return (
+                  <div key={slot.label} className={`rounded-xl p-3 ${isPeak ? 'border-2' : 'border border-cream-border'}`}
+                    style={{ borderColor: isPeak ? slot.color : undefined }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{slot.emoji}</span>
+                        <div>
+                          <span className="text-sm font-bold text-gray-800">{slot.label}</span>
+                          <span className="text-xs text-gray-400 ml-2">
+                            {slot.label === 'Breakfast' ? '5 AM – 12 PM' :
+                             slot.label === 'Lunch'     ? '12 PM – 4 PM' :
+                             slot.label === 'Dinner'    ? '4 PM – 10 PM' : '10 PM – 5 AM'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-base font-bold text-gray-900">{slot.count}</p>
+                        <p className="text-xs text-gray-400">{pct}%</p>
+                      </div>
+                    </div>
+                    <div className="h-2 bg-cream-border rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: slot.color }} />
                     </div>
                   </div>
                 )
