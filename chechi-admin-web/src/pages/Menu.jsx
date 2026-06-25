@@ -146,7 +146,19 @@ export default function Menu() {
     const catalog = CATALOG.find(s => s.section === sectionId)
     return snap?.subtitle || catalog?.subtitle || ''
   }
-  function getCatImage(sectionId)    { return getCatSnap(sectionId)?.imageBase64 || null }
+  // Fallback to the same local asset images the Flutter app uses
+  const CATALOG_FALLBACK_IMAGES = {
+    'Puttu':               '/menus/puttu.png',
+    'Gravies & Curries':   '/menus/gravies.png',
+    'Desserts':            '/menus/desserts.png',
+    'Our Signature Dishes':'/menus/signature.png',
+  }
+
+  function getCatImage(sectionId) {
+    const b64 = getCatSnap(sectionId)?.imageBase64
+    if (b64) return `data:image/jpeg;base64,${b64}`
+    return CATALOG_FALLBACK_IMAGES[sectionId] || null
+  }
 
   async function saveDishSnap(key, data) {
     const docId = keyToDocId(key)
@@ -208,7 +220,7 @@ export default function Menu() {
     const snap    = getCatSnap(sectionId)
     const catalog = CATALOG.find(s => s.section === sectionId)
     setCatForm({ title: snap?.title || catalog?.section || sectionId, subtitle: snap?.subtitle || catalog?.subtitle || '' })
-    setCatImgPrev(imgSrc(snap?.imageBase64 || null))
+    setCatImgPrev(snap?.imageBase64 ? imgSrc(snap.imageBase64) : (CATALOG_FALLBACK_IMAGES[sectionId] || null))
     setCatImgB64(null); setCatRemoveImg(false)
   }
   async function onCatImgChange(e) {
@@ -294,7 +306,7 @@ export default function Menu() {
           <div className="flex flex-col sm:flex-row">
             <div className="sm:w-56 h-36 sm:h-auto shrink-0 bg-cream flex items-center justify-center overflow-hidden">
               {getCatImage(tab)
-                ? <img src={imgSrc(getCatImage(tab))} alt={getCatTitle(tab)} className="w-full h-full object-cover" />
+                ? <img src={getCatImage(tab)} alt={getCatTitle(tab)} className="w-full h-full object-cover" />
                 : <div className="flex flex-col items-center gap-2 text-gray-300">
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
