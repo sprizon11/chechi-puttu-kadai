@@ -224,31 +224,112 @@ export default function Orders() {
                       </td>
                     </tr>
 
-                    {/* Expanded detail row */}
+                    {/* Expanded detail panel */}
                     {isExp && (
-                      <tr key={`${o.id}-exp`} className="bg-cream/40">
-                        <td colSpan={7} className="px-5 py-4">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Order Items</p>
-                              <div className="space-y-1.5">
-                                {Array.isArray(o.items) ? o.items.map((item, i) => (
-                                  <div key={i} className="flex justify-between text-sm">
-                                    <span className="text-gray-700">{item.name} {item.subtitle ? `(${item.subtitle})` : ''} × {item.qty || 1}</span>
-                                    <span className="font-semibold text-gray-900">₹{(item.priceRupees || 0) * (item.qty || 1)}</span>
+                      <tr key={`${o.id}-exp`}>
+                        <td colSpan={7} className="px-4 pb-3 pt-0 bg-cream/30">
+                          <div className="rounded-2xl border border-cream-border bg-white overflow-hidden shadow-sm">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-cream-border">
+
+                              {/* Items */}
+                              <div className="p-4">
+                                <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Order Items</p>
+                                <div className="space-y-2">
+                                  {Array.isArray(o.items) && o.items.length > 0 ? o.items.map((item, i) => {
+                                    const unitPrice = item.priceRupees ?? item.price ?? 0
+                                    const qty = item.qty || 1
+                                    return (
+                                      <div key={i} className="flex items-start justify-between gap-3">
+                                        <div className="flex items-start gap-2 min-w-0">
+                                          <span className="mt-0.5 w-5 h-5 rounded-full bg-maroon/10 text-maroon text-[10px] font-bold flex items-center justify-center shrink-0">{qty}</span>
+                                          <div className="min-w-0">
+                                            <p className="text-sm font-semibold text-gray-800 leading-tight">{item.name}</p>
+                                            {item.subtitle && <p className="text-xs text-gray-400 truncate">{item.subtitle}</p>}
+                                          </div>
+                                        </div>
+                                        {unitPrice > 0 && (
+                                          <p className="text-sm font-bold text-gray-900 shrink-0">₹{unitPrice * qty}</p>
+                                        )}
+                                      </div>
+                                    )
+                                  }) : <p className="text-sm text-gray-400">No items recorded</p>}
+                                </div>
+                                {/* Total */}
+                                {readTotal(o) > 0 && (
+                                  <div className="mt-3 pt-3 border-t border-cream-border flex justify-between">
+                                    <span className="text-sm font-bold text-gray-700">Total</span>
+                                    <span className="text-sm font-bold text-maroon-deep">{fmtInr(readTotal(o))}</span>
                                   </div>
-                                )) : <p className="text-gray-400 text-sm">No items</p>}
+                                )}
                               </div>
-                            </div>
-                            <div>
-                              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Delivery Details</p>
-                              <p className="text-sm text-gray-700">{o.deliveryAddress || o.address || '—'}</p>
-                              {o.scheduleLabel && (
-                                <p className="text-sm text-gray-500 mt-1">📅 {o.scheduleLabel}</p>
-                              )}
-                              {o.uid && (
-                                <p className="text-xs text-gray-400 mt-2 font-mono">UID: {o.uid}</p>
-                              )}
+
+                              {/* Delivery & payment */}
+                              <div className="p-4 space-y-3">
+                                <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Delivery & Payment</p>
+                                <div className="space-y-2 text-sm">
+                                  {(o.delivery_line || o.deliveryAddress || o.address) && (
+                                    <div className="flex items-start gap-2">
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                      </svg>
+                                      <p className="text-gray-700 leading-snug">{o.delivery_line || o.deliveryAddress || o.address}</p>
+                                    </div>
+                                  )}
+                                  {o.payment_mode && (
+                                    <div className="flex items-center gap-2">
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                      </svg>
+                                      <p className="text-gray-700 capitalize">{o.payment_mode.replace(/_/g, ' ')}</p>
+                                    </div>
+                                  )}
+                                  {o.delivery_type && (
+                                    <div className="flex items-center gap-2">
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" />
+                                      </svg>
+                                      <p className="text-gray-700 capitalize">{o.delivery_type}</p>
+                                    </div>
+                                  )}
+                                  {o.scheduleLabel && (
+                                    <div className="flex items-center gap-2">
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                      </svg>
+                                      <p className="text-gray-700">{o.scheduleLabel}</p>
+                                    </div>
+                                  )}
+                                  {o.note && (
+                                    <div className="flex items-start gap-2">
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                                      </svg>
+                                      <p className="text-gray-700 italic">"{o.note}"</p>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Action buttons */}
+                                {nextSt.length > 0 && (
+                                  <div className="pt-2 flex gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
+                                    {nextSt.map(ns => (
+                                      <button
+                                        key={ns}
+                                        disabled={updating === o.id}
+                                        onClick={() => setStatus(o.id, ns)}
+                                        className={`flex-1 py-2 rounded-xl text-sm font-bold transition-colors ${
+                                          ns === 'cancelled'
+                                            ? 'bg-red-50 border border-red-200 text-red-700 hover:bg-red-100'
+                                            : 'bg-maroon text-white hover:bg-maroon-deep'
+                                        }`}
+                                      >
+                                        {updating === o.id ? '…' : `Mark ${ns.charAt(0).toUpperCase() + ns.slice(1)}`}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </td>
