@@ -11616,18 +11616,17 @@ class _BottomNavBar extends StatelessWidget {
     final profileSelected = dark
         ? const Color(0xFFFFB28F)
         : const Color(0xFFE65100);
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(30),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-            child: AnimatedContainer(
-              duration: ChechiBrand.fast,
-              curve: ChechiBrand.ease,
-              height: 62,
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottomInset),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(30),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+          child: AnimatedContainer(
+            duration: ChechiBrand.fast,
+            curve: ChechiBrand.ease,
+            height: 62,
               decoration: BoxDecoration(
                 color: dark
                     ? Colors.black.withValues(alpha: 0.45)
@@ -11735,7 +11734,6 @@ class _BottomNavBar extends StatelessWidget {
             ),
           ),
         ),
-      ),
     );
   }
 }
