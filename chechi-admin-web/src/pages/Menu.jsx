@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import {
   collection, doc, onSnapshot, setDoc, updateDoc,
   arrayUnion, serverTimestamp, query
@@ -6,7 +6,7 @@ import {
 import { db } from '../firebase'
 import { CATALOG, allCatalogDishes } from '../catalog'
 
-// U+001F unit separator â€” same as Flutter's catalogDishStorageKey separator
+// U+001F unit separator — same as Flutter catalogDishStorageKey separator
 const SEP = ''
 const CUSTOM_PREFIX = '__custom__'
 const SEC_PREFIX = '__section__'
@@ -33,52 +33,45 @@ const MENU_DOC    = doc(db, 'admin_public', 'menu_overrides')
 const snapsColl   = collection(db, 'admin_public', 'menu_overrides', 'snapshots')
 const secSnapColl = collection(db, 'admin_public', 'menu_overrides', 'section_snapshots')
 
-// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const emptyDish = { title: '', subtitle: '', price: '', badge: '' }
 
-function imgSrc(b64, mimeHint = 'jpeg') {
+function imgSrc(b64) {
   if (!b64) return null
   if (b64.startsWith('data:')) return b64
-  return `data:image/${mimeHint};base64,${b64}`
+  return `data:image/jpeg;base64,${b64}`
 }
 
 export default function Menu() {
-  // â”€â”€ state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [meta, setMeta]         = useState({ deletedDishKeys: [], deletedSectionIds: [], customCategoryIds: [] })
-  const [snaps, setSnaps]       = useState({})   // dishKey â†’ data
-  const [secSnaps, setSecSnaps] = useState({})   // sectionKey â†’ data
+  const [snaps, setSnaps]       = useState({})
+  const [secSnaps, setSecSnaps] = useState({})
   const [loading, setLoading]   = useState(true)
   const [search, setSearch]     = useState('')
   const [tab, setTab]           = useState('All')
   const [busy, setBusy]         = useState(null)
 
-  // Edit dish modal
-  const [editDish, setEditDish]     = useState(null)
-  const [dishForm, setDishForm]     = useState({})
+  const [editDish, setEditDish]       = useState(null)
+  const [dishForm, setDishForm]       = useState({})
   const [dishImgPrev, setDishImgPrev] = useState(null)
   const [dishImgB64, setDishImgB64]   = useState(null)
   const dishImgRef = useRef()
 
-  // Edit category modal
-  const [editCat, setEditCat]         = useState(null)  // sectionId string
-  const [catForm, setCatForm]         = useState({ title: '', subtitle: '' })
-  const [catImgPrev, setCatImgPrev]   = useState(null)
-  const [catImgB64, setCatImgB64]     = useState(null)
+  const [editCat, setEditCat]           = useState(null)
+  const [catForm, setCatForm]           = useState({ title: '', subtitle: '' })
+  const [catImgPrev, setCatImgPrev]     = useState(null)
+  const [catImgB64, setCatImgB64]       = useState(null)
   const [catRemoveImg, setCatRemoveImg] = useState(false)
   const catImgRef = useRef()
 
-  // Add category modal
   const [addCatOpen, setAddCatOpen] = useState(false)
   const [newCatName, setNewCatName] = useState('')
 
-  // Add dish modal
-  const [addDishSec, setAddDishSec]       = useState(null)
-  const [newDish, setNewDish]             = useState(emptyDish)
-  const [newDishImgB64, setNewDishImgB64] = useState(null)
+  const [addDishSec, setAddDishSec]         = useState(null)
+  const [newDish, setNewDish]               = useState(emptyDish)
+  const [newDishImgB64, setNewDishImgB64]   = useState(null)
   const [newDishImgPrev, setNewDishImgPrev] = useState(null)
   const newDishImgRef = useRef()
 
-  // â”€â”€ firestore â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     let n = 0
     const done = () => { if (++n >= 3) setLoading(false) }
@@ -100,7 +93,6 @@ export default function Menu() {
     return () => { u1(); u2(); u3() }
   }, [])
 
-  // â”€â”€ derived data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const deletedSet  = new Set(meta.deletedDishKeys)
   const deletedSecs = new Set(meta.deletedSectionIds)
 
@@ -108,10 +100,15 @@ export default function Menu() {
     .filter(d => !deletedSecs.has(d.section) && !deletedSet.has(d.key))
     .map(d => {
       const ov = snaps[d.key] || {}
-      return { ...d, title: ov.title || d.title, subtitle: ov.subtitle || d.subtitle,
-        price: ov.price || d.price, badge: ov.badge !== undefined ? ov.badge : d.badge,
-        available: ov.available !== undefined ? ov.available : true,
-        imageBase64: ov.imageBase64 || null, isCustom: false }
+      return { ...d,
+        title:       ov.title     || d.title,
+        subtitle:    ov.subtitle  || d.subtitle,
+        price:       ov.price     || d.price,
+        badge:       ov.badge     !== undefined ? ov.badge : d.badge,
+        available:   ov.available !== undefined ? ov.available : true,
+        imageBase64: ov.imageBase64 || null,
+        isCustom:    false,
+      }
     })
 
   const customDishes = []
@@ -121,13 +118,13 @@ export default function Menu() {
     Object.entries(snaps).forEach(([k, data]) => {
       if (!k.startsWith(prefix) || deletedSet.has(k)) return
       customDishes.push({ key: k, section: catId, title: data.title || '', subtitle: data.subtitle || '',
-        price: data.price || 'â‚¹0', badge: data.badge || null,
+        price: data.price || '', badge: data.badge || null,
         available: data.available !== undefined ? data.available : true,
         imageBase64: data.imageBase64 || null, isCustom: true })
     })
   })
 
-  const allDishes = [...catalogDishes, ...customDishes]
+  const allDishes  = [...catalogDishes, ...customDishes]
   const availCount = allDishes.filter(d => d.available).length
 
   const catalogTabs = CATALOG.map(s => s.section).filter(s => !deletedSecs.has(s))
@@ -142,43 +139,31 @@ export default function Menu() {
 
   const isCustomTab = customTabs.includes(tab)
 
-  // Current category snapshot
-  function getCatSnap(sectionId) {
-    return secSnaps[sectionKey(sectionId)] || null
-  }
-  function getCatTitle(sectionId) {
-    const snap = getCatSnap(sectionId)
-    return snap?.title || sectionId
-  }
+  function getCatSnap(sectionId)     { return secSnaps[sectionKey(sectionId)] || null }
+  function getCatTitle(sectionId)    { return getCatSnap(sectionId)?.title || sectionId }
   function getCatSubtitle(sectionId) {
-    const snap = getCatSnap(sectionId)
+    const snap    = getCatSnap(sectionId)
     const catalog = CATALOG.find(s => s.section === sectionId)
     return snap?.subtitle || catalog?.subtitle || ''
   }
-  function getCatImage(sectionId) {
-    return getCatSnap(sectionId)?.imageBase64 || null
-  }
+  function getCatImage(sectionId)    { return getCatSnap(sectionId)?.imageBase64 || null }
 
-  // â”€â”€ save helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function saveDishSnap(key, data) {
     const docId = keyToDocId(key)
     await setDoc(doc(snapsColl, docId), { key, data, updated_at: serverTimestamp() }, { merge: true })
   }
-
   async function saveSecSnap(sectionId, data) {
-    const key   = sectionKey(sectionId)
-    const docId = keyToDocId(key)
-    await setDoc(doc(secSnapColl, docId), { key, data, updated_at: serverTimestamp() }, { merge: true })
+    const key = sectionKey(sectionId)
+    await setDoc(doc(secSnapColl, keyToDocId(key)), { key, data, updated_at: serverTimestamp() }, { merge: true })
   }
 
-  // â”€â”€ actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function toggleAvail(dish) {
     setBusy(dish.key)
     try {
       const ov = snaps[dish.key] || {}
       await saveDishSnap(dish.key, { ...ov, title: dish.title, subtitle: dish.subtitle,
-        price: dish.price, badge: dish.badge || null,
-        available: !dish.available, imageBase64: dish.imageBase64 || null })
+        price: dish.price, badge: dish.badge || null, available: !dish.available,
+        imageBase64: dish.imageBase64 || null })
     } finally { setBusy(null) }
   }
 
@@ -195,7 +180,6 @@ export default function Menu() {
     setTab('All')
   }
 
-  // â”€â”€ edit dish â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function openEditDish(dish) {
     setEditDish(dish)
     setDishForm({ title: dish.title, subtitle: dish.subtitle, price: dish.price, badge: dish.badge || '', available: dish.available })
@@ -211,23 +195,21 @@ export default function Menu() {
     setBusy(editDish.key)
     try {
       const ov = snaps[editDish.key] || {}
-      await saveDishSnap(editDish.key, { ...ov, title: dishForm.title.trim(), subtitle: dishForm.subtitle.trim(),
-        price: dishForm.price.trim(), badge: dishForm.badge.trim() || null, available: dishForm.available,
-        imageBase64: dishImgB64 || ov.imageBase64 || null })
+      await saveDishSnap(editDish.key, { ...ov,
+        title: dishForm.title.trim(), subtitle: dishForm.subtitle.trim(),
+        price: dishForm.price.trim(), badge: dishForm.badge.trim() || null,
+        available: dishForm.available, imageBase64: dishImgB64 || ov.imageBase64 || null })
       setEditDish(null)
     } finally { setBusy(null) }
   }
 
-  // â”€â”€ edit category â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function openEditCat(sectionId) {
     setEditCat(sectionId)
-    const snap = getCatSnap(sectionId)
+    const snap    = getCatSnap(sectionId)
     const catalog = CATALOG.find(s => s.section === sectionId)
     setCatForm({ title: snap?.title || catalog?.section || sectionId, subtitle: snap?.subtitle || catalog?.subtitle || '' })
-    const b64 = snap?.imageBase64 || null
-    setCatImgPrev(imgSrc(b64))
-    setCatImgB64(null)
-    setCatRemoveImg(false)
+    setCatImgPrev(imgSrc(snap?.imageBase64 || null))
+    setCatImgB64(null); setCatRemoveImg(false)
   }
   async function onCatImgChange(e) {
     const f = e.target.files?.[0]; if (!f) return
@@ -237,14 +219,13 @@ export default function Menu() {
     e.preventDefault(); if (!editCat) return
     setBusy('cat')
     try {
-      const existing = getCatSnap(editCat) || {}
-      let imageBase64 = catRemoveImg ? null : (catImgB64 || existing.imageBase64 || null)
+      const existing    = getCatSnap(editCat) || {}
+      const imageBase64 = catRemoveImg ? null : (catImgB64 || existing.imageBase64 || null)
       await saveSecSnap(editCat, { title: catForm.title.trim(), subtitle: catForm.subtitle.trim(), imageBase64 })
       setEditCat(null)
     } finally { setBusy(null) }
   }
 
-  // â”€â”€ add category â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleAddCat(e) {
     e.preventDefault()
     const name = newCatName.trim(); if (!name) return
@@ -256,7 +237,6 @@ export default function Menu() {
     } finally { setBusy(null) }
   }
 
-  // â”€â”€ add dish â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleAddDish(e) {
     e.preventDefault()
     const section = addDishSec; if (!section || !newDish.title.trim()) return
@@ -264,7 +244,7 @@ export default function Menu() {
     setBusy('addDish')
     try {
       await saveDishSnap(key, { title: newDish.title.trim(), subtitle: newDish.subtitle.trim(),
-        price: newDish.price.trim() || 'â‚¹0', badge: newDish.badge.trim() || null,
+        price: newDish.price.trim() || '', badge: newDish.badge.trim() || null,
         available: true, imageBase64: newDishImgB64 || null })
       setAddDishSec(null); setNewDish(emptyDish); setNewDishImgB64(null); setNewDishImgPrev(null)
     } finally { setBusy(null) }
@@ -274,7 +254,6 @@ export default function Menu() {
     const b64 = await fileToBase64(f); setNewDishImgB64(b64); setNewDishImgPrev(imgSrc(b64))
   }
 
-  // â”€â”€ render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="w-8 h-8 border-4 border-maroon border-t-transparent rounded-full animate-spin" />
@@ -288,10 +267,12 @@ export default function Menu() {
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
         <div className="flex-1">
           <h1 className="page-title">Menu</h1>
-          <p className="page-subtitle">{allDishes.length} dishes Â· {availCount} available Â· {allDishes.length - availCount} unavailable</p>
+          <p className="page-subtitle">
+            {allDishes.length} dishes &nbsp;·&nbsp; {availCount} available &nbsp;·&nbsp; {allDishes.length - availCount} unavailable
+          </p>
         </div>
         <div className="flex gap-3">
-          <input className="input max-w-xs" placeholder="Search dishesâ€¦" value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="input max-w-xs" placeholder="Search dishes..." value={search} onChange={e => setSearch(e.target.value)} />
           <button onClick={() => setAddCatOpen(true)} className="btn-primary whitespace-nowrap">+ Add Category</button>
         </div>
       </div>
@@ -302,29 +283,29 @@ export default function Menu() {
           <button key={s} onClick={() => setTab(s)}
             className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${tab === s ? 'bg-maroon text-white shadow-sm' : 'bg-white border border-cream-border text-gray-600 hover:bg-cream'}`}>
             {s === 'All' ? s : getCatTitle(s)}
-            {customTabs.includes(s) && <span className="ml-1 text-xs opacity-60">âœ¦</span>}
+            {customTabs.includes(s) && <span className="ml-1 text-[10px] opacity-50">custom</span>}
           </button>
         ))}
       </div>
 
-      {/* Category card â€” shown when a specific section is active */}
+      {/* Category info card */}
       {tab !== 'All' && (
         <div className="section-card overflow-hidden">
           <div className="flex flex-col sm:flex-row">
-            {/* Cover image */}
             <div className="sm:w-56 h-36 sm:h-auto shrink-0 bg-cream flex items-center justify-center overflow-hidden">
               {getCatImage(tab)
                 ? <img src={imgSrc(getCatImage(tab))} alt={getCatTitle(tab)} className="w-full h-full object-cover" />
                 : <div className="flex flex-col items-center gap-2 text-gray-300">
-                    <span className="text-4xl">ðŸ–¼ï¸</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
                     <span className="text-xs font-medium">No cover image</span>
                   </div>
               }
             </div>
-            {/* Info */}
             <div className="flex-1 p-5 flex flex-col justify-between">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h2 className="font-display font-bold text-xl text-maroon-deep">{getCatTitle(tab)}</h2>
                   {isCustomTab && <span className="badge bg-amber-50 text-amber-700 border border-amber-200 text-xs">Custom</span>}
                 </div>
@@ -332,8 +313,9 @@ export default function Menu() {
                 <p className="text-xs text-gray-400 mt-1 font-mono">Section ID: {tab}</p>
               </div>
               <div className="flex gap-2 mt-4 flex-wrap">
-                <button onClick={() => openEditCat(tab)}
-                  className="btn-primary text-xs py-2 px-4">âœï¸ Edit Category</button>
+                <button onClick={() => openEditCat(tab)} className="btn-primary text-xs py-2 px-4">
+                  Edit Category
+                </button>
                 {isCustomTab && (
                   <>
                     <button onClick={() => setAddDishSec(tab)} className="btn-ghost text-xs py-2 px-4">+ Add Dish</button>
@@ -364,19 +346,24 @@ export default function Menu() {
                     <div className="flex items-center gap-3">
                       {dish.imageBase64
                         ? <img src={imgSrc(dish.imageBase64)} alt={dish.title} className="w-10 h-10 rounded-lg object-cover shrink-0 border border-cream-border" />
-                        : <div className="w-10 h-10 rounded-lg bg-cream flex items-center justify-center text-lg shrink-0">ðŸ½ï¸</div>}
+                        : <div className="w-10 h-10 rounded-lg bg-cream flex items-center justify-center shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                      }
                       <div>
                         <p className="font-semibold text-gray-900">{dish.title}</p>
                         <p className="text-xs text-gray-500">{dish.subtitle}</p>
                       </div>
                     </div>
                   </td>
-                  <td className="px-5 py-3.5 text-xs text-gray-500">{getCatTitle(dish.section)}{dish.isCustom ? ' âœ¦' : ''}</td>
+                  <td className="px-5 py-3.5 text-xs text-gray-500">{getCatTitle(dish.section)}{dish.isCustom ? ' (custom)' : ''}</td>
                   <td className="px-5 py-3.5 font-bold text-maroon-deep">{dish.price}</td>
                   <td className="px-5 py-3.5">
                     {dish.badge
                       ? <span className="badge bg-amber-50 text-amber-700 border border-amber-200">{dish.badge}</span>
-                      : <span className="text-gray-300 text-xs">â€”</span>}
+                      : <span className="text-gray-300 text-xs">-</span>}
                   </td>
                   <td className="px-5 py-3.5">
                     <button onClick={() => toggleAvail(dish)} disabled={busy === dish.key}
@@ -399,7 +386,7 @@ export default function Menu() {
               {filtered.length === 0 && (
                 <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400 text-sm">
                   {tab !== 'All' && isCustomTab
-                    ? <span>No dishes yet. <button onClick={() => setAddDishSec(tab)} className="text-maroon font-semibold underline">Add the first dish â†’</button></span>
+                    ? <span>No dishes yet. <button onClick={() => setAddDishSec(tab)} className="text-maroon font-semibold underline">Add the first dish</button></span>
                     : 'No dishes found'}
                 </td></tr>
               )}
@@ -407,21 +394,30 @@ export default function Menu() {
           </table>
         </div>
         <div className="px-5 py-3 border-t border-cream-border bg-cream/40 text-xs text-gray-400">
-          Showing {filtered.length} dishes Â· âœ¦ = custom category
+          Showing {filtered.length} dishes
         </div>
       </div>
 
-      {/* â”€â”€ Edit Dish Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Edit Dish Modal */}
       {editDish && (
         <Modal title="Edit Dish" onClose={() => setEditDish(null)}>
           <form onSubmit={handleEditDishSave} className="space-y-4">
-            <ImageUploadBox preview={dishImgPrev} inputRef={dishImgRef} onClear={() => { setDishImgPrev(null); setDishImgB64(null) }}
+            <ImageUploadBox preview={dishImgPrev} inputRef={dishImgRef}
+              onClear={() => { setDishImgPrev(null); setDishImgB64(null) }}
               onChange={onDishImgChange} label="Dish Photo" />
-            <Field label="Dish Name"><input className="input" value={dishForm.title} onChange={e => setDishForm({ ...dishForm, title: e.target.value })} required /></Field>
-            <Field label="Subtitle"><input className="input" value={dishForm.subtitle} onChange={e => setDishForm({ ...dishForm, subtitle: e.target.value })} /></Field>
+            <Field label="Dish Name">
+              <input className="input" value={dishForm.title} onChange={e => setDishForm({ ...dishForm, title: e.target.value })} required />
+            </Field>
+            <Field label="Subtitle">
+              <input className="input" value={dishForm.subtitle} onChange={e => setDishForm({ ...dishForm, subtitle: e.target.value })} />
+            </Field>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Price"><input className="input" value={dishForm.price} onChange={e => setDishForm({ ...dishForm, price: e.target.value })} placeholder="â‚¹70" required /></Field>
-              <Field label="Badge"><input className="input" value={dishForm.badge} onChange={e => setDishForm({ ...dishForm, badge: e.target.value })} placeholder="Bestseller" /></Field>
+              <Field label="Price">
+                <input className="input" value={dishForm.price} onChange={e => setDishForm({ ...dishForm, price: e.target.value })} placeholder="Rs. 70" required />
+              </Field>
+              <Field label="Badge">
+                <input className="input" value={dishForm.badge} onChange={e => setDishForm({ ...dishForm, badge: e.target.value })} placeholder="Bestseller" />
+              </Field>
             </div>
             <label className="flex items-center gap-3 cursor-pointer">
               <input type="checkbox" checked={dishForm.available} onChange={e => setDishForm({ ...dishForm, available: e.target.checked })} className="w-4 h-4 accent-maroon" />
@@ -432,23 +428,23 @@ export default function Menu() {
         </Modal>
       )}
 
-      {/* â”€â”€ Edit Category Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Edit Category Modal */}
       {editCat && (
         <Modal title="Edit Category" onClose={() => setEditCat(null)}>
           <form onSubmit={handleEditCatSave} className="space-y-4">
-            {/* 16:9 cover image */}
             <div>
               <p className="text-sm font-semibold text-gray-700 mb-2">Category Cover Image</p>
-              <div
-                className="w-full aspect-video rounded-xl border-2 border-dashed border-cream-border bg-cream flex items-center justify-center overflow-hidden cursor-pointer hover:border-maroon transition-colors mb-2"
-                onClick={() => catImgRef.current?.click()}
-              >
+              <div className="w-full aspect-video rounded-xl border-2 border-dashed border-cream-border bg-cream flex items-center justify-center overflow-hidden cursor-pointer hover:border-maroon transition-colors mb-2"
+                onClick={() => catImgRef.current?.click()}>
                 {catImgPrev
                   ? <img src={catImgPrev} alt="" className="w-full h-full object-cover" />
                   : <div className="flex flex-col items-center gap-2 text-gray-300">
-                      <span className="text-4xl">ðŸ“·</span>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-14 h-14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
                       <span className="text-sm font-medium">Click to upload cover photo</span>
-                      <span className="text-xs">Recommended 16:9 (e.g. 1200Ã—675)</span>
+                      <span className="text-xs">Recommended 16:9 (e.g. 1200x675)</span>
                     </div>}
               </div>
               <div className="flex gap-2">
@@ -462,20 +458,18 @@ export default function Menu() {
               </div>
               <input ref={catImgRef} type="file" accept="image/*" className="hidden" onChange={onCatImgChange} />
             </div>
-
             <Field label="Category Name">
               <input className="input" value={catForm.title} onChange={e => setCatForm({ ...catForm, title: e.target.value })} required placeholder={editCat} />
             </Field>
             <Field label="Subtitle (shown to customers)">
               <input className="input" value={catForm.subtitle} onChange={e => setCatForm({ ...catForm, subtitle: e.target.value })} placeholder="Short description under category name" />
             </Field>
-
             <ModalActions onCancel={() => setEditCat(null)} saving={busy === 'cat'} label="Save Category" />
           </form>
         </Modal>
       )}
 
-      {/* â”€â”€ Add Category Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Add Category Modal */}
       {addCatOpen && (
         <Modal title="Add New Category" onClose={() => setAddCatOpen(false)}>
           <form onSubmit={handleAddCat} className="space-y-4">
@@ -488,17 +482,26 @@ export default function Menu() {
         </Modal>
       )}
 
-      {/* â”€â”€ Add Dish Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Add Dish Modal */}
       {addDishSec && (
-        <Modal title={`Add Dish â€” ${getCatTitle(addDishSec)}`} onClose={() => setAddDishSec(null)}>
+        <Modal title={`Add Dish - ${getCatTitle(addDishSec)}`} onClose={() => setAddDishSec(null)}>
           <form onSubmit={handleAddDish} className="space-y-4">
-            <ImageUploadBox preview={newDishImgPrev} inputRef={newDishImgRef} onClear={() => { setNewDishImgPrev(null); setNewDishImgB64(null) }}
+            <ImageUploadBox preview={newDishImgPrev} inputRef={newDishImgRef}
+              onClear={() => { setNewDishImgPrev(null); setNewDishImgB64(null) }}
               onChange={onNewDishImgChange} label="Dish Photo" />
-            <Field label="Dish Name *"><input className="input" value={newDish.title} onChange={e => setNewDish({ ...newDish, title: e.target.value })} required autoFocus /></Field>
-            <Field label="Subtitle"><input className="input" value={newDish.subtitle} onChange={e => setNewDish({ ...newDish, subtitle: e.target.value })} placeholder="Short description" /></Field>
+            <Field label="Dish Name *">
+              <input className="input" value={newDish.title} onChange={e => setNewDish({ ...newDish, title: e.target.value })} required autoFocus />
+            </Field>
+            <Field label="Subtitle">
+              <input className="input" value={newDish.subtitle} onChange={e => setNewDish({ ...newDish, subtitle: e.target.value })} placeholder="Short description" />
+            </Field>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Price *"><input className="input" value={newDish.price} onChange={e => setNewDish({ ...newDish, price: e.target.value })} placeholder="â‚¹70" required /></Field>
-              <Field label="Badge"><input className="input" value={newDish.badge} onChange={e => setNewDish({ ...newDish, badge: e.target.value })} placeholder="New" /></Field>
+              <Field label="Price *">
+                <input className="input" value={newDish.price} onChange={e => setNewDish({ ...newDish, price: e.target.value })} placeholder="Rs. 70" required />
+              </Field>
+              <Field label="Badge">
+                <input className="input" value={newDish.badge} onChange={e => setNewDish({ ...newDish, badge: e.target.value })} placeholder="New" />
+              </Field>
             </div>
             <ModalActions onCancel={() => setAddDishSec(null)} saving={busy === 'addDish'} label="Add Dish" />
           </form>
@@ -508,14 +511,13 @@ export default function Menu() {
   )
 }
 
-// â”€â”€ shared UI components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function Modal({ title, onClose, children }) {
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-5 border-b border-cream-border flex items-center justify-between sticky top-0 bg-white rounded-t-2xl z-10">
           <h2 className="font-display font-bold text-xl text-maroon-deep">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">âœ•</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
         </div>
         <div className="p-6">{children}</div>
       </div>
@@ -537,7 +539,11 @@ function ModalActions({ onCancel, saving, label }) {
     <div className="flex gap-3 pt-2">
       <button type="button" onClick={onCancel} className="btn-ghost flex-1">Cancel</button>
       <button type="submit" disabled={saving} className="btn-primary flex-1">
-        {saving ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Savingâ€¦</span> : label}
+        {saving
+          ? <span className="flex items-center justify-center gap-2">
+              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving...
+            </span>
+          : label}
       </button>
     </div>
   )
@@ -550,7 +556,12 @@ function ImageUploadBox({ preview, inputRef, onClear, onChange, label }) {
       <div className="flex items-center gap-4">
         <div className="w-20 h-20 rounded-xl border-2 border-dashed border-cream-border flex items-center justify-center overflow-hidden cursor-pointer hover:border-maroon transition-colors bg-cream shrink-0"
           onClick={() => inputRef.current?.click()}>
-          {preview ? <img src={preview} alt="" className="w-full h-full object-cover" /> : <span className="text-2xl">ðŸ“·</span>}
+          {preview
+            ? <img src={preview} alt="" className="w-full h-full object-cover" />
+            : <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>}
         </div>
         <div>
           <button type="button" onClick={() => inputRef.current?.click()} className="btn-ghost text-xs py-2 px-4">
@@ -564,4 +575,3 @@ function ImageUploadBox({ preview, inputRef, onClear, onChange, label }) {
     </div>
   )
 }
-
