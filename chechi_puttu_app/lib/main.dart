@@ -5389,16 +5389,16 @@ class _HomeScreenState extends State<HomeScreen>
                     crossAxisCount: 2,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
-                    childAspectRatio: 0.76,
+                    childAspectRatio: 0.88,
                   ),
                   itemCount: dishes.length,
                   itemBuilder: (context, idx) {
                     final m = _mergedDish(sectionId, dishes[idx]);
                     return LayoutBuilder(
                       builder: (context, constraints) {
-                        final h = constraints.maxWidth / 0.76;
+                        final h = constraints.maxWidth / 0.88;
                         return _ProductCard(
-                          height: h.isFinite ? h : 210,
+                          height: h.isFinite ? h : 190,
                           badge: m.badge,
                           title: m.title,
                           subtitle: m.subtitle,
@@ -11176,7 +11176,7 @@ class _ProductCardState extends State<_ProductCard> {
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        mainAxisAlignment: MainAxisAlignment.start,
                         children: [
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -11210,18 +11210,17 @@ class _ProductCardState extends State<_ProductCard> {
                               ),
                             ],
                           ),
+                          const SizedBox(height: 8),
                           Row(
                             children: [
                               Text(
                                 widget.price,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleSmall
-                                    ?.copyWith(
+                                style: GoogleFonts.poppins(
                                   color: isDark
                                       ? _Theme.text(context)
                                       : _AppColors.primary,
                                   fontWeight: FontWeight.w800,
+                                  fontSize: compactHeight ? 14 : 15,
                                 ),
                               ),
                               const Spacer(),
@@ -11768,38 +11767,24 @@ class _NavPillItem extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
-        child: AnimatedContainer(
-          duration: ChechiBrand.fast,
-          curve: ChechiBrand.ease,
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
-          decoration: BoxDecoration(
-            color: selected ? activeColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              AnimatedScale(
-                scale: selected ? 1.08 : 1,
-                duration: ChechiBrand.fast,
-                curve: ChechiBrand.ease,
-                child: Icon(icon, color: fg, size: 20),
-              ),
-              const SizedBox(height: 2),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  style: GoogleFonts.poppins(
-                    color: fg,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    fontSize: 9.5,
-                  ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: fg, size: 22),
+            const SizedBox(height: 3),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                style: GoogleFonts.poppins(
+                  color: fg,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 9.5,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
