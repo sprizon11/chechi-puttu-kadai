@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+﻿import { useEffect, useState, useRef } from 'react'
 import {
   collection, doc, onSnapshot, setDoc, updateDoc,
   arrayUnion, serverTimestamp, query
@@ -6,8 +6,8 @@ import {
 import { db } from '../firebase'
 import { CATALOG, allCatalogDishes } from '../catalog'
 
-//  = U+001F unit separator — same as Flutter's catalogDishStorageKey separator
-const SEP = ''
+// U+001F unit separator â€” same as Flutter's catalogDishStorageKey separator
+const SEP = ''
 const CUSTOM_PREFIX = '__custom__'
 const SEC_PREFIX = '__section__'
 
@@ -33,7 +33,7 @@ const MENU_DOC    = doc(db, 'admin_public', 'menu_overrides')
 const snapsColl   = collection(db, 'admin_public', 'menu_overrides', 'snapshots')
 const secSnapColl = collection(db, 'admin_public', 'menu_overrides', 'section_snapshots')
 
-// ── helpers ─────────────────────────────────────────────────────────────────
+// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const emptyDish = { title: '', subtitle: '', price: '', badge: '' }
 
 function imgSrc(b64, mimeHint = 'jpeg') {
@@ -43,10 +43,10 @@ function imgSrc(b64, mimeHint = 'jpeg') {
 }
 
 export default function Menu() {
-  // ── state ──────────────────────────────────────────────────────────────────
+  // â”€â”€ state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [meta, setMeta]         = useState({ deletedDishKeys: [], deletedSectionIds: [], customCategoryIds: [] })
-  const [snaps, setSnaps]       = useState({})   // dishKey → data
-  const [secSnaps, setSecSnaps] = useState({})   // sectionKey → data
+  const [snaps, setSnaps]       = useState({})   // dishKey â†’ data
+  const [secSnaps, setSecSnaps] = useState({})   // sectionKey â†’ data
   const [loading, setLoading]   = useState(true)
   const [search, setSearch]     = useState('')
   const [tab, setTab]           = useState('All')
@@ -78,7 +78,7 @@ export default function Menu() {
   const [newDishImgPrev, setNewDishImgPrev] = useState(null)
   const newDishImgRef = useRef()
 
-  // ── firestore ──────────────────────────────────────────────────────────────
+  // â”€â”€ firestore â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     let n = 0
     const done = () => { if (++n >= 3) setLoading(false) }
@@ -100,7 +100,7 @@ export default function Menu() {
     return () => { u1(); u2(); u3() }
   }, [])
 
-  // ── derived data ───────────────────────────────────────────────────────────
+  // â”€â”€ derived data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const deletedSet  = new Set(meta.deletedDishKeys)
   const deletedSecs = new Set(meta.deletedSectionIds)
 
@@ -121,7 +121,7 @@ export default function Menu() {
     Object.entries(snaps).forEach(([k, data]) => {
       if (!k.startsWith(prefix) || deletedSet.has(k)) return
       customDishes.push({ key: k, section: catId, title: data.title || '', subtitle: data.subtitle || '',
-        price: data.price || '₹0', badge: data.badge || null,
+        price: data.price || 'â‚¹0', badge: data.badge || null,
         available: data.available !== undefined ? data.available : true,
         imageBase64: data.imageBase64 || null, isCustom: true })
     })
@@ -159,7 +159,7 @@ export default function Menu() {
     return getCatSnap(sectionId)?.imageBase64 || null
   }
 
-  // ── save helpers ───────────────────────────────────────────────────────────
+  // â”€â”€ save helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function saveDishSnap(key, data) {
     const docId = keyToDocId(key)
     await setDoc(doc(snapsColl, docId), { key, data, updated_at: serverTimestamp() }, { merge: true })
@@ -171,7 +171,7 @@ export default function Menu() {
     await setDoc(doc(secSnapColl, docId), { key, data, updated_at: serverTimestamp() }, { merge: true })
   }
 
-  // ── actions ────────────────────────────────────────────────────────────────
+  // â”€â”€ actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function toggleAvail(dish) {
     setBusy(dish.key)
     try {
@@ -195,7 +195,7 @@ export default function Menu() {
     setTab('All')
   }
 
-  // ── edit dish ──────────────────────────────────────────────────────────────
+  // â”€â”€ edit dish â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function openEditDish(dish) {
     setEditDish(dish)
     setDishForm({ title: dish.title, subtitle: dish.subtitle, price: dish.price, badge: dish.badge || '', available: dish.available })
@@ -218,7 +218,7 @@ export default function Menu() {
     } finally { setBusy(null) }
   }
 
-  // ── edit category ──────────────────────────────────────────────────────────
+  // â”€â”€ edit category â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function openEditCat(sectionId) {
     setEditCat(sectionId)
     const snap = getCatSnap(sectionId)
@@ -244,7 +244,7 @@ export default function Menu() {
     } finally { setBusy(null) }
   }
 
-  // ── add category ───────────────────────────────────────────────────────────
+  // â”€â”€ add category â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleAddCat(e) {
     e.preventDefault()
     const name = newCatName.trim(); if (!name) return
@@ -256,7 +256,7 @@ export default function Menu() {
     } finally { setBusy(null) }
   }
 
-  // ── add dish ───────────────────────────────────────────────────────────────
+  // â”€â”€ add dish â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleAddDish(e) {
     e.preventDefault()
     const section = addDishSec; if (!section || !newDish.title.trim()) return
@@ -264,7 +264,7 @@ export default function Menu() {
     setBusy('addDish')
     try {
       await saveDishSnap(key, { title: newDish.title.trim(), subtitle: newDish.subtitle.trim(),
-        price: newDish.price.trim() || '₹0', badge: newDish.badge.trim() || null,
+        price: newDish.price.trim() || 'â‚¹0', badge: newDish.badge.trim() || null,
         available: true, imageBase64: newDishImgB64 || null })
       setAddDishSec(null); setNewDish(emptyDish); setNewDishImgB64(null); setNewDishImgPrev(null)
     } finally { setBusy(null) }
@@ -274,7 +274,7 @@ export default function Menu() {
     const b64 = await fileToBase64(f); setNewDishImgB64(b64); setNewDishImgPrev(imgSrc(b64))
   }
 
-  // ── render ─────────────────────────────────────────────────────────────────
+  // â”€â”€ render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="w-8 h-8 border-4 border-maroon border-t-transparent rounded-full animate-spin" />
@@ -288,10 +288,10 @@ export default function Menu() {
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
         <div className="flex-1">
           <h1 className="page-title">Menu</h1>
-          <p className="page-subtitle">{allDishes.length} dishes · {availCount} available · {allDishes.length - availCount} unavailable</p>
+          <p className="page-subtitle">{allDishes.length} dishes Â· {availCount} available Â· {allDishes.length - availCount} unavailable</p>
         </div>
         <div className="flex gap-3">
-          <input className="input max-w-xs" placeholder="Search dishes…" value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="input max-w-xs" placeholder="Search dishesâ€¦" value={search} onChange={e => setSearch(e.target.value)} />
           <button onClick={() => setAddCatOpen(true)} className="btn-primary whitespace-nowrap">+ Add Category</button>
         </div>
       </div>
@@ -302,12 +302,12 @@ export default function Menu() {
           <button key={s} onClick={() => setTab(s)}
             className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-all ${tab === s ? 'bg-maroon text-white shadow-sm' : 'bg-white border border-cream-border text-gray-600 hover:bg-cream'}`}>
             {s === 'All' ? s : getCatTitle(s)}
-            {customTabs.includes(s) && <span className="ml-1 text-xs opacity-60">✦</span>}
+            {customTabs.includes(s) && <span className="ml-1 text-xs opacity-60">âœ¦</span>}
           </button>
         ))}
       </div>
 
-      {/* Category card — shown when a specific section is active */}
+      {/* Category card â€” shown when a specific section is active */}
       {tab !== 'All' && (
         <div className="section-card overflow-hidden">
           <div className="flex flex-col sm:flex-row">
@@ -316,7 +316,7 @@ export default function Menu() {
               {getCatImage(tab)
                 ? <img src={imgSrc(getCatImage(tab))} alt={getCatTitle(tab)} className="w-full h-full object-cover" />
                 : <div className="flex flex-col items-center gap-2 text-gray-300">
-                    <span className="text-4xl">🖼️</span>
+                    <span className="text-4xl">ðŸ–¼ï¸</span>
                     <span className="text-xs font-medium">No cover image</span>
                   </div>
               }
@@ -333,7 +333,7 @@ export default function Menu() {
               </div>
               <div className="flex gap-2 mt-4 flex-wrap">
                 <button onClick={() => openEditCat(tab)}
-                  className="btn-primary text-xs py-2 px-4">✏️ Edit Category</button>
+                  className="btn-primary text-xs py-2 px-4">âœï¸ Edit Category</button>
                 {isCustomTab && (
                   <>
                     <button onClick={() => setAddDishSec(tab)} className="btn-ghost text-xs py-2 px-4">+ Add Dish</button>
@@ -364,19 +364,19 @@ export default function Menu() {
                     <div className="flex items-center gap-3">
                       {dish.imageBase64
                         ? <img src={imgSrc(dish.imageBase64)} alt={dish.title} className="w-10 h-10 rounded-lg object-cover shrink-0 border border-cream-border" />
-                        : <div className="w-10 h-10 rounded-lg bg-cream flex items-center justify-center text-lg shrink-0">🍽️</div>}
+                        : <div className="w-10 h-10 rounded-lg bg-cream flex items-center justify-center text-lg shrink-0">ðŸ½ï¸</div>}
                       <div>
                         <p className="font-semibold text-gray-900">{dish.title}</p>
                         <p className="text-xs text-gray-500">{dish.subtitle}</p>
                       </div>
                     </div>
                   </td>
-                  <td className="px-5 py-3.5 text-xs text-gray-500">{getCatTitle(dish.section)}{dish.isCustom ? ' ✦' : ''}</td>
+                  <td className="px-5 py-3.5 text-xs text-gray-500">{getCatTitle(dish.section)}{dish.isCustom ? ' âœ¦' : ''}</td>
                   <td className="px-5 py-3.5 font-bold text-maroon-deep">{dish.price}</td>
                   <td className="px-5 py-3.5">
                     {dish.badge
                       ? <span className="badge bg-amber-50 text-amber-700 border border-amber-200">{dish.badge}</span>
-                      : <span className="text-gray-300 text-xs">—</span>}
+                      : <span className="text-gray-300 text-xs">â€”</span>}
                   </td>
                   <td className="px-5 py-3.5">
                     <button onClick={() => toggleAvail(dish)} disabled={busy === dish.key}
@@ -399,7 +399,7 @@ export default function Menu() {
               {filtered.length === 0 && (
                 <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400 text-sm">
                   {tab !== 'All' && isCustomTab
-                    ? <span>No dishes yet. <button onClick={() => setAddDishSec(tab)} className="text-maroon font-semibold underline">Add the first dish →</button></span>
+                    ? <span>No dishes yet. <button onClick={() => setAddDishSec(tab)} className="text-maroon font-semibold underline">Add the first dish â†’</button></span>
                     : 'No dishes found'}
                 </td></tr>
               )}
@@ -407,11 +407,11 @@ export default function Menu() {
           </table>
         </div>
         <div className="px-5 py-3 border-t border-cream-border bg-cream/40 text-xs text-gray-400">
-          Showing {filtered.length} dishes · ✦ = custom category
+          Showing {filtered.length} dishes Â· âœ¦ = custom category
         </div>
       </div>
 
-      {/* ── Edit Dish Modal ─────────────────────────────────────────────────── */}
+      {/* â”€â”€ Edit Dish Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {editDish && (
         <Modal title="Edit Dish" onClose={() => setEditDish(null)}>
           <form onSubmit={handleEditDishSave} className="space-y-4">
@@ -420,7 +420,7 @@ export default function Menu() {
             <Field label="Dish Name"><input className="input" value={dishForm.title} onChange={e => setDishForm({ ...dishForm, title: e.target.value })} required /></Field>
             <Field label="Subtitle"><input className="input" value={dishForm.subtitle} onChange={e => setDishForm({ ...dishForm, subtitle: e.target.value })} /></Field>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Price"><input className="input" value={dishForm.price} onChange={e => setDishForm({ ...dishForm, price: e.target.value })} placeholder="₹70" required /></Field>
+              <Field label="Price"><input className="input" value={dishForm.price} onChange={e => setDishForm({ ...dishForm, price: e.target.value })} placeholder="â‚¹70" required /></Field>
               <Field label="Badge"><input className="input" value={dishForm.badge} onChange={e => setDishForm({ ...dishForm, badge: e.target.value })} placeholder="Bestseller" /></Field>
             </div>
             <label className="flex items-center gap-3 cursor-pointer">
@@ -432,7 +432,7 @@ export default function Menu() {
         </Modal>
       )}
 
-      {/* ── Edit Category Modal ─────────────────────────────────────────────── */}
+      {/* â”€â”€ Edit Category Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {editCat && (
         <Modal title="Edit Category" onClose={() => setEditCat(null)}>
           <form onSubmit={handleEditCatSave} className="space-y-4">
@@ -446,9 +446,9 @@ export default function Menu() {
                 {catImgPrev
                   ? <img src={catImgPrev} alt="" className="w-full h-full object-cover" />
                   : <div className="flex flex-col items-center gap-2 text-gray-300">
-                      <span className="text-4xl">📷</span>
+                      <span className="text-4xl">ðŸ“·</span>
                       <span className="text-sm font-medium">Click to upload cover photo</span>
-                      <span className="text-xs">Recommended 16:9 (e.g. 1200×675)</span>
+                      <span className="text-xs">Recommended 16:9 (e.g. 1200Ã—675)</span>
                     </div>}
               </div>
               <div className="flex gap-2">
@@ -475,7 +475,7 @@ export default function Menu() {
         </Modal>
       )}
 
-      {/* ── Add Category Modal ──────────────────────────────────────────────── */}
+      {/* â”€â”€ Add Category Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {addCatOpen && (
         <Modal title="Add New Category" onClose={() => setAddCatOpen(false)}>
           <form onSubmit={handleAddCat} className="space-y-4">
@@ -488,16 +488,16 @@ export default function Menu() {
         </Modal>
       )}
 
-      {/* ── Add Dish Modal ──────────────────────────────────────────────────── */}
+      {/* â”€â”€ Add Dish Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {addDishSec && (
-        <Modal title={`Add Dish — ${getCatTitle(addDishSec)}`} onClose={() => setAddDishSec(null)}>
+        <Modal title={`Add Dish â€” ${getCatTitle(addDishSec)}`} onClose={() => setAddDishSec(null)}>
           <form onSubmit={handleAddDish} className="space-y-4">
             <ImageUploadBox preview={newDishImgPrev} inputRef={newDishImgRef} onClear={() => { setNewDishImgPrev(null); setNewDishImgB64(null) }}
               onChange={onNewDishImgChange} label="Dish Photo" />
             <Field label="Dish Name *"><input className="input" value={newDish.title} onChange={e => setNewDish({ ...newDish, title: e.target.value })} required autoFocus /></Field>
             <Field label="Subtitle"><input className="input" value={newDish.subtitle} onChange={e => setNewDish({ ...newDish, subtitle: e.target.value })} placeholder="Short description" /></Field>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Price *"><input className="input" value={newDish.price} onChange={e => setNewDish({ ...newDish, price: e.target.value })} placeholder="₹70" required /></Field>
+              <Field label="Price *"><input className="input" value={newDish.price} onChange={e => setNewDish({ ...newDish, price: e.target.value })} placeholder="â‚¹70" required /></Field>
               <Field label="Badge"><input className="input" value={newDish.badge} onChange={e => setNewDish({ ...newDish, badge: e.target.value })} placeholder="New" /></Field>
             </div>
             <ModalActions onCancel={() => setAddDishSec(null)} saving={busy === 'addDish'} label="Add Dish" />
@@ -508,14 +508,14 @@ export default function Menu() {
   )
 }
 
-// ── shared UI components ─────────────────────────────────────────────────────
+// â”€â”€ shared UI components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function Modal({ title, onClose, children }) {
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-5 border-b border-cream-border flex items-center justify-between sticky top-0 bg-white rounded-t-2xl z-10">
           <h2 className="font-display font-bold text-xl text-maroon-deep">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">âœ•</button>
         </div>
         <div className="p-6">{children}</div>
       </div>
@@ -537,7 +537,7 @@ function ModalActions({ onCancel, saving, label }) {
     <div className="flex gap-3 pt-2">
       <button type="button" onClick={onCancel} className="btn-ghost flex-1">Cancel</button>
       <button type="submit" disabled={saving} className="btn-primary flex-1">
-        {saving ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving…</span> : label}
+        {saving ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Savingâ€¦</span> : label}
       </button>
     </div>
   )
@@ -550,7 +550,7 @@ function ImageUploadBox({ preview, inputRef, onClear, onChange, label }) {
       <div className="flex items-center gap-4">
         <div className="w-20 h-20 rounded-xl border-2 border-dashed border-cream-border flex items-center justify-center overflow-hidden cursor-pointer hover:border-maroon transition-colors bg-cream shrink-0"
           onClick={() => inputRef.current?.click()}>
-          {preview ? <img src={preview} alt="" className="w-full h-full object-cover" /> : <span className="text-2xl">📷</span>}
+          {preview ? <img src={preview} alt="" className="w-full h-full object-cover" /> : <span className="text-2xl">ðŸ“·</span>}
         </div>
         <div>
           <button type="button" onClick={() => inputRef.current?.click()} className="btn-ghost text-xs py-2 px-4">
@@ -564,3 +564,4 @@ function ImageUploadBox({ preview, inputRef, onClear, onChange, label }) {
     </div>
   )
 }
+
