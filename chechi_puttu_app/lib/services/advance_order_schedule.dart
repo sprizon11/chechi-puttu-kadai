@@ -82,10 +82,41 @@ class AdvanceOrderSchedule {
     return today.add(const Duration(days: advanceDays));
   }
 
-  /// Example hint: order at 9 PM → tomorrow dinner.
-  static String policySummary() =>
-      'Book at least 1 day ahead. Order tonight → delivery tomorrow '
-      '(breakfast, lunch, or dinner).';
+  /// Returns a hint based on current time.
+  static String policySummary() {
+    final now = DateTime.now();
+    if (now.hour < 12) {
+      return 'Order before 12 PM → all slots available tomorrow (breakfast, lunch, dinner).';
+    } else if (now.hour < 18) {
+      return 'Order after 12 PM → tomorrow breakfast not available. Lunch & dinner available.';
+    } else {
+      return 'Order after 6 PM → tomorrow dinner only. Pick a later date for more slots.';
+    }
+  }
+
+  /// Returns which slots are available for the given delivery day.
+  /// Rules:
+  ///   Before 12 PM  → tomorrow: Breakfast, Lunch, Dinner
+  ///   12 PM–6 PM    → tomorrow: Lunch, Dinner only
+  ///   After 6 PM    → tomorrow: Dinner only
+  ///   Any later date → always all 3 slots
+  static List<AdvanceMealSlot> availableSlotsFor(DateTime deliveryDay) {
+    final now = DateTime.now();
+    final tomorrow = earliestDeliveryDay(now);
+    final isTomorrow = deliveryDay.year == tomorrow.year &&
+        deliveryDay.month == tomorrow.month &&
+        deliveryDay.day == tomorrow.day;
+    if (isTomorrow) {
+      if (now.hour >= 18) {
+        // After 6 PM — dinner only
+        return [mealSlots.firstWhere((s) => s.id == 'dinner')];
+      } else if (now.hour >= 12) {
+        // After 12 PM — no breakfast
+        return mealSlots.where((s) => s.id != 'breakfast').toList();
+      }
+    }
+    return mealSlots;
+  }
 
   /// Date picker + breakfast / lunch / dinner sheet.
   static Future<AdvanceMealBooking?> pickMealBooking(BuildContext context) async {
@@ -115,6 +146,8 @@ class AdvanceOrderSchedule {
     if (!context.mounted || date == null) return null;
 
     final deliveryDay = DateTime(date.year, date.month, date.day);
+    final slots = availableSlotsFor(deliveryDay);
+
     final slot = await showModalBottomSheet<AdvanceMealSlot>(
       context: context,
       showDragHandle: true,
@@ -146,7 +179,7 @@ class AdvanceOrderSchedule {
                   ),
                 ),
                 const SizedBox(height: 12),
-                for (final s in mealSlots) ...[
+                for (final s in slots) ...[
                   ListTile(
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

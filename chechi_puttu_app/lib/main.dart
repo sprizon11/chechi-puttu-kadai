@@ -4693,7 +4693,161 @@ class _HomeScreenState extends State<HomeScreen>
       CustomerMenuSectionOverrides.instance.reloadFromPrefs();
       MenuDeletedDishes.instance.reloadFromPrefs();
       unawaited(_loadBirthdayBannerState());
+      Future.delayed(const Duration(milliseconds: 900), () {
+        if (mounted) _showPreOrderInfoDialog(context);
+      });
     });
+  }
+
+  void _showPreOrderInfoDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return Dialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          backgroundColor:
+              isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                        color: _AppColors.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(11),
+                      ),
+                      child: const Icon(Icons.schedule_rounded,
+                          color: _AppColors.primary, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Pre-Order Info',
+                        style: GoogleFonts.poppins(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: _AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'We prepare everything fresh! Place your order in advance and choose your preferred meal slot.',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12.5,
+                    color: _Theme.muted(ctx),
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _preOrderSlotRow(
+                  ctx,
+                  icon: Icons.wb_sunny_outlined,
+                  meal: 'Breakfast',
+                  time: '8:00 – 10:00 AM',
+                  rule: 'Order before 12 PM',
+                ),
+                const SizedBox(height: 8),
+                _preOrderSlotRow(
+                  ctx,
+                  icon: Icons.lunch_dining_outlined,
+                  meal: 'Lunch',
+                  time: '12:00 – 2:00 PM',
+                  rule: 'Order before 6 PM',
+                ),
+                const SizedBox(height: 8),
+                _preOrderSlotRow(
+                  ctx,
+                  icon: Icons.nightlight_round,
+                  meal: 'Dinner',
+                  time: '6:00 – 9:00 PM',
+                  rule: 'Order anytime',
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _AppColors.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(13)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      'Got it!',
+                      style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w700, fontSize: 14),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _preOrderSlotRow(
+    BuildContext context, {
+    required IconData icon,
+    required String meal,
+    required String time,
+    required String rule,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: _Theme.surfaceLow(context),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: _Theme.border(context)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: _AppColors.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  meal,
+                  style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+                Text(
+                  rule,
+                  style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      color: _Theme.muted(context),
+                      height: 1.3),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            time,
+            style: GoogleFonts.poppins(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: _AppColors.primary,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _onHomeSearchTextChanged() {
@@ -5795,6 +5949,7 @@ class _HomeScreenState extends State<HomeScreen>
                               onToggleTheme: widget.onToggleTheme,
                               onRefresh: _handlePullToRefresh,
                             ),
+                            const CustomerChatScreen(asTab: true),
                           ],
                         ),
                       ),
@@ -5813,6 +5968,136 @@ class _HomeScreenState extends State<HomeScreen>
                     onChanged: (i) => widget.navIndexNotifier.value = i,
                     onChat: _openCustomerChat,
                   ),
+                ),
+              ),
+              // Cart bar — floats above nav bar when items are in cart
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: ListenableBuilder(
+                  listenable: Listenable.merge([
+                    widget.cartLinesNotifier,
+                    widget.navIndexNotifier,
+                  ]),
+                  builder: (context, _) {
+                    final lines = widget.cartLinesNotifier.value;
+                    final totalItems =
+                        lines.fold<int>(0, (s, e) => s + e.qty);
+                    final totalPrice =
+                        lines.fold<int>(0, (s, e) => s + e.price * e.qty);
+                    final navIndex = widget.navIndexNotifier.value;
+                    final show = totalItems > 0 && navIndex != 2 && navIndex != 5;
+                    final bottomInset =
+                        MediaQuery.of(context).padding.bottom;
+                    // Nav pill height (62) + bottom padding (12) + gap (8)
+                    final aboveNav = 82.0 + bottomInset;
+                    return AnimatedSlide(
+                      offset:
+                          show ? Offset.zero : const Offset(0, 1.5),
+                      duration: ChechiBrand.fast,
+                      curve: ChechiBrand.ease,
+                      child: AnimatedOpacity(
+                        opacity: show ? 1.0 : 0.0,
+                        duration: ChechiBrand.fast,
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                              14, 0, 14, aboveNav),
+                          child: GestureDetector(
+                            onTap: () =>
+                                widget.navIndexNotifier.value = 2,
+                            child: Container(
+                              height: 54,
+                              decoration: BoxDecoration(
+                                color: _AppColors.primary,
+                                borderRadius: BorderRadius.circular(14),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _AppColors.primary
+                                        .withValues(alpha: 0.38),
+                                    blurRadius: 18,
+                                    offset: const Offset(0, 5),
+                                  ),
+                                ],
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 18),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white
+                                          .withValues(alpha: 0.18),
+                                      borderRadius:
+                                          BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '$totalItems item${totalItems == 1 ? '' : 's'}',
+                                      style: GoogleFonts.poppins(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 12.5,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    'added to cart',
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white
+                                          .withValues(alpha: 0.85),
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    '₹$totalPrice',
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13.5,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius:
+                                          BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'View Cart',
+                                          style: GoogleFonts.poppins(
+                                            color: _AppColors.primary,
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Icon(
+                                          Icons.arrow_forward_ios_rounded,
+                                          color: _AppColors.primary,
+                                          size: 11,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ],
@@ -6550,6 +6835,7 @@ class _ProfileTab extends StatelessWidget {
                   ),
                 ),
               ),
+              const SizedBox(height: 100), // space for floating nav bar
             ],
           ),
         ),
@@ -10737,7 +11023,6 @@ class _HeroCarousel extends StatefulWidget {
 class _HeroCarouselState extends State<_HeroCarousel> {
   static const List<String> _bannerAssets = <String>[
     'assets/images/home_banner_festive_2.png',
-    'assets/images/home_banner_special_2.png',
   ];
 
   late final PageController _controller;
@@ -11247,18 +11532,30 @@ class _ProductCardState extends State<_ProductCard> {
                                         key: const ValueKey('pc-add'),
                                         onTap: disabled ? null : _increment,
                                         child: Container(
-                                          height: 26,
-                                          width: 26,
+                                          height: 28,
+                                          padding: const EdgeInsets.symmetric(horizontal: 11),
                                           decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            color: disabled
-                                                ? _Theme.muted(context)
-                                                : _AppColors.primary,
+                                            borderRadius: BorderRadius.circular(7),
+                                            border: Border.all(
+                                              color: disabled
+                                                  ? _Theme.muted(context)
+                                                  : _AppColors.primary,
+                                              width: 1.5,
+                                            ),
+                                            color: isDark ? Colors.transparent : Colors.white,
                                           ),
-                                          child: const Icon(
-                                            Icons.add_rounded,
-                                            size: 18,
-                                            color: Colors.white,
+                                          child: Center(
+                                            child: Text(
+                                              'ADD',
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w800,
+                                                color: disabled
+                                                    ? _Theme.muted(context)
+                                                    : _AppColors.primary,
+                                                letterSpacing: 0.5,
+                                              ),
+                                            ),
                                           ),
                                         ),
                                       )
@@ -11714,8 +12011,8 @@ class _BottomNavBar extends StatelessWidget {
                     child: _NavPillItem(
                       icon: Icons.chat_bubble_outline_rounded,
                       label: 'Chat',
-                      selected: false,
-                      onTap: onChat,
+                      selected: index == 5,
+                      onTap: () => onChanged(5),
                       activeColor: dark
                           ? theme.colorScheme.primaryContainer
                           : const Color(0xFFFFEEE7),
