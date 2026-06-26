@@ -7811,7 +7811,8 @@ class _CartTabState extends State<_CartTab> {
           onRefresh: widget.onRefresh,
           child: SingleChildScrollView(
             physics: AppPullToRefresh.scrollPhysics,
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 18),
+            padding: EdgeInsets.fromLTRB(
+                16, 6, 16, 110 + MediaQuery.of(context).padding.bottom),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -11508,18 +11509,23 @@ class _ProductCardState extends State<_ProductCard> {
                           ),
                           const SizedBox(height: 8),
                           Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              Text(
-                                widget.price,
-                                style: GoogleFonts.poppins(
-                                  color: isDark
-                                      ? _Theme.text(context)
-                                      : _AppColors.primary,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: compactHeight ? 14 : 15,
+                              Expanded(
+                                child: Text(
+                                  widget.price,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.poppins(
+                                    color: isDark
+                                        ? _Theme.text(context)
+                                        : _AppColors.primary,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: compactHeight ? 14 : 15,
+                                  ),
                                 ),
                               ),
-                              const Spacer(),
+                              const SizedBox(width: 6),
                               AnimatedSwitcher(
                                 duration: const Duration(milliseconds: 200),
                                 switchInCurve: Curves.easeOutCubic,
@@ -11532,45 +11538,48 @@ class _ProductCardState extends State<_ProductCard> {
                                         key: const ValueKey('pc-add'),
                                         onTap: disabled ? null : _increment,
                                         child: Container(
-                                          height: 28,
-                                          padding: const EdgeInsets.symmetric(horizontal: 11),
+                                          height: 30,
+                                          width: 62,
+                                          alignment: Alignment.center,
                                           decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(7),
+                                            borderRadius: BorderRadius.circular(9),
                                             border: Border.all(
                                               color: disabled
                                                   ? _Theme.muted(context)
                                                   : _AppColors.primary,
-                                              width: 1.5,
+                                              width: 1.4,
                                             ),
-                                            color: isDark ? Colors.transparent : Colors.white,
+                                            color: isDark
+                                                ? Colors.transparent
+                                                : const Color(0xFFFFF5F3),
                                           ),
-                                          child: Center(
-                                            child: Text(
-                                              'ADD',
-                                              style: GoogleFonts.poppins(
-                                                fontSize: 11.5,
-                                                fontWeight: FontWeight.w800,
-                                                color: disabled
-                                                    ? _Theme.muted(context)
-                                                    : _AppColors.primary,
-                                                letterSpacing: 0.5,
-                                              ),
+                                          child: Text(
+                                            'ADD',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w800,
+                                              color: disabled
+                                                  ? _Theme.muted(context)
+                                                  : _AppColors.primary,
+                                              letterSpacing: 0.5,
                                             ),
                                           ),
                                         ),
                                       )
                                     : Container(
                                         key: const ValueKey('pc-step'),
-                                        height: 26,
+                                        height: 30,
+                                        width: 86,
                                         decoration: BoxDecoration(
                                           color: disabled
                                               ? _Theme.muted(context)
                                               : _AppColors.primary,
                                           borderRadius:
-                                              BorderRadius.circular(13),
+                                              BorderRadius.circular(9),
                                         ),
                                         child: Row(
-                                          mainAxisSize: MainAxisSize.min,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
                                           children: [
                                             GestureDetector(
                                               onTap: (!disabled ||
@@ -11578,11 +11587,11 @@ class _ProductCardState extends State<_ProductCard> {
                                                   ? _decrement
                                                   : null,
                                               child: const SizedBox(
-                                                width: 26,
-                                                height: 26,
+                                                width: 28,
+                                                height: 30,
                                                 child: Icon(
                                                   Icons.remove_rounded,
-                                                  size: 14,
+                                                  size: 16,
                                                   color: Colors.white,
                                                 ),
                                               ),
@@ -11591,7 +11600,7 @@ class _ProductCardState extends State<_ProductCard> {
                                               '${widget.qty}',
                                               style: const TextStyle(
                                                 color: Colors.white,
-                                                fontSize: 13,
+                                                fontSize: 14,
                                                 fontWeight: FontWeight.w700,
                                               ),
                                             ),
@@ -11600,11 +11609,11 @@ class _ProductCardState extends State<_ProductCard> {
                                                   ? _increment
                                                   : null,
                                               child: const SizedBox(
-                                                width: 26,
-                                                height: 26,
+                                                width: 28,
+                                                height: 30,
                                                 child: Icon(
                                                   Icons.add_rounded,
-                                                  size: 14,
+                                                  size: 16,
                                                   color: Colors.white,
                                                 ),
                                               ),
