@@ -5877,7 +5877,8 @@ class _HomeScreenState extends State<HomeScreen>
                 onRefresh: _handlePullToRefresh,
                 child: SingleChildScrollView(
                   physics: AppPullToRefresh.scrollPhysics,
-                  padding: const EdgeInsets.fromLTRB(0, 0, 0, 10),
+                  padding: EdgeInsets.fromLTRB(
+                      0, 0, 0, 90 + MediaQuery.of(context).padding.bottom),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: searching
@@ -6011,8 +6012,8 @@ class _HomeScreenState extends State<HomeScreen>
                     final show = totalItems > 0 && navIndex != 1 && navIndex != 4;
                     final bottomInset =
                         MediaQuery.of(context).padding.bottom;
-                    // Nav pill height (62) + bottom padding (12) + gap (8)
-                    final aboveNav = 82.0 + bottomInset;
+                    // Nav pill height (62) + bottom padding (20) + gap (8)
+                    final aboveNav = 90.0 + bottomInset;
                     return AnimatedSlide(
                       offset:
                           show ? Offset.zero : const Offset(0, 1.5),
@@ -12188,7 +12189,7 @@ class _BottomNavBar extends StatelessWidget {
         : const Color(0xFFE65100);
     final bottomInset = MediaQuery.of(context).padding.bottom;
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottomInset),
+      padding: EdgeInsets.fromLTRB(16, 0, 16, 20 + bottomInset),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(30),
         child: BackdropFilter(
