@@ -5939,6 +5939,8 @@ class _HomeScreenState extends State<HomeScreen>
                               onOpenDeliveryLocation:
                                   _openDeliveryLocationSheet,
                               onRefresh: _handlePullToRefresh,
+                              onGoToOrders: () =>
+                                  widget.navIndexNotifier.value = 2,
                             ),
                             _OrdersTab(
                               cartLinesNotifier: widget.cartLinesNotifier,
@@ -7371,6 +7373,7 @@ class _CartTab extends StatefulWidget {
     required this.deliveryLine,
     required this.onOpenDeliveryLocation,
     required this.onRefresh,
+    this.onGoToOrders,
   });
 
   final ValueNotifier<List<CartLineItem>> cartLinesNotifier;
@@ -7380,6 +7383,7 @@ class _CartTab extends StatefulWidget {
   final String deliveryLine;
   final Future<void> Function() onOpenDeliveryLocation;
   final Future<void> Function() onRefresh;
+  final VoidCallback? onGoToOrders;
 
   @override
   State<_CartTab> createState() => _CartTabState();
@@ -7652,6 +7656,7 @@ class _CartTabState extends State<_CartTab> {
           deliveryLine: deliveryLine,
           total: total,
           paymentLabel: 'Paid online · Ref: $ref',
+          onTrackOrder: widget.onGoToOrders,
         ),
       );
       if (!context.mounted) return;
@@ -7805,6 +7810,7 @@ class _CartTabState extends State<_CartTab> {
         deliveryLine: deliveryLine,
         total: total,
         paymentLabel: 'Pay ₹$total cash on delivery',
+        onTrackOrder: widget.onGoToOrders,
       ),
     );
     if (!context.mounted) return;
@@ -8616,12 +8622,14 @@ class _OrderSuccessDialog extends StatelessWidget {
     required this.deliveryLine,
     required this.total,
     required this.paymentLabel,
+    this.onTrackOrder,
   });
 
   final String scheduleLine;
   final String deliveryLine;
   final int total;
   final String paymentLabel;
+  final VoidCallback? onTrackOrder;
 
   @override
   Widget build(BuildContext context) {
@@ -8739,7 +8747,10 @@ class _OrderSuccessDialog extends StatelessWidget {
                   ),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                onPressed: () => Navigator.pop(context),
+                onPressed: () {
+                  Navigator.pop(context);
+                  onTrackOrder?.call();
+                },
                 child: Text(
                   'Track my order',
                   style: GoogleFonts.poppins(
@@ -11538,111 +11549,152 @@ class _ProductCardState extends State<_ProductCard> {
                             ],
                           ),
                           const Spacer(),
-                          Text(
-                            widget.price,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.poppins(
-                              color: isDark
-                                  ? _Theme.text(context)
-                                  : _AppColors.primary,
-                              fontWeight: FontWeight.w800,
-                              fontSize: compactHeight ? 13 : 14,
-                            ),
-                          ),
-                          const SizedBox(height: 5),
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 200),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
-                            transitionBuilder: (child, anim) =>
-                                FadeTransition(opacity: anim, child: child),
-                            child: widget.qty == 0
-                                ? GestureDetector(
-                                    key: const ValueKey('pc-add'),
-                                    onTap: disabled ? null : _increment,
-                                    child: Container(
-                                      height: 30,
-                                      width: double.infinity,
-                                      alignment: Alignment.center,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(9),
-                                        border: Border.all(
-                                          color: disabled
-                                              ? _Theme.muted(context)
-                                              : _AppColors.primary,
-                                          width: 1.4,
-                                        ),
-                                        color: isDark
-                                            ? Colors.transparent
-                                            : const Color(0xFFFFF5F3),
-                                      ),
-                                      child: Text(
-                                        'ADD',
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w800,
-                                          color: disabled
-                                              ? _Theme.muted(context)
-                                              : _AppColors.primary,
-                                          letterSpacing: 0.5,
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                : Container(
-                                    key: const ValueKey('pc-step'),
-                                    height: 30,
-                                    width: double.infinity,
-                                    decoration: BoxDecoration(
-                                      color: disabled
-                                          ? _Theme.muted(context)
+                          Row(
+                            children: [
+                              Text(
+                                widget.price,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(
+                                      color: isDark
+                                          ? _Theme.text(context)
                                           : _AppColors.primary,
-                                      borderRadius: BorderRadius.circular(9),
+                                      fontWeight: FontWeight.w800,
                                     ),
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        GestureDetector(
-                                          onTap: (!disabled || widget.qty > 0)
-                                              ? _decrement
-                                              : null,
-                                          child: const SizedBox(
-                                            width: 32,
-                                            height: 30,
-                                            child: Icon(
-                                              Icons.remove_rounded,
-                                              size: 16,
-                                              color: Colors.white,
+                              ),
+                              const Spacer(),
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 200),
+                                switchInCurve: Curves.easeOutCubic,
+                                switchOutCurve: Curves.easeInCubic,
+                                transitionBuilder: (child, anim) =>
+                                    FadeTransition(opacity: anim, child: child),
+                                child: widget.qty == 0
+                                    ? GestureDetector(
+                                        key: const ValueKey('pc-add'),
+                                        onTap: disabled ? null : _increment,
+                                        child: Container(
+                                          height: 26,
+                                          width: 26,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            gradient: disabled
+                                                ? null
+                                                : const LinearGradient(
+                                                    colors: [
+                                                      Color(0xFFC23E2B),
+                                                      _AppColors.primary,
+                                                    ],
+                                                    begin: Alignment.topLeft,
+                                                    end: Alignment.bottomRight,
+                                                  ),
+                                            color: disabled
+                                                ? _Theme.muted(context)
+                                                : null,
+                                            border: Border.all(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.45),
                                             ),
+                                            boxShadow: disabled
+                                                ? const []
+                                                : [
+                                                    BoxShadow(
+                                                      blurRadius: 8,
+                                                      offset:
+                                                          const Offset(0, 3),
+                                                      color: _AppColors.primary
+                                                          .withValues(
+                                                              alpha: 0.28),
+                                                    ),
+                                                  ],
                                           ),
-                                        ),
-                                        Text(
-                                          '${widget.qty}',
-                                          style: const TextStyle(
+                                          child: const Icon(
+                                            Icons.add_rounded,
+                                            size: 18,
                                             color: Colors.white,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w700,
                                           ),
                                         ),
-                                        GestureDetector(
-                                          onTap: widget.available
-                                              ? _increment
+                                      )
+                                    : Container(
+                                        key: const ValueKey('pc-step'),
+                                        height: 26,
+                                        decoration: BoxDecoration(
+                                          gradient: disabled
+                                              ? null
+                                              : const LinearGradient(
+                                                  colors: [
+                                                    Color(0xFFC23E2B),
+                                                    _AppColors.primary,
+                                                  ],
+                                                  begin: Alignment.topLeft,
+                                                  end: Alignment.bottomRight,
+                                                ),
+                                          color: disabled
+                                              ? _Theme.muted(context)
                                               : null,
-                                          child: const SizedBox(
-                                            width: 32,
-                                            height: 30,
-                                            child: Icon(
-                                              Icons.add_rounded,
-                                              size: 16,
-                                              color: Colors.white,
-                                            ),
+                                          borderRadius:
+                                              BorderRadius.circular(13),
+                                          border: Border.all(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.35),
                                           ),
+                                          boxShadow: disabled
+                                              ? const []
+                                              : [
+                                                  BoxShadow(
+                                                    blurRadius: 8,
+                                                    offset: const Offset(0, 3),
+                                                    color: _AppColors.primary
+                                                        .withValues(alpha: 0.24),
+                                                  ),
+                                                ],
                                         ),
-                                      ],
-                                    ),
-                                  ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            GestureDetector(
+                                              onTap:
+                                                  (!disabled || widget.qty > 0)
+                                                      ? _decrement
+                                                      : null,
+                                              child: const SizedBox(
+                                                width: 26,
+                                                height: 26,
+                                                child: Icon(
+                                                  Icons.remove_rounded,
+                                                  size: 14,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                            Text(
+                                              '${widget.qty}',
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            GestureDetector(
+                                              onTap: widget.available
+                                                  ? _increment
+                                                  : null,
+                                              child: const SizedBox(
+                                                width: 26,
+                                                height: 26,
+                                                child: Icon(
+                                                  Icons.add_rounded,
+                                                  size: 14,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
