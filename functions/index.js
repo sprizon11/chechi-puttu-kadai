@@ -406,9 +406,20 @@ exports.createCashfreeCheckout = onCall(
     });
     cfData = await resp.json().catch(() => ({}));
     if (!resp.ok || !cfData.payment_session_id) {
+      // Log the real Cashfree response so production failures are diagnosable
+      // (no secrets are logged — only env + status + Cashfree's own message).
+      console.error("cashfreeOrderFailed", {
+        env,
+        baseUrl: cashfreeBaseUrl(env),
+        httpStatus: resp.status,
+        cfMessage: cfData.message || null,
+        cfCode: cfData.code || null,
+        cfType: cfData.type || null,
+      });
       throw new Error(cfData.message || `Cashfree HTTP ${resp.status}`);
     }
   } catch (e) {
+    console.error("createCashfreeCheckout error:", e instanceof Error ? e.message : e);
     await sessionRef.update({
       status: "error",
       error_message: e instanceof Error ? e.message : "cashfree failed",

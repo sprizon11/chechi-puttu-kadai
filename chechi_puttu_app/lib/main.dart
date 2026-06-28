@@ -5896,7 +5896,7 @@ class _HomeScreenState extends State<HomeScreen>
                           end: Offset.zero,
                         ).animate(tabCurve),
                         child: IndexedStack(
-                          index: widget.navIndexNotifier.value.clamp(0, 4),
+                          index: widget.navIndexNotifier.value.clamp(0, 5),
                           sizing: StackFit.expand,
                           children: [
                             _buildHomeTab(),
