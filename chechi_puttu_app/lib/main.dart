@@ -553,12 +553,13 @@ class _AuthGateHomeState extends State<_AuthGateHome> {
 
   void _handlePushDeepLink(Map<String, String> data) {
     final type = (data['type'] ?? '').trim().toLowerCase();
-    if (type == 'order_chat_update' || type == 'order_update') {
-      _homeNavIndexNotifier.value = 3;
+    if (type == 'order_chat_update' || type == 'order_update' ||
+        type == 'order_status') {
+      _homeNavIndexNotifier.value = 2;
       return;
     }
     if (type == 'chat_message') {
-      _homeNavIndexNotifier.value = 1;
+      _homeNavIndexNotifier.value = 4;
       return;
     }
   }
@@ -4550,7 +4551,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _goToOrdersWithFilter(int filterIndex) {
     _ordersFilterNotifier.value = filterIndex.clamp(0, 3);
-    widget.navIndexNotifier.value = 3;
+    widget.navIndexNotifier.value = 2;
   }
 
   void _openAppMenu() {
@@ -4875,6 +4876,35 @@ class _HomeScreenState extends State<HomeScreen>
       _birthdayToday = isToday;
       _birthdayFirstName = first;
     });
+    if (isToday) {
+      // Send chat wish (idempotent — server deduplicates by day).
+      unawaited(BirthdayChatWishService.instance.ensureForCustomer(uid));
+      // Show popup once per day on first app open.
+      await _maybeShowBirthdayPopup(first, uid);
+    }
+  }
+
+  static String _birthdayPopupShownKey(String uid) =>
+      'chechi_birthday_popup_shown_${uid}_${BirthdayChatWishService.todayKey()}';
+
+  Future<void> _maybeShowBirthdayPopup(String firstName, String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = _birthdayPopupShownKey(uid);
+    if (prefs.getBool(key) == true) return;
+    await prefs.setBool(key, true);
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => _BirthdayPopupDialog(
+        firstName: firstName,
+        onOpenChat: () {
+          Navigator.of(ctx).pop();
+          // Navigate to Chat tab (index 4).
+          widget.navIndexNotifier.value = 4;
+        },
+      ),
+    );
   }
 
   Future<void> _handlePullToRefresh() async {
@@ -5815,7 +5845,7 @@ class _HomeScreenState extends State<HomeScreen>
                 isDark: widget.isDark,
                 onToggleTheme: widget.onToggleTheme,
                 cartLinesNotifier: widget.cartLinesNotifier,
-                onCartTap: () => widget.navIndexNotifier.value = 2,
+                onCartTap: () => widget.navIndexNotifier.value = 1,
               ),
               const SizedBox(height: 6),
               _HomeSearchBar(
@@ -5896,21 +5926,10 @@ class _HomeScreenState extends State<HomeScreen>
                           end: Offset.zero,
                         ).animate(tabCurve),
                         child: IndexedStack(
-                          index: widget.navIndexNotifier.value.clamp(0, 5),
+                          index: widget.navIndexNotifier.value.clamp(0, 4),
                           sizing: StackFit.expand,
                           children: [
                             _buildHomeTab(),
-                            _CategoriesTab(
-                              cartLinesNotifier: widget.cartLinesNotifier,
-                              onMenu: _openAppMenu,
-                              onCartTap: () =>
-                                  widget.navIndexNotifier.value = 2,
-                              onOpenCartTab: () =>
-                                  widget.navIndexNotifier.value = 2,
-                              isDark: widget.isDark,
-                              onToggleTheme: widget.onToggleTheme,
-                              onRefresh: _handlePullToRefresh,
-                            ),
                             _CartTab(
                               cartLinesNotifier: widget.cartLinesNotifier,
                               onBack: () => widget.navIndexNotifier.value = 0,
@@ -5925,7 +5944,7 @@ class _HomeScreenState extends State<HomeScreen>
                               cartLinesNotifier: widget.cartLinesNotifier,
                               onMenu: _openAppMenu,
                               onCartTap: () =>
-                                  widget.navIndexNotifier.value = 2,
+                                  widget.navIndexNotifier.value = 1,
                               isDark: widget.isDark,
                               onToggleTheme: widget.onToggleTheme,
                               ordersFilterNotifier: _ordersFilterNotifier,
@@ -5935,10 +5954,10 @@ class _HomeScreenState extends State<HomeScreen>
                               cartLinesNotifier: widget.cartLinesNotifier,
                               onMenu: _openAppMenu,
                               onCartTap: () =>
-                                  widget.navIndexNotifier.value = 2,
+                                  widget.navIndexNotifier.value = 1,
                               onViewAllOrders: () {
                                 _ordersFilterNotifier.value = 0;
-                                widget.navIndexNotifier.value = 3;
+                                widget.navIndexNotifier.value = 2;
                               },
                               onEditProfile: () {
                                 _openEditProfile();
@@ -5987,7 +6006,7 @@ class _HomeScreenState extends State<HomeScreen>
                     final totalPrice =
                         lines.fold<int>(0, (s, e) => s + e.price * e.qty);
                     final navIndex = widget.navIndexNotifier.value;
-                    final show = totalItems > 0 && navIndex != 2 && navIndex != 5;
+                    final show = totalItems > 0 && navIndex != 1 && navIndex != 4;
                     final bottomInset =
                         MediaQuery.of(context).padding.bottom;
                     // Nav pill height (62) + bottom padding (12) + gap (8)
@@ -6005,7 +6024,7 @@ class _HomeScreenState extends State<HomeScreen>
                               14, 0, 14, aboveNav),
                           child: GestureDetector(
                             onTap: () =>
-                                widget.navIndexNotifier.value = 2,
+                                widget.navIndexNotifier.value = 1,
                             child: Container(
                               height: 54,
                               decoration: BoxDecoration(
@@ -7572,17 +7591,11 @@ class _CartTabState extends State<_CartTab> {
     }
     _cfPayDone = null;
 
-    if (!sdkOk) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Payment was not completed. No order was placed.',
-            style: GoogleFonts.poppins(),
-          ),
-        ),
-      );
-      return;
-    }
+    // Always confirm via webhook regardless of SDK result.
+    // On Android, Cashfree SDK sometimes fires onError even for successful
+    // payments (e.g. after back-button close of WebView). The webhook is the
+    // authoritative source of truth — we always poll it before showing any
+    // error to the user.
     if (!context.mounted) return;
 
     showDialog<void>(
@@ -7614,7 +7627,15 @@ class _CartTabState extends State<_CartTab> {
 
     String? orderId;
     try {
-      orderId = await _cfCheckout.waitUntilPaid(start.sessionId);
+      // SDK said success → wait up to 2 min for webhook confirmation.
+      // SDK said error  → wait 15 s (user likely cancelled, but check anyway
+      //                   in case Android SDK misfired).
+      orderId = await _cfCheckout.waitUntilPaid(
+        start.sessionId,
+        timeout: sdkOk
+            ? const Duration(minutes: 2)
+            : const Duration(seconds: 15),
+      );
     } finally {
       if (context.mounted) {
         Navigator.of(context, rootNavigator: true).pop();
@@ -7635,13 +7656,22 @@ class _CartTabState extends State<_CartTab> {
       );
       if (!context.mounted) return;
       widget.cartLinesNotifier.value = [];
-    } else {
+    } else if (sdkOk) {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
             'We could not confirm payment yet. If money was debited, wait a few '
             'minutes or contact support with your Cashfree receipt. No kitchen '
             'order is placed until confirmation.',
+            style: GoogleFonts.poppins(),
+          ),
+        ),
+      );
+    } else {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Payment was not completed. No order was placed.',
             style: GoogleFonts.poppins(),
           ),
         ),
@@ -11507,122 +11537,112 @@ class _ProductCardState extends State<_ProductCard> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  widget.price,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: GoogleFonts.poppins(
-                                    color: isDark
-                                        ? _Theme.text(context)
-                                        : _AppColors.primary,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: compactHeight ? 14 : 15,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 200),
-                                switchInCurve: Curves.easeOutCubic,
-                                switchOutCurve: Curves.easeInCubic,
-                                transitionBuilder: (child, anim) =>
-                                    FadeTransition(
-                                        opacity: anim, child: child),
-                                child: widget.qty == 0
-                                    ? GestureDetector(
-                                        key: const ValueKey('pc-add'),
-                                        onTap: disabled ? null : _increment,
-                                        child: Container(
-                                          height: 30,
-                                          width: 62,
-                                          alignment: Alignment.center,
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(9),
-                                            border: Border.all(
-                                              color: disabled
-                                                  ? _Theme.muted(context)
-                                                  : _AppColors.primary,
-                                              width: 1.4,
-                                            ),
-                                            color: isDark
-                                                ? Colors.transparent
-                                                : const Color(0xFFFFF5F3),
-                                          ),
-                                          child: Text(
-                                            'ADD',
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w800,
-                                              color: disabled
-                                                  ? _Theme.muted(context)
-                                                  : _AppColors.primary,
-                                              letterSpacing: 0.5,
-                                            ),
-                                          ),
-                                        ),
-                                      )
-                                    : Container(
-                                        key: const ValueKey('pc-step'),
-                                        height: 30,
-                                        width: 86,
-                                        decoration: BoxDecoration(
+                          const Spacer(),
+                          Text(
+                            widget.price,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.poppins(
+                              color: isDark
+                                  ? _Theme.text(context)
+                                  : _AppColors.primary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: compactHeight ? 13 : 14,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 200),
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeInCubic,
+                            transitionBuilder: (child, anim) =>
+                                FadeTransition(opacity: anim, child: child),
+                            child: widget.qty == 0
+                                ? GestureDetector(
+                                    key: const ValueKey('pc-add'),
+                                    onTap: disabled ? null : _increment,
+                                    child: Container(
+                                      height: 30,
+                                      width: double.infinity,
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(9),
+                                        border: Border.all(
                                           color: disabled
                                               ? _Theme.muted(context)
                                               : _AppColors.primary,
-                                          borderRadius:
-                                              BorderRadius.circular(9),
+                                          width: 1.4,
                                         ),
-                                        child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            GestureDetector(
-                                              onTap: (!disabled ||
-                                                      widget.qty > 0)
-                                                  ? _decrement
-                                                  : null,
-                                              child: const SizedBox(
-                                                width: 28,
-                                                height: 30,
-                                                child: Icon(
-                                                  Icons.remove_rounded,
-                                                  size: 16,
-                                                  color: Colors.white,
-                                                ),
-                                              ),
-                                            ),
-                                            Text(
-                                              '${widget.qty}',
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                            GestureDetector(
-                                              onTap: widget.available
-                                                  ? _increment
-                                                  : null,
-                                              child: const SizedBox(
-                                                width: 28,
-                                                height: 30,
-                                                child: Icon(
-                                                  Icons.add_rounded,
-                                                  size: 16,
-                                                  color: Colors.white,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
+                                        color: isDark
+                                            ? Colors.transparent
+                                            : const Color(0xFFFFF5F3),
+                                      ),
+                                      child: Text(
+                                        'ADD',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w800,
+                                          color: disabled
+                                              ? _Theme.muted(context)
+                                              : _AppColors.primary,
+                                          letterSpacing: 0.5,
                                         ),
                                       ),
-                              ),
-                            ],
+                                    ),
+                                  )
+                                : Container(
+                                    key: const ValueKey('pc-step'),
+                                    height: 30,
+                                    width: double.infinity,
+                                    decoration: BoxDecoration(
+                                      color: disabled
+                                          ? _Theme.muted(context)
+                                          : _AppColors.primary,
+                                      borderRadius: BorderRadius.circular(9),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        GestureDetector(
+                                          onTap: (!disabled || widget.qty > 0)
+                                              ? _decrement
+                                              : null,
+                                          child: const SizedBox(
+                                            width: 32,
+                                            height: 30,
+                                            child: Icon(
+                                              Icons.remove_rounded,
+                                              size: 16,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          '${widget.qty}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        GestureDetector(
+                                          onTap: widget.available
+                                              ? _increment
+                                              : null,
+                                          child: const SizedBox(
+                                            width: 32,
+                                            height: 30,
+                                            child: Icon(
+                                              Icons.add_rounded,
+                                              size: 16,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                           ),
                         ],
                       ),
@@ -11909,6 +11929,187 @@ class _OfferBanner extends StatelessWidget {
   }
 }
 
+// ─────────────────────────── Birthday Popup ───────────────────────────────
+
+class _BirthdayPopupDialog extends StatefulWidget {
+  const _BirthdayPopupDialog({
+    required this.firstName,
+    required this.onOpenChat,
+  });
+
+  final String firstName;
+  final VoidCallback onOpenChat;
+
+  @override
+  State<_BirthdayPopupDialog> createState() => _BirthdayPopupDialogState();
+}
+
+class _BirthdayPopupDialogState extends State<_BirthdayPopupDialog>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+  late final Animation<double> _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 480),
+    );
+    _scale = CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut);
+    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = widget.firstName.trim().isEmpty ? 'there' : widget.firstName;
+    return FadeTransition(
+      opacity: _fade,
+      child: ScaleTransition(
+        scale: _scale,
+        child: Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFFFF8F0), Color(0xFFFFEDF5)],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFE85D3F).withValues(alpha: 0.18),
+                  blurRadius: 40,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                // Decorative circles
+                Positioned(
+                  top: -20,
+                  right: -20,
+                  child: Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFFFD6C2).withValues(alpha: 0.5),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: -30,
+                  left: -20,
+                  child: Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFFFB6C1).withValues(alpha: 0.4),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('🎂', style: TextStyle(fontSize: 56)),
+                      const SizedBox(height: 12),
+                      Text(
+                        '🎉 Happy Birthday!',
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF5D1F1A),
+                          height: 1.1,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        name,
+                        style: GoogleFonts.poppins(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFFE85D3F),
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Warm wishes from everyone at\nChechi Puttu Kadai 🌸\n\nMay your day be filled with joy,\nlove & delicious homestyle food!',
+                        style: GoogleFonts.poppins(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF7A5C58),
+                          height: 1.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: widget.onOpenChat,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFE85D3F),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: Text(
+                            'See your birthday message 🎁',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: Text(
+                          'Close',
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            color: const Color(0xFF9E7E78),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────── Bottom Nav Bar ───────────────────────────────
+
 class _BottomNavBar extends StatelessWidget {
   const _BottomNavBar({
     required this.index,
@@ -11988,25 +12189,10 @@ class _BottomNavBar extends StatelessWidget {
                   ),
                   Expanded(
                     child: _NavPillItem(
-                      icon: Icons.grid_view_rounded,
-                      label: 'Menu',
-                      selected: index == 1,
-                      onTap: () => onChanged(1),
-                      activeColor: dark
-                          ? theme.colorScheme.primaryContainer
-                          : const Color(0xFFFFEEE7),
-                      activeTextColor: dark
-                          ? theme.colorScheme.onPrimaryContainer
-                          : warmSelected,
-                      inactiveColor: inactiveColor,
-                    ),
-                  ),
-                  Expanded(
-                    child: _NavPillItem(
                       icon: Icons.receipt_long_outlined,
                       label: 'Orders',
-                      selected: index == 3,
-                      onTap: () => onChanged(3),
+                      selected: index == 2,
+                      onTap: () => onChanged(2),
                       activeColor: dark
                           ? theme.colorScheme.primaryContainer
                           : const Color(0xFFFFEEE7),
@@ -12020,8 +12206,8 @@ class _BottomNavBar extends StatelessWidget {
                     child: _NavPillItem(
                       icon: Icons.chat_bubble_outline_rounded,
                       label: 'Chat',
-                      selected: index == 5,
-                      onTap: () => onChanged(5),
+                      selected: index == 4,
+                      onTap: () => onChanged(4),
                       activeColor: dark
                           ? theme.colorScheme.primaryContainer
                           : const Color(0xFFFFEEE7),
@@ -12035,8 +12221,8 @@ class _BottomNavBar extends StatelessWidget {
                     child: _NavPillItem(
                       icon: Icons.person_outline_rounded,
                       label: 'Profile',
-                      selected: index == 4,
-                      onTap: () => onChanged(4),
+                      selected: index == 3,
+                      onTap: () => onChanged(3),
                       activeColor: dark
                           ? theme.colorScheme.primaryContainer
                           : const Color(0xFFFFEEE7),

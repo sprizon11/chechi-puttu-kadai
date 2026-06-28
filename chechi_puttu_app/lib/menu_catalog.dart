@@ -104,36 +104,6 @@ const kCustomerMenuSections = <MenuCatalogSection>[
       MenuCatalogDish('Ghee Rice', 'Aromatic neichoru', '₹120'),
     ],
   ),
-  MenuCatalogSection(
-    title: 'Combo Offers',
-    subtitle: 'Value meals & bundled favourites',
-    dishes: <MenuCatalogDish>[
-      MenuCatalogDish(
-        'Puttu + Kadala Combo',
-        'Rice puttu with kadala curry',
-        '₹140',
-        badge: 'Combo',
-      ),
-      MenuCatalogDish(
-        'Family Breakfast Combo',
-        '2 puttu + kadala + green peas curry',
-        '₹320',
-        badge: 'Best value',
-      ),
-      MenuCatalogDish(
-        'Evening Snack Combo',
-        'Wheat puttu + potato stew + payasam',
-        '₹220',
-        badge: 'Combo',
-      ),
-      MenuCatalogDish(
-        'Party Combo Pack',
-        'Assorted puttu & gravies (serves 4–5)',
-        '₹599',
-        badge: 'Party',
-      ),
-    ],
-  ),
 ];
 
 int menuCatalogParseRupees(String displayPrice) {

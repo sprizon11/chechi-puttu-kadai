@@ -43,20 +43,48 @@ const PRICE_BY_KEY = {
   "Green Gram Curry|Moong in spiced coconut gravy": 95,
   "Vegetable Kuruma|Mixed veg, mild & fragrant": 90,
   "Tapioca (Kappa)|Seasoned kappa with curry leaves": 75,
-  "Ada Pradhaman|Jaggery & rice ada": 120,
-  "Elaneer Payasam|Tender coconut dessert": 110,
-  "Chef Special Thali|Rice, curries & sides": 180,
-  "Malabar Parotta|Flaky layered flatbread": 45,
-  "Mixed Veg Curry|Chef special coconut gravy": 130,
-  "Ghee Rice|Aromatic neichoru": 120,
+  // Desserts and Signature Dishes are managed via admin panel in Firestore.
+  // Their prices are resolved at order time via loadFirestoreMenuPrices() below.
 };
 
 function dishKey(name, subtitle) {
   return `${String(name).trim()}|${String(subtitle).trim()}`;
 }
 
-function computeServerOrder(items) {
+function parseRupees(priceStr) {
+  const digits = String(priceStr || "").replace(/[^\d]/g, "");
+  const n = parseInt(digits, 10);
+  return isNaN(n) ? 0 : n;
+}
+
+/** Load admin-edited dish prices from Firestore; keyed by dish title (lowercased for fuzzy match). */
+async function loadFirestoreMenuPrices(dbRef) {
+  try {
+    const snap = await dbRef
+      .collection("admin_public")
+      .doc("menu_overrides")
+      .collection("snapshots")
+      .get();
+    const out = {};
+    for (const d of snap.docs) {
+      const data = d.data()?.data;
+      if (!data) continue;
+      const title = String(data.title || "").trim();
+      const price = parseRupees(data.price);
+      if (title && price > 0) {
+        out[title.toLowerCase()] = {price, subtitle: String(data.subtitle || "").trim()};
+      }
+    }
+    return out;
+  } catch (e) {
+    console.error("loadFirestoreMenuPrices failed:", e.message);
+    return null;
+  }
+}
+
+async function computeServerOrder(items, dbRef) {
   if (!Array.isArray(items) || items.length === 0) throw new Error("EMPTY_CART");
+  let firestorePrices = null; // lazy-loaded only when needed
   let subtotal = 0;
   let qtySum = 0;
   const lines = [];
@@ -66,7 +94,20 @@ function computeServerOrder(items) {
     const name = String(raw.name ?? "").trim();
     const subtitle = String(raw.subtitle ?? "").trim();
     const key = dishKey(name, subtitle);
-    const unit = PRICE_BY_KEY[key];
+    let unit = PRICE_BY_KEY[key];
+
+    if (unit == null) {
+      // Item not in hardcoded list — could be admin-edited subtitle or a new dish.
+      // Fall back to Firestore admin snapshots, matching by dish title.
+      if (firestorePrices === null && dbRef) {
+        firestorePrices = await loadFirestoreMenuPrices(dbRef);
+      }
+      if (firestorePrices) {
+        const entry = firestorePrices[name.toLowerCase()];
+        if (entry) unit = entry.price;
+      }
+    }
+
     if (unit == null) throw new Error(`UNKNOWN_ITEM:${key}`);
     subtotal += unit * qty;
     qtySum += qty;
@@ -100,7 +141,7 @@ exports.createRazorpayCheckout = onCall(async (request) => {
 
   let computed;
   try {
-    computed = computeServerOrder(body.items);
+    computed = await computeServerOrder(body.items, db);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "bad cart";
     if (msg.startsWith("UNKNOWN_ITEM")) {
@@ -338,7 +379,7 @@ exports.createCashfreeCheckout = onCall(
 
   let computed;
   try {
-    computed = computeServerOrder(body.items);
+    computed = await computeServerOrder(body.items, db);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "bad cart";
     if (msg.startsWith("UNKNOWN_ITEM")) {
