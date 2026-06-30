@@ -7576,9 +7576,11 @@ class _CartTabState extends State<_CartTab> {
       return;
     }
 
-    var sdkOk = false;
+    // Wait for the Cashfree sheet to close (verify or error fires the
+    // completer). We only use this to know the WebView dismissed — the boolean
+    // result is intentionally ignored because it's unreliable on Android.
     try {
-      sdkOk = await payDone.future.timeout(const Duration(minutes: 12));
+      await payDone.future.timeout(const Duration(minutes: 12));
     } on TimeoutException {
       _cfPayDone = null;
       messenger.showSnackBar(
@@ -7596,11 +7598,9 @@ class _CartTabState extends State<_CartTab> {
     }
     _cfPayDone = null;
 
-    // Always confirm via webhook regardless of SDK result.
-    // On Android, Cashfree SDK sometimes fires onError even for successful
-    // payments (e.g. after back-button close of WebView). The webhook is the
-    // authoritative source of truth — we always poll it before showing any
-    // error to the user.
+    // Confirm via active reconciliation (and webhook polling), never via the
+    // SDK result. On Android the Cashfree SDK fires onError even for successful
+    // payments, so the server's view of Cashfree is the only source of truth.
     if (!context.mounted) return;
 
     showDialog<void>(
@@ -7630,16 +7630,16 @@ class _CartTabState extends State<_CartTab> {
       ),
     );
 
-    String? orderId;
+    // The SDK result (sdkOk) is NOT trusted to decide success: on Android the
+    // Cashfree SDK fires onError even for successful payments. confirmPayment
+    // actively reconciles against Cashfree, so it confirms a real payment even
+    // when the SDK misfired or the webhook is slow, and resolves a genuine
+    // cancellation to `failed` within a few seconds.
+    CashfreePaymentOutcome outcome;
     try {
-      // SDK said success → wait up to 2 min for webhook confirmation.
-      // SDK said error  → wait 15 s (user likely cancelled, but check anyway
-      //                   in case Android SDK misfired).
-      orderId = await _cfCheckout.waitUntilPaid(
+      outcome = await _cfCheckout.confirmPayment(
         start.sessionId,
-        timeout: sdkOk
-            ? const Duration(minutes: 2)
-            : const Duration(seconds: 15),
+        timeout: const Duration(minutes: 2),
       );
     } finally {
       if (context.mounted) {
@@ -7648,7 +7648,8 @@ class _CartTabState extends State<_CartTab> {
     }
 
     if (!context.mounted) return;
-    if (orderId != null) {
+    if (outcome.isPaid) {
+      final orderId = outcome.orderId!;
       final ref = orderId.length > 10 ? orderId.substring(0, 10) : orderId;
       await showDialog<void>(
         context: context,
@@ -7662,22 +7663,27 @@ class _CartTabState extends State<_CartTab> {
       );
       if (!context.mounted) return;
       widget.cartLinesNotifier.value = [];
-    } else if (sdkOk) {
+    } else if (outcome.isFailed) {
+      // Cashfree confirms the payment did not go through — safe to say so.
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            'We could not confirm payment yet. If money was debited, wait a few '
-            'minutes or contact support with your Cashfree receipt. No kitchen '
-            'order is placed until confirmation.',
+            'Payment was not completed. No order was placed.',
             style: GoogleFonts.poppins(),
           ),
         ),
       );
     } else {
+      // Unconfirmed: timed out without a definite answer. Money may have been
+      // debited — never claim "no order placed". The webhook/reconcile will
+      // still create the order automatically once Cashfree confirms.
       messenger.showSnackBar(
         SnackBar(
+          duration: const Duration(seconds: 7),
           content: Text(
-            'Payment was not completed. No order was placed.',
+            'We could not confirm your payment yet. If money was debited, your '
+            'order will appear in Orders within a few minutes — please do not '
+            'pay again.',
             style: GoogleFonts.poppins(),
           ),
         ),

@@ -484,6 +484,61 @@ exports.createCashfreeCheckout = onCall(
   };
 });
 
+/**
+ * Idempotently creates the order doc for a successful Cashfree payment and
+ * marks the checkout session paid. Shared by the webhook (push) and the
+ * client-triggered reconcile path (pull). Returns one of:
+ *   {result: "paid", orderId}       order freshly created
+ *   {result: "duplicate", orderId}  order already existed
+ *   {result: "amount_mismatch"}     paid amount != session total
+ * `paidAmount` may be omitted (NaN) to skip the amount check.
+ */
+async function finalizeCashfreeSuccess(sessRef, s, cfPaymentId, paidAmount) {
+  if (Number.isFinite(paidAmount) &&
+      Math.round(Number(s.total_rupees) * 100) !== Math.round(paidAmount * 100)) {
+    console.error("amount mismatch", s.total_rupees, paidAmount);
+    return {result: "amount_mismatch"};
+  }
+
+  const firestoreOrderId = `cf_${cfPaymentId}`;
+  const orderRef = db.collection("orders").doc(firestoreOrderId);
+  let duplicate = false;
+  try {
+    await orderRef.create({
+      uid: s.uid,
+      status: "placed",
+      total_rupees: s.total_rupees,
+      delivery_line: s.delivery_line,
+      payment_mode: "cashfree",
+      payment_status: "captured",
+      cf_order_id: s.cf_order_id ?? null,
+      cf_payment_id: cfPaymentId,
+      checkout_session_id: sessRef.id,
+      schedule_line: s.schedule_line ?? null,
+      scheduled_at: s.scheduled_at ?? null,
+      items: s.items,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    if (e.code === 6 || e.code === "already-exists") {
+      duplicate = true;
+    } else {
+      throw e;
+    }
+  }
+
+  // Mark the session paid even on a duplicate create, so any client still
+  // polling this session resolves to success.
+  await sessRef.update({
+    status: "paid",
+    order_id: firestoreOrderId,
+    cf_payment_id: cfPaymentId,
+    updated_at: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return {result: duplicate ? "duplicate" : "paid", orderId: firestoreOrderId};
+}
+
 exports.cashfreeWebhook = onRequest(
     {secrets: ["CASHFREE_APP_ID", "CASHFREE_SECRET_KEY", "CASHFREE_ENV"]},
     async (req, res) => {
@@ -541,48 +596,21 @@ exports.cashfreeWebhook = onRequest(
       res.json({ok: true, duplicate: true});
       return;
     }
-    if (Math.round(Number(s.total_rupees) * 100) !== Math.round(paidAmount * 100)) {
-      console.error("amount mismatch", s.total_rupees, paidAmount);
-      res.json({ok: false, reason: "amount_mismatch"});
-      return;
-    }
 
-    const firestoreOrderId = `cf_${cfPaymentId}`;
-    const orderRef = db.collection("orders").doc(firestoreOrderId);
+    let fin;
     try {
-      await orderRef.create({
-        uid: s.uid,
-        status: "placed",
-        total_rupees: s.total_rupees,
-        delivery_line: s.delivery_line,
-        payment_mode: "cashfree",
-        payment_status: "captured",
-        cf_order_id: s.cf_order_id ?? null,
-        cf_payment_id: cfPaymentId,
-        checkout_session_id: sessionId,
-        schedule_line: s.schedule_line ?? null,
-        scheduled_at: s.scheduled_at ?? null,
-        items: s.items,
-        created_at: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      fin = await finalizeCashfreeSuccess(sessRef, s, cfPaymentId, paidAmount);
     } catch (e) {
-      if (e.code === 6 || e.code === "already-exists") {
-        res.json({ok: true, duplicate: true});
-        return;
-      }
       console.error(e);
       res.status(500).send("Order insert failed");
       return;
     }
+    if (fin.result === "amount_mismatch") {
+      res.json({ok: false, reason: "amount_mismatch"});
+      return;
+    }
 
-    await sessRef.update({
-      status: "paid",
-      order_id: firestoreOrderId,
-      cf_payment_id: cfPaymentId,
-      updated_at: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    res.json({ok: true});
+    res.json({ok: true, duplicate: fin.result === "duplicate"});
     return;
   }
 
@@ -601,6 +629,107 @@ exports.cashfreeWebhook = onRequest(
   }
 
   res.json({ignored: true, type: type ?? null});
+});
+
+// Client-triggered reconciliation. The app calls this while waiting for
+// payment confirmation so it does NOT depend on the webhook being delivered in
+// time. This is essential on Android, where the Cashfree SDK reports onError
+// even for SUCCESSFUL payments — without an active pull the app can't tell a
+// real payment from a cancellation. We query Cashfree's authoritative payment
+// list and finalize the order ourselves (idempotent with the webhook).
+exports.reconcileCashfreeOrder = onCall(
+    {secrets: ["CASHFREE_APP_ID", "CASHFREE_SECRET_KEY", "CASHFREE_ENV"]},
+    async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  const uid = request.auth.uid;
+  const sessionId = String(request.data?.sessionId ?? "").trim();
+  if (!sessionId) {
+    throw new HttpsError("invalid-argument", "Missing sessionId");
+  }
+  const {appId, secretKey, env} = cashfreeKeys();
+  if (!appId || !secretKey) {
+    throw new HttpsError("failed-precondition", "Cashfree keys not configured");
+  }
+
+  const sessRef = db.collection("checkout_sessions").doc(sessionId);
+  const sessSnap = await sessRef.get();
+  if (!sessSnap.exists) {
+    throw new HttpsError("not-found", "Unknown session");
+  }
+  const s = sessSnap.data();
+  if (s.uid !== uid) {
+    throw new HttpsError("permission-denied", "Not your session");
+  }
+  if (s.status === "paid" && typeof s.order_id === "string" && s.order_id) {
+    return {status: "paid", orderId: s.order_id};
+  }
+  if (s.status === "failed" || s.status === "error") {
+    return {status: "failed"};
+  }
+
+  // Pull the authoritative payment list for this order from Cashfree.
+  let payments;
+  try {
+    const resp = await fetch(
+      `${cashfreeBaseUrl(env)}/orders/${encodeURIComponent(sessionId)}/payments`,
+      {
+        method: "GET",
+        headers: {
+          "accept": "application/json",
+          "x-api-version": "2023-08-01",
+          "x-client-id": appId,
+          "x-client-secret": secretKey,
+        },
+      },
+    );
+    payments = await resp.json().catch(() => null);
+    if (!resp.ok) {
+      console.error("reconcileCashfreeOrder: payments fetch failed", {
+        httpStatus: resp.status,
+      });
+      return {status: "pending"};
+    }
+  } catch (e) {
+    console.error("reconcileCashfreeOrder error:",
+      e instanceof Error ? e.message : e);
+    return {status: "pending"};
+  }
+
+  const list = Array.isArray(payments) ? payments : [];
+  const success = list.find((p) => p && p.payment_status === "SUCCESS");
+  if (success) {
+    const cfPaymentId =
+      success.cf_payment_id != null ? String(success.cf_payment_id) : "";
+    if (!cfPaymentId) return {status: "pending"};
+    let fin;
+    try {
+      fin = await finalizeCashfreeSuccess(
+        sessRef, s, cfPaymentId, Number(success.payment_amount));
+    } catch (e) {
+      console.error("reconcileCashfreeOrder finalize failed", e);
+      throw new HttpsError("internal", "Could not finalize order");
+    }
+    if (fin.result === "amount_mismatch") {
+      return {status: "failed", reason: "amount_mismatch"};
+    }
+    return {status: "paid", orderId: fin.orderId};
+  }
+
+  // No success yet. If at least one attempt reached a terminal failed state and
+  // none are still pending, the payment is genuinely not completed.
+  const FAILED_STATES = new Set([
+    "FAILED", "USER_DROPPED", "CANCELLED", "VOID", "EXPIRED",
+  ]);
+  const anyPending = list.some(
+    (p) => p && p.payment_status === "PENDING");
+  const anyFailed = list.some(
+    (p) => p && FAILED_STATES.has(p.payment_status));
+  if (anyFailed && !anyPending) {
+    return {status: "failed"};
+  }
+  return {status: "pending"};
 });
 
 function isAdminRequest(request) {

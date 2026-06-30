@@ -85,33 +85,102 @@ class CashfreeCheckoutService {
     return snap.data();
   }
 
-  /// Waits until webhook marks session paid (returns `order_id`), or failure / timeout.
-  Future<String?> waitUntilPaid(
+  /// Reads the session doc (updated by the webhook) and maps it to an outcome.
+  CashfreePaymentOutcome _outcomeFromSession(Map<String, dynamic>? d) {
+    if (d == null) return const CashfreePaymentOutcome.pending();
+    final st = d['status'] as String?;
+    if (st == 'paid' &&
+        d['order_id'] is String &&
+        (d['order_id'] as String).isNotEmpty) {
+      return CashfreePaymentOutcome.paid(d['order_id'] as String);
+    }
+    if (st == 'failed' || st == 'error') {
+      return const CashfreePaymentOutcome.failed();
+    }
+    return const CashfreePaymentOutcome.pending();
+  }
+
+  /// Actively asks the server to query Cashfree for the authoritative payment
+  /// status (does not depend on webhook delivery). Returns paid / failed /
+  /// pending. Never throws — network errors map to `pending` so polling
+  /// continues.
+  Future<CashfreePaymentOutcome> reconcile(String sessionId) async {
+    try {
+      final callable = _fn.httpsCallable('reconcileCashfreeOrder');
+      final res = await callable.call({'sessionId': sessionId});
+      final data = Map<String, dynamic>.from(res.data as Map);
+      final status = (data['status'] as String?) ?? 'pending';
+      final orderId = data['orderId'] as String?;
+      if (status == 'paid' && orderId != null && orderId.isNotEmpty) {
+        return CashfreePaymentOutcome.paid(orderId);
+      }
+      if (status == 'failed') return const CashfreePaymentOutcome.failed();
+      return const CashfreePaymentOutcome.pending();
+    } catch (_) {
+      return const CashfreePaymentOutcome.pending();
+    }
+  }
+
+  /// Confirms payment reliably on both platforms.
+  ///
+  /// Polls the webhook-updated session doc every 2s AND actively reconciles
+  /// against Cashfree every ~4s. Active reconciliation is what makes Android
+  /// correct: its SDK reports onError even on success, so we cannot trust the
+  /// SDK callback — only the server's view of Cashfree. A genuine cancellation
+  /// resolves to `failed` within a few seconds (no long blank wait); a real
+  /// payment is confirmed even if the webhook is slow or never arrives.
+  Future<CashfreePaymentOutcome> confirmPayment(
     String sessionId, {
     Duration timeout = const Duration(minutes: 2),
   }) async {
     final deadline = DateTime.now().add(timeout);
-    final d0 = await _fetchSession(sessionId);
-    if (d0 != null &&
-        d0['status'] == 'paid' &&
-        d0['order_id'] is String &&
-        (d0['order_id'] as String).isNotEmpty) {
-      return d0['order_id'] as String;
-    }
-    if (d0?['status'] == 'failed' || d0?['status'] == 'error') return null;
 
+    // Fast path: webhook may already have landed.
+    final first = _outcomeFromSession(await _fetchSession(sessionId));
+    if (first.isTerminal) return first;
+
+    var tick = 0;
     while (DateTime.now().isBefore(deadline)) {
       await Future<void>.delayed(const Duration(seconds: 2));
-      final d = await _fetchSession(sessionId);
-      if (d == null) continue;
-      final st = d['status'] as String?;
-      if (st == 'paid' &&
-          d['order_id'] is String &&
-          (d['order_id'] as String).isNotEmpty) {
-        return d['order_id'] as String;
+
+      final fromDoc = _outcomeFromSession(await _fetchSession(sessionId));
+      if (fromDoc.isTerminal) return fromDoc;
+
+      // Every other tick (~4s) pull the authoritative status from Cashfree.
+      if (tick.isOdd) {
+        final fromServer = await reconcile(sessionId);
+        if (fromServer.isTerminal) return fromServer;
       }
-      if (st == 'failed' || st == 'error') return null;
+      tick++;
     }
-    return null;
+    return const CashfreePaymentOutcome.unconfirmed();
   }
+}
+
+/// Result of confirming a Cashfree payment.
+/// - paid: order created, [orderId] set.
+/// - failed: Cashfree confirms the payment did not complete (safe to say so).
+/// - unconfirmed: timed out without a definite answer (money may be debited —
+///   never tell the user "no order placed").
+/// - pending: still in progress (internal; not surfaced to the UI).
+class CashfreePaymentOutcome {
+  const CashfreePaymentOutcome.paid(this.orderId) : status = 'paid';
+  const CashfreePaymentOutcome.failed()
+      : status = 'failed',
+        orderId = null;
+  const CashfreePaymentOutcome.unconfirmed()
+      : status = 'unconfirmed',
+        orderId = null;
+  const CashfreePaymentOutcome.pending()
+      : status = 'pending',
+        orderId = null;
+
+  final String status;
+  final String? orderId;
+
+  bool get isPaid => status == 'paid';
+  bool get isFailed => status == 'failed';
+
+  /// A definite answer that ends polling (paid or failed).
+  bool get isTerminal => status == 'paid' || status == 'failed';
 }
