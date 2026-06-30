@@ -484,6 +484,145 @@ exports.createCashfreeCheckout = onCall(
   };
 });
 
+// Creates a Cashfree Payment Link and returns its shareable URL. The app opens
+// this URL in the system browser, so the payment page is hosted on Cashfree's
+// own domain — no app-package or domain whitelisting is required (this is the
+// key advantage over the native SDK, which fails Android package verification).
+// Confirmation is handled by reconcileCashfreeOrder (link-aware) and the
+// scheduled safety net — the order is keyed by checkout session id (link_id).
+exports.createCashfreePaymentLink = onCall(
+    {secrets: ["CASHFREE_APP_ID", "CASHFREE_SECRET_KEY", "CASHFREE_ENV"]},
+    async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  const uid = request.auth.uid;
+  const {appId, secretKey, env} = cashfreeKeys();
+  if (!appId || !secretKey) {
+    throw new HttpsError("failed-precondition", "Cashfree keys not configured");
+  }
+
+  const body = request.data || {};
+  const deliveryLine = String(body.deliveryLine ?? "").trim();
+  const scheduleLine =
+    body.scheduleLine == null ? null : String(body.scheduleLine).trim();
+  const scheduledAtIso =
+    body.scheduledAtIso == null ? null : String(body.scheduledAtIso).trim();
+  if (!deliveryLine || deliveryLine.length > 500) {
+    throw new HttpsError("invalid-argument", "Invalid delivery");
+  }
+
+  let scheduledAtTs = null;
+  if (scheduledAtIso) {
+    const d = new Date(scheduledAtIso);
+    if (!Number.isNaN(d.getTime())) {
+      scheduledAtTs = admin.firestore.Timestamp.fromDate(d);
+    }
+  }
+
+  let computed;
+  try {
+    computed = await computeServerOrder(body.items, db);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "bad cart";
+    if (msg.startsWith("UNKNOWN_ITEM")) {
+      throw new HttpsError("invalid-argument", "Unknown menu item or price mismatch");
+    }
+    throw new HttpsError("invalid-argument", "Invalid cart");
+  }
+
+  let customerPhone = request.auth.token?.phone_number || "";
+  let customerName = "";
+  try {
+    const profile = await db.collection("users").doc(uid).get();
+    const p = profile.data() || {};
+    customerPhone = p.mobile || p.authPhone || customerPhone;
+    customerName = String(p.name || p.fullName || "").trim();
+  } catch (_) {
+    // Non-fatal.
+  }
+  customerPhone = sanitizePhone(customerPhone);
+
+  const sessionRef = db.collection("checkout_sessions").doc();
+  const sessionId = sessionRef.id;
+
+  await sessionRef.set({
+    uid,
+    status: "pending_payment",
+    items: computed.lines,
+    total_rupees: computed.totalRupees,
+    total_paise: computed.totalPaise,
+    delivery_line: deliveryLine,
+    schedule_line: scheduleLine,
+    scheduled_at: scheduledAtTs,
+    payment_mode: "cashfree_link",
+    link_id: sessionId,
+    created_at: admin.firestore.FieldValue.serverTimestamp(),
+    updated_at: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  const linkPayload = {
+    link_id: sessionId,
+    link_amount: computed.totalRupees,
+    link_currency: "INR",
+    link_purpose: "Chechi Puttu Kadai order",
+    customer_details: {
+      customer_phone: customerPhone,
+      ...(customerName ? {customer_name: customerName} : {}),
+    },
+    link_notify: {send_sms: false, send_email: false},
+    link_auto_reminders: false,
+  };
+
+  let linkData;
+  try {
+    const resp = await fetch(`${cashfreeBaseUrl(env)}/links`, {
+      method: "POST",
+      headers: {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "x-api-version": "2023-08-01",
+        "x-client-id": appId,
+        "x-client-secret": secretKey,
+      },
+      body: JSON.stringify(linkPayload),
+    });
+    linkData = await resp.json().catch(() => ({}));
+    if (!resp.ok || !linkData.link_url) {
+      console.error("cashfreeLinkFailed", {
+        env,
+        httpStatus: resp.status,
+        cfMessage: linkData.message || null,
+        cfCode: linkData.code || null,
+        cfType: linkData.type || null,
+      });
+      throw new Error(linkData.message || `Cashfree HTTP ${resp.status}`);
+    }
+  } catch (e) {
+    console.error("createCashfreePaymentLink error:",
+      e instanceof Error ? e.message : e);
+    await sessionRef.update({
+      status: "error",
+      error_message: e instanceof Error ? e.message : "cashfree link failed",
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    throw new HttpsError("internal", "Could not start payment");
+  }
+
+  await sessionRef.update({
+    cf_link_id: linkData.cf_link_id != null ? String(linkData.cf_link_id) : null,
+    link_url: String(linkData.link_url),
+    updated_at: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return {
+    sessionId,
+    linkUrl: String(linkData.link_url),
+    mode: env === "production" ? "production" : "sandbox",
+    amountRupees: computed.totalRupees,
+  };
+});
+
 /**
  * Idempotently creates the order doc for a successful Cashfree payment and
  * marks the checkout session paid. Shared by the webhook (push) and the
@@ -631,12 +770,113 @@ exports.cashfreeWebhook = onRequest(
   res.json({ignored: true, type: type ?? null});
 });
 
+// Fetches the payment list for a Cashfree order and finalizes it idempotently.
+// Returns {status:'paid', orderId} | {status:'failed'[, reason]} | {status:'pending'}.
+// Never throws — transient errors map to 'pending' so callers retry.
+async function reconcileOrderPayments(sessRef, s, cfOrderId, env, appId, secretKey) {
+  let payments;
+  try {
+    const resp = await fetch(
+      `${cashfreeBaseUrl(env)}/orders/${encodeURIComponent(cfOrderId)}/payments`,
+      {
+        method: "GET",
+        headers: {
+          "accept": "application/json",
+          "x-api-version": "2023-08-01",
+          "x-client-id": appId,
+          "x-client-secret": secretKey,
+        },
+      },
+    );
+    payments = await resp.json().catch(() => null);
+    if (!resp.ok) {
+      console.error("reconcileOrderPayments: fetch failed", {httpStatus: resp.status});
+      return {status: "pending"};
+    }
+  } catch (e) {
+    console.error("reconcileOrderPayments error:", e instanceof Error ? e.message : e);
+    return {status: "pending"};
+  }
+
+  const list = Array.isArray(payments) ? payments : [];
+  const success = list.find((p) => p && p.payment_status === "SUCCESS");
+  if (success) {
+    const cfPaymentId =
+      success.cf_payment_id != null ? String(success.cf_payment_id) : "";
+    if (!cfPaymentId) return {status: "pending"};
+    let fin;
+    try {
+      fin = await finalizeCashfreeSuccess(
+        sessRef, s, cfPaymentId, Number(success.payment_amount));
+    } catch (e) {
+      console.error("reconcileOrderPayments finalize failed", e);
+      return {status: "pending"};
+    }
+    if (fin.result === "amount_mismatch") {
+      return {status: "failed", reason: "amount_mismatch"};
+    }
+    return {status: "paid", orderId: fin.orderId};
+  }
+
+  // No success yet. If at least one attempt reached a terminal failed state and
+  // none are still pending, the payment is genuinely not completed.
+  const FAILED_STATES = new Set([
+    "FAILED", "USER_DROPPED", "CANCELLED", "VOID", "EXPIRED",
+  ]);
+  const anyPending = list.some((p) => p && p.payment_status === "PENDING");
+  const anyFailed = list.some((p) => p && FAILED_STATES.has(p.payment_status));
+  if (anyFailed && !anyPending) return {status: "failed"};
+  return {status: "pending"};
+}
+
+// For a Payment-Link session, finds the PAID order created under the link and
+// finalizes it. Returns the same shape as reconcileOrderPayments.
+async function reconcileLinkSession(sessRef, s, env, appId, secretKey) {
+  const linkId = s.link_id || sessRef.id;
+  let orders;
+  try {
+    const resp = await fetch(
+      `${cashfreeBaseUrl(env)}/links/${encodeURIComponent(linkId)}/orders`,
+      {
+        method: "GET",
+        headers: {
+          "accept": "application/json",
+          "x-api-version": "2023-08-01",
+          "x-client-id": appId,
+          "x-client-secret": secretKey,
+        },
+      },
+    );
+    orders = await resp.json().catch(() => null);
+    if (!resp.ok) {
+      console.error("reconcileLinkSession: orders fetch failed", {httpStatus: resp.status});
+      return {status: "pending"};
+    }
+  } catch (e) {
+    console.error("reconcileLinkSession error:", e instanceof Error ? e.message : e);
+    return {status: "pending"};
+  }
+
+  const list = Array.isArray(orders) ? orders : [];
+  const paid = list.find((o) => o && o.order_status === "PAID" && o.order_id);
+  if (paid) {
+    return reconcileOrderPayments(
+      sessRef, s, String(paid.order_id), env, appId, secretKey);
+  }
+  // No paid order yet — the user may still be paying. The client times out and
+  // shows a safe message; the scheduled job keeps reconciling in the background.
+  return {status: "pending"};
+}
+
+function sessionIsLink(s) {
+  return s.payment_mode === "cashfree_link" || !!s.link_id || !!s.cf_link_id;
+}
+
 // Client-triggered reconciliation. The app calls this while waiting for
 // payment confirmation so it does NOT depend on the webhook being delivered in
-// time. This is essential on Android, where the Cashfree SDK reports onError
-// even for SUCCESSFUL payments — without an active pull the app can't tell a
-// real payment from a cancellation. We query Cashfree's authoritative payment
-// list and finalize the order ourselves (idempotent with the webhook).
+// time. We query Cashfree's authoritative status and finalize the order
+// ourselves (idempotent with the webhook). Handles both the legacy order flow
+// and the Payment-Link flow.
 exports.reconcileCashfreeOrder = onCall(
     {secrets: ["CASHFREE_APP_ID", "CASHFREE_SECRET_KEY", "CASHFREE_ENV"]},
     async (request) => {
@@ -669,67 +909,45 @@ exports.reconcileCashfreeOrder = onCall(
     return {status: "failed"};
   }
 
-  // Pull the authoritative payment list for this order from Cashfree.
-  let payments;
-  try {
-    const resp = await fetch(
-      `${cashfreeBaseUrl(env)}/orders/${encodeURIComponent(sessionId)}/payments`,
-      {
-        method: "GET",
-        headers: {
-          "accept": "application/json",
-          "x-api-version": "2023-08-01",
-          "x-client-id": appId,
-          "x-client-secret": secretKey,
-        },
-      },
-    );
-    payments = await resp.json().catch(() => null);
-    if (!resp.ok) {
-      console.error("reconcileCashfreeOrder: payments fetch failed", {
-        httpStatus: resp.status,
-      });
-      return {status: "pending"};
-    }
-  } catch (e) {
-    console.error("reconcileCashfreeOrder error:",
-      e instanceof Error ? e.message : e);
-    return {status: "pending"};
-  }
+  return sessionIsLink(s)
+    ? reconcileLinkSession(sessRef, s, env, appId, secretKey)
+    : reconcileOrderPayments(sessRef, s, sessionId, env, appId, secretKey);
+});
 
-  const list = Array.isArray(payments) ? payments : [];
-  const success = list.find((p) => p && p.payment_status === "SUCCESS");
-  if (success) {
-    const cfPaymentId =
-      success.cf_payment_id != null ? String(success.cf_payment_id) : "";
-    if (!cfPaymentId) return {status: "pending"};
-    let fin;
+// Safety net: even if the app is killed right after a Link payment, this finds
+// paid-but-unfinalized link sessions and creates their orders. Runs often and
+// cheaply; the finalizer is idempotent so double-runs are harmless.
+exports.reconcileCashfreePendingLinks = onSchedule(
+    {
+      schedule: "every 2 minutes",
+      secrets: ["CASHFREE_APP_ID", "CASHFREE_SECRET_KEY", "CASHFREE_ENV"],
+    },
+    async () => {
+  const {appId, secretKey, env} = cashfreeKeys();
+  if (!appId || !secretKey) return;
+
+  // Only look back ~45 min — older unpaid sessions are abandoned.
+  const cutoffMs = Date.now() - 45 * 60 * 1000;
+  const snap = await db
+    .collection("checkout_sessions")
+    .where("status", "==", "pending_payment")
+    .limit(80)
+    .get();
+
+  for (const doc of snap.docs) {
+    const s = doc.data();
+    if (!sessionIsLink(s)) continue;
+    const createdMs = s.created_at && s.created_at.toMillis
+      ? s.created_at.toMillis()
+      : null;
+    if (createdMs != null && createdMs < cutoffMs) continue;
     try {
-      fin = await finalizeCashfreeSuccess(
-        sessRef, s, cfPaymentId, Number(success.payment_amount));
+      await reconcileLinkSession(doc.ref, s, env, appId, secretKey);
     } catch (e) {
-      console.error("reconcileCashfreeOrder finalize failed", e);
-      throw new HttpsError("internal", "Could not finalize order");
+      console.error("scheduled link reconcile failed", doc.id,
+        e instanceof Error ? e.message : e);
     }
-    if (fin.result === "amount_mismatch") {
-      return {status: "failed", reason: "amount_mismatch"};
-    }
-    return {status: "paid", orderId: fin.orderId};
   }
-
-  // No success yet. If at least one attempt reached a terminal failed state and
-  // none are still pending, the payment is genuinely not completed.
-  const FAILED_STATES = new Set([
-    "FAILED", "USER_DROPPED", "CANCELLED", "VOID", "EXPIRED",
-  ]);
-  const anyPending = list.some(
-    (p) => p && p.payment_status === "PENDING");
-  const anyFailed = list.some(
-    (p) => p && FAILED_STATES.has(p.payment_status));
-  if (anyFailed && !anyPending) {
-    return {status: "failed"};
-  }
-  return {status: "pending"};
 });
 
 function isAdminRequest(request) {

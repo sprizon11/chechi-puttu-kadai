@@ -29,6 +29,23 @@ class CashfreeCheckoutResult {
   bool get isProduction => mode == 'production';
 }
 
+/// Result of creating a Cashfree Payment Link.
+class CashfreeLinkResult {
+  const CashfreeLinkResult({
+    required this.sessionId,
+    required this.linkUrl,
+    required this.mode,
+    required this.amountRupees,
+  });
+
+  final String sessionId;
+  final String linkUrl;
+  final String mode;
+  final num amountRupees;
+
+  bool get isProduction => mode == 'production';
+}
+
 /// Server-side Cashfree order via Firebase Callable + `checkout_sessions` polling.
 class CashfreeCheckoutService {
   CashfreeCheckoutService({
@@ -74,6 +91,40 @@ class CashfreeCheckoutService {
       paymentSessionId: paymentSessionId,
       cfOrderId: cfOrderId,
       orderId: orderId,
+      mode: (data['mode'] as String?) ?? 'sandbox',
+      amountRupees: (data['amountRupees'] as num?) ?? 0,
+    );
+  }
+
+  /// Creates a Cashfree Payment Link. The app opens [linkUrl] in the browser —
+  /// the payment page is on Cashfree's own domain, so no whitelisting is needed.
+  Future<CashfreeLinkResult> createPaymentLink({
+    required List<Map<String, Object?>> items,
+    required String deliveryLine,
+    String? scheduleLine,
+    DateTime? scheduledAt,
+  }) async {
+    if (_auth.currentUser == null) {
+      throw StateError('Not signed in');
+    }
+
+    final callable = _fn.httpsCallable('createCashfreePaymentLink');
+    final res = await callable.call({
+      'items': items,
+      'deliveryLine': deliveryLine,
+      'scheduleLine': scheduleLine,
+      'scheduledAtIso': scheduledAt?.toUtc().toIso8601String(),
+    });
+
+    final data = Map<String, dynamic>.from(res.data as Map);
+    final sessionId = data['sessionId'] as String? ?? '';
+    final linkUrl = data['linkUrl'] as String? ?? '';
+    if (sessionId.isEmpty || linkUrl.isEmpty) {
+      throw StateError('Invalid response from payment server — missing fields');
+    }
+    return CashfreeLinkResult(
+      sessionId: sessionId,
+      linkUrl: linkUrl,
       mode: (data['mode'] as String?) ?? 'sandbox',
       amountRupees: (data['amountRupees'] as num?) ?? 0,
     );

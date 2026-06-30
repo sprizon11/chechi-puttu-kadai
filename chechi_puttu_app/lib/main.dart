@@ -7501,9 +7501,9 @@ class _CartTabState extends State<_CartTab> {
       ),
     );
 
-    late final CashfreeCheckoutResult start;
+    late final CashfreeLinkResult start;
     try {
-      start = await _cfCheckout.createCheckout(
+      start = await _cfCheckout.createPaymentLink(
         items: items,
         deliveryLine: deliveryLine,
         scheduleLine: scheduleLine,
@@ -7525,11 +7525,10 @@ class _CartTabState extends State<_CartTab> {
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
 
-    // Open Cashfree web checkout directly in the system browser — bypasses
-    // the SDK's package-name verification that causes "Broken Link" on Android.
-    final checkoutUrl = Uri.parse(
-      'https://payments.cashfree.com/order/#${start.paymentSessionId}',
-    );
+    // Open the Cashfree-hosted payment link in the system browser. The page is
+    // served from Cashfree's own domain, so there is no app-package or domain
+    // verification — this avoids the Android "Broken Link" error entirely.
+    final checkoutUrl = Uri.parse(start.linkUrl);
     final launched = await launchUrl(
       checkoutUrl,
       mode: LaunchMode.externalApplication,
