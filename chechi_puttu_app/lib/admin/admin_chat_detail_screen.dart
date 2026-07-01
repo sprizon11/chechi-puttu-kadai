@@ -808,6 +808,15 @@ class _MessageBubble extends StatelessWidget {
     if (ts is Timestamp) at = ts.toDate();
     final timeLabel = at == null ? '' : _fmtTime(at);
 
+    if (sender == 'system') {
+      return _SystemUpdateBubble(
+        text: text,
+        timeLabel: timeLabel,
+        orderStatus: data['order_status'] as String?,
+        muted: muted,
+      );
+    }
+
     final isAdmin = sender == 'admin';
     if (isAdmin) {
       return Column(
@@ -850,6 +859,104 @@ class _MessageBubble extends StatelessWidget {
     final m = d.minute.toString().padLeft(2, '0');
     final ampm = h24 >= 12 ? 'PM' : 'AM';
     return '$h:$m $ampm';
+  }
+}
+
+/// Automated order-status line (placed/preparing/ready/completed etc.) —
+/// rendered as a centered system notice, distinct from real chat bubbles, so
+/// the admin can tell at a glance which lines are the customer's own words.
+class _SystemUpdateBubble extends StatelessWidget {
+  const _SystemUpdateBubble({
+    required this.text,
+    required this.timeLabel,
+    required this.orderStatus,
+    required this.muted,
+  });
+
+  final String text;
+  final String timeLabel;
+  final String? orderStatus;
+  final Color muted;
+
+  IconData get _icon {
+    switch (orderStatus?.toLowerCase()) {
+      case 'placed':
+        return Icons.receipt_long_rounded;
+      case 'preparing':
+      case 'accepted':
+        return Icons.soup_kitchen_rounded;
+      case 'ready':
+        return Icons.inventory_2_rounded;
+      case 'out_for_delivery':
+        return Icons.delivery_dining_rounded;
+      case 'delivered':
+      case 'completed':
+        return Icons.check_circle_rounded;
+      case 'cancelled':
+      case 'rejected':
+        return Icons.cancel_rounded;
+      default:
+        return Icons.info_rounded;
+    }
+  }
+
+  bool get _isNegative =>
+      orderStatus?.toLowerCase() == 'cancelled' ||
+      orderStatus?.toLowerCase() == 'rejected';
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = _isNegative
+        ? const Color(0xFFB3261E)
+        : const Color(0xFF8A6A1F);
+    final bg = _isNegative ? const Color(0xFFFDECEA) : const Color(0xFFFFF4DE);
+    final border = _isNegative
+        ? const Color(0xFFF2C0BB)
+        : const Color(0xFFF3DFAF);
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * 0.86,
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(_icon, size: 15, color: accent),
+              const SizedBox(width: 7),
+              Flexible(
+                child: Text(
+                  text,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 11.5,
+                    height: 1.3,
+                    fontWeight: FontWeight.w600,
+                    color: accent,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                timeLabel,
+                style: GoogleFonts.poppins(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: accent.withValues(alpha: 0.65),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
