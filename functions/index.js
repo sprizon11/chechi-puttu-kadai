@@ -561,6 +561,9 @@ exports.createCashfreePaymentLink = onCall(
     updated_at: admin.firestore.FieldValue.serverTimestamp(),
   });
 
+  const customerEmail =
+    String(request.auth.token?.email || "").trim() || "customer@chechiputtu.in";
+
   const linkPayload = {
     link_id: sessionId,
     link_amount: computed.totalRupees,
@@ -568,7 +571,8 @@ exports.createCashfreePaymentLink = onCall(
     link_purpose: "Chechi Puttu Kadai order",
     customer_details: {
       customer_phone: customerPhone,
-      ...(customerName ? {customer_name: customerName} : {}),
+      customer_email: customerEmail,
+      customer_name: customerName || "Customer",
     },
     link_notify: {send_sms: false, send_email: false},
     link_auto_reminders: false,
