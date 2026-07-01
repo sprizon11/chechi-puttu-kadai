@@ -36,6 +36,12 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cferrorresponse/cferrorresponse.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cfpayment/cfwebcheckoutpayment.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cfpaymentgateway/cfpaymentgatewayservice.dart';
+import 'package:flutter_cashfree_pg_sdk/api/cfsession/cfsession.dart';
+import 'package:flutter_cashfree_pg_sdk/utils/cfenums.dart';
+import 'package:flutter_cashfree_pg_sdk/utils/cfexceptions.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7387,12 +7393,31 @@ class _CartTab extends StatefulWidget {
 class _CartTabState extends State<_CartTab> {
   late final OrdersService _orders;
   late final CashfreeCheckoutService _cfCheckout;
+  final CFPaymentGatewayService _cashfree = CFPaymentGatewayService();
+  Completer<bool>? _cfPayDone;
 
   @override
   void initState() {
     super.initState();
     _orders = OrdersService();
     _cfCheckout = CashfreeCheckoutService();
+    _cashfree.setCallback(_onCashfreeVerify, _onCashfreeError);
+  }
+
+  // Cashfree SDK fires these once the in-app checkout finishes. The server
+  // reconcile is the source of truth — we only use these to know the sheet
+  // closed (the boolean is ignored because Android fires onError even on
+  // successful payments).
+  void _onCashfreeVerify(String orderId) {
+    if (_cfPayDone != null && !_cfPayDone!.isCompleted) {
+      _cfPayDone!.complete(true);
+    }
+  }
+
+  void _onCashfreeError(CFErrorResponse error, String orderId) {
+    if (_cfPayDone != null && !_cfPayDone!.isCompleted) {
+      _cfPayDone!.complete(false);
+    }
   }
 
   int _deliveryFeeFor(List<CartLineItem> items) => items.isEmpty ? 0 : 30;
@@ -7501,9 +7526,9 @@ class _CartTabState extends State<_CartTab> {
       ),
     );
 
-    late final CashfreeLinkResult start;
+    late final CashfreeCheckoutResult start;
     try {
-      start = await _cfCheckout.createPaymentLink(
+      start = await _cfCheckout.createCheckout(
         items: items,
         deliveryLine: deliveryLine,
         scheduleLine: scheduleLine,
@@ -7525,20 +7550,30 @@ class _CartTabState extends State<_CartTab> {
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
 
-    // Open the Cashfree-hosted payment link in the system browser. The page is
-    // served from Cashfree's own domain, so there is no app-package or domain
-    // verification — this avoids the Android "Broken Link" error entirely.
-    final checkoutUrl = Uri.parse(start.linkUrl);
-    final launched = await launchUrl(
-      checkoutUrl,
-      mode: LaunchMode.externalApplication,
-    );
-    if (!launched) {
-      if (!context.mounted) return;
+    // Open the native Cashfree checkout. The Android app package is now
+    // whitelisted (type "App", Approved), so the SDK's package verification
+    // passes and checkout opens instead of showing "Broken Link".
+    final payDone = Completer<bool>();
+    _cfPayDone = payDone;
+    try {
+      final session = CFSessionBuilder()
+          .setEnvironment(
+            start.isProduction
+                ? CFEnvironment.PRODUCTION
+                : CFEnvironment.SANDBOX,
+          )
+          .setOrderId(start.orderId)
+          .setPaymentSessionId(start.paymentSessionId)
+          .build();
+      final payment =
+          CFWebCheckoutPaymentBuilder().setSession(session).build();
+      _cashfree.doPayment(payment);
+    } on CFException catch (e) {
+      _cfPayDone = null;
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            'Could not open payment browser. Please try again.',
+            'Could not open payment: ${e.message}',
             style: GoogleFonts.poppins(),
           ),
         ),
@@ -7546,18 +7581,29 @@ class _CartTabState extends State<_CartTab> {
       return;
     }
 
+    // Wait for the Cashfree sheet to close (verify or error fires the
+    // completer). We only use this to know the WebView dismissed — the boolean
+    // result is intentionally ignored because it's unreliable on Android.
+    try {
+      await payDone.future.timeout(const Duration(minutes: 12));
+    } on TimeoutException {
+      _cfPayDone = null;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Payment window closed. No order was placed.',
+            style: GoogleFonts.poppins(),
+          ),
+        ),
+      );
+      return;
+    } catch (_) {
+      _cfPayDone = null;
+      return;
+    }
+    _cfPayDone = null;
+
     if (!context.mounted) return;
-
-    // Show a sheet so the user can tell us when they're done paying.
-    final proceed = await showModalBottomSheet<bool>(
-      context: context,
-      isDismissible: false,
-      enableDrag: false,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _CashfreeBrowserAwaitSheet(total: total),
-    );
-
-    if (proceed != true || !context.mounted) return;
 
     showDialog<void>(
       context: context,
@@ -7565,8 +7611,6 @@ class _CartTabState extends State<_CartTab> {
       builder: (ctx) => PopScope(
         canPop: false,
         child: AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           content: Row(
             children: [
               const SizedBox(
@@ -8723,120 +8767,6 @@ class _OrderSuccessDialog extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Bottom sheet shown after opening Cashfree in the browser.
-/// User taps "I've paid" → returns true; "Cancel" → returns false.
-class _CashfreeBrowserAwaitSheet extends StatelessWidget {
-  const _CashfreeBrowserAwaitSheet({required this.total});
-  final int total;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final bottom = MediaQuery.paddingOf(context).bottom;
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      padding: EdgeInsets.fromLTRB(20, 24, 20, 16 + bottom),
-      decoration: BoxDecoration(
-        color: cs.surface,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 24,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 44,
-            height: 4,
-            decoration: BoxDecoration(
-              color: cs.outlineVariant,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F5E9),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: const Color(0xFF2E7D32).withValues(alpha: 0.2),
-                width: 2,
-              ),
-            ),
-            child: const Icon(
-              Icons.open_in_browser_rounded,
-              color: Color(0xFF2E7D32),
-              size: 28,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            'Complete payment in browser',
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: cs.onSurface,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Pay ₹$total securely via Cashfree.\nCome back here once payment is done.',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(
-              fontSize: 13,
-              color: cs.onSurfaceVariant,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: ChechiBrand.maroonDeep,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(
-                'I\'ve completed payment',
-                style: GoogleFonts.poppins(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: cs.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
