@@ -295,30 +295,14 @@ class _AdminChatDetailScreenState extends State<AdminChatDetailScreen> {
                             ),
                           ),
                         ),
-                      _InfoBanner(muted: muted),
-                      const SizedBox(height: 14),
                       _DatePill(label: _todayLabel()),
                       const SizedBox(height: 16),
-                      if (docs.isEmpty) ...[
-                        _BusinessBubble(
-                          text:
-                              'Hi! Thanks for choosing Chechi Puttu Kadai. '
-                              'How can we help you today?',
-                          timeLabel: _nowTimeLabel(),
+                      if (docs.isEmpty)
+                        _AdminEmptyState(
+                          customerName: widget.args.peerDisplayName,
+                          contextPreview: widget.args.contextPreview,
                           muted: muted,
-                          isDark: isDark,
                         ),
-                        const SizedBox(height: 10),
-                        if (widget.args.contextPreview.trim().isNotEmpty)
-                          _CustomerBubble(
-                            text: widget.args.contextPreview,
-                            timeLabel: _nowTimeLabel(),
-                            bubbleBg: isDark
-                                ? cs.primaryContainer.withValues(alpha: 0.35)
-                                : _softPink,
-                            muted: muted,
-                          ),
-                      ],
                       for (final d in docs) ...[
                         _MessageBubble(
                           data: d.data(),
@@ -364,15 +348,6 @@ class _AdminChatDetailScreenState extends State<AdminChatDetailScreen> {
   String _todayLabel() {
     final now = DateTime.now();
     return 'Today, ${now.day}/${now.month}/${now.year}';
-  }
-
-  String _nowTimeLabel() {
-    final now = DateTime.now();
-    final h24 = now.hour;
-    final h = h24 % 12 == 0 ? 12 : h24 % 12;
-    final m = now.minute.toString().padLeft(2, '0');
-    final ampm = h24 >= 12 ? 'PM' : 'AM';
-    return '$h:$m $ampm';
   }
 
   Duration? _pendingCustomerWait(
@@ -557,38 +532,103 @@ class _HeaderIconButton extends StatelessWidget {
   }
 }
 
-class _InfoBanner extends StatelessWidget {
-  const _InfoBanner({required this.muted});
+/// Admin-facing empty state — shown before any messages exist. Unlike the
+/// customer app there is no fake greeting; the admin sees a clear prompt plus
+/// (optionally) what the customer was viewing when they opened support.
+class _AdminEmptyState extends StatelessWidget {
+  const _AdminEmptyState({
+    required this.customerName,
+    required this.contextPreview,
+    required this.muted,
+  });
 
+  final String customerName;
+  final String contextPreview;
   final Color muted;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFEEF3),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFFFD6E0)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final cs = Theme.of(context).colorScheme;
+    final hasContext = contextPreview.trim().isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 28),
+      child: Column(
         children: [
-          Icon(Icons.schedule_rounded, size: 18, color: muted),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'We typically reply in a few minutes. Customer support: '
-              '9:00 AM – 10:00 PM.',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                height: 1.35,
-                fontWeight: FontWeight.w500,
-                color: const Color(0xFF5C4545),
-              ),
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: cs.primary.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.forum_outlined,
+              size: 26,
+              color: cs.primary.withValues(alpha: 0.85),
             ),
           ),
+          const SizedBox(height: 12),
+          Text(
+            'No messages yet',
+            style: GoogleFonts.poppins(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: cs.onSurface,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Send a message to start the conversation with $customerName.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(
+              fontSize: 12.5,
+              height: 1.4,
+              fontWeight: FontWeight.w500,
+              color: muted,
+            ),
+          ),
+          if (hasContext) ...[
+            const SizedBox(height: 18),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: cs.outlineVariant),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded, size: 14, color: muted),
+                      const SizedBox(width: 6),
+                      Text(
+                        'CUSTOMER CONTEXT',
+                        style: GoogleFonts.poppins(
+                          fontSize: 10,
+                          letterSpacing: 0.5,
+                          fontWeight: FontWeight.w700,
+                          color: muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    contextPreview.trim(),
+                    style: GoogleFonts.poppins(
+                      fontSize: 12.5,
+                      height: 1.4,
+                      fontWeight: FontWeight.w500,
+                      color: cs.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

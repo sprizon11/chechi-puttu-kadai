@@ -6802,7 +6802,6 @@ class _ProfileTab extends StatelessWidget {
                     (Icons.person_outline_rounded, 'Personal Information'),
                     (Icons.location_on_outlined, 'Saved Addresses'),
                     (Icons.credit_card_outlined, 'Payment Methods'),
-                    (Icons.event_repeat_rounded, 'Subscription Plans'),
                     (Icons.notifications_none_rounded, 'Notifications'),
                     (Icons.verified_user_outlined, 'Privacy & Security'),
                   ],
@@ -7345,6 +7344,22 @@ class _OrderUiModel {
   final bool canRate;
   final String deliveryLine;
   final String paymentMode;
+
+  /// Customer may cancel while the order is still early in the flow. Once it is
+  /// out for delivery, delivered, completed, cancelled or rejected, it can't.
+  bool get canCancel {
+    switch (statusRaw.trim().toLowerCase()) {
+      case '':
+      case 'placed':
+      case 'new':
+      case 'accepted':
+      case 'preparing':
+      case 'ready':
+        return true;
+      default:
+        return false;
+    }
+  }
 }
 
 int _orderTimelineStepFromRaw(String raw) {
@@ -9125,6 +9140,93 @@ class _OrdersTabState extends State<_OrdersTab> {
     );
   }
 
+  Future<void> _cancelOrder(_OrderUiModel order) async {
+    final isOnline = order.paymentMode.trim().toLowerCase() != 'cash_on_delivery';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Cancel this order?',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          isOnline
+              ? 'Order ${order.id} will be cancelled. If you paid online, our '
+                  'team will process your refund — this may take a few days.'
+              : 'Order ${order.id} will be cancelled. This cannot be undone.',
+          style: GoogleFonts.poppins(fontSize: 13.5, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Keep order',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+            ),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB3261E),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'Cancel order',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('cancelOrder');
+      await callable.call({'orderId': order.sourceId});
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // dismiss spinner
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Order ${order.id} cancelled.',
+            style: GoogleFonts.poppins(),
+          ),
+        ),
+      );
+    } on FirebaseFunctionsException catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.message ?? 'Could not cancel this order.',
+            style: GoogleFonts.poppins(),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not cancel this order. Please try again.',
+            style: GoogleFonts.poppins(),
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _rateOrder(_OrderUiModel order) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || !mounted) return;
@@ -9615,6 +9717,9 @@ class _OrdersTabState extends State<_OrdersTab> {
                               ? () => _rateOrder(visible[i])
                               : null,
                           onInvoice: () => _showInvoice(visible[i]),
+                          onCancel: visible[i].canCancel
+                              ? () => _cancelOrder(visible[i])
+                              : null,
                         ),
                       );
                       },
@@ -9744,12 +9849,14 @@ class _OrderListCard extends StatelessWidget {
     this.onReorder,
     this.onRate,
     this.onInvoice,
+    this.onCancel,
   });
 
   final _OrderUiModel order;
   final VoidCallback? onReorder;
   final VoidCallback? onRate;
   final VoidCallback? onInvoice;
+  final VoidCallback? onCancel;
 
   (Color bg, Color fg) get _badgeColors {
     switch (order.status) {
@@ -9955,6 +10062,14 @@ class _OrderListCard extends StatelessWidget {
                         onPressed: onInvoice,
                         label: 'Invoice',
                         fg: const Color(0xFF1F5AA0),
+                      ),
+                    ],
+                    if (onCancel != null) ...[
+                      const SizedBox(width: 6),
+                      compactBtn(
+                        onPressed: onCancel,
+                        label: 'Cancel',
+                        fg: const Color(0xFFB3261E),
                       ),
                     ],
                   ],

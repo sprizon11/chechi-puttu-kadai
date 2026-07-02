@@ -1246,6 +1246,57 @@ exports.nightlyDataCleanup = onSchedule("every day 03:15", async () => {
   });
 });
 
+// Customer-initiated order cancellation. Orders are admin-write-only in
+// Firestore rules, so cancellation goes through this callable which verifies
+// ownership and that the order is still in a cancellable state. The
+// onOrderStatusChangedChatMessage trigger then posts the "was cancelled"
+// system message and push automatically.
+const CANCELLABLE_STATUSES = new Set([
+  "", "placed", "new", "accepted", "preparing", "ready",
+]);
+
+exports.cancelOrder = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  const uid = request.auth.uid;
+  const orderId = String(request.data?.orderId ?? "").trim();
+  if (!orderId) {
+    throw new HttpsError("invalid-argument", "Missing orderId");
+  }
+  const reason = String(request.data?.reason ?? "").trim().slice(0, 300);
+
+  const orderRef = db.collection("orders").doc(orderId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(orderRef);
+    if (!snap.exists) {
+      throw new HttpsError("not-found", "Order not found");
+    }
+    const o = snap.data();
+    if (String(o.uid || "") !== uid) {
+      throw new HttpsError("permission-denied", "Not your order");
+    }
+    const status = String(o.status || "").trim().toLowerCase();
+    if (status === "cancelled") {
+      return {ok: true, alreadyCancelled: true};
+    }
+    if (!CANCELLABLE_STATUSES.has(status)) {
+      throw new HttpsError(
+        "failed-precondition",
+        "This order can no longer be cancelled. Please contact support.",
+      );
+    }
+    tx.update(orderRef, {
+      status: "cancelled",
+      cancelled_by: "customer",
+      cancel_reason: reason || null,
+      cancelled_at: admin.firestore.FieldValue.serverTimestamp(),
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return {ok: true, cancelled: true};
+  });
+});
+
 exports.onOrderCreatedChatMessage = onDocumentCreated(
     {document: "orders/{orderId}", database: FIRESTORE_DB},
     async (event) => {
