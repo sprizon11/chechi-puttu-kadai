@@ -1312,6 +1312,28 @@ exports.onOrderCreatedChatMessage = onDocumentCreated(
     orderId: event.params.orderId,
     status,
   });
+
+  // Notify the admin that a new order came in.
+  try {
+    const adminId = await adminUid();
+    if (adminId) {
+      const {name, mobile} = await userProfileLite(uid);
+      const who = name || mobile || "A customer";
+      const amount = Number(data.total_rupees || 0);
+      await sendPush({
+        uid: adminId,
+        title: "New order received",
+        body: `${who} placed ${orderRef(event.params.orderId)} · ₹${amount}`,
+        data: {
+          type: "admin_new_order",
+          orderId: event.params.orderId,
+          customer_uid: uid,
+        },
+      });
+    }
+  } catch (e) {
+    console.error("admin new-order push failed:", e);
+  }
 });
 
 exports.onOrderStatusChangedChatMessage = onDocumentUpdated(

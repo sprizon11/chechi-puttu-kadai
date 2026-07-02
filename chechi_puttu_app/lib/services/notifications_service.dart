@@ -92,11 +92,23 @@ class NotificationsService {
         });
 
     try {
-      await _messaging.requestPermission();
-      final token = await _messaging.getToken();
+      await _messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      // On iOS the FCM token is only available once the APNs token is set. If
+      // APNs isn't ready yet, getToken can return null — retry once shortly.
+      var token = await _messaging.getToken();
+      if (token == null &&
+          defaultTargetPlatform == TargetPlatform.iOS) {
+        await Future<void>.delayed(const Duration(seconds: 2));
+        token = await _messaging.getToken();
+      }
       if (token != null) {
         await savePushTokenIfPresent(token);
       }
+      _messaging.onTokenRefresh.listen(savePushTokenIfPresent);
       _pushSub?.cancel();
       _pushSub = FirebaseMessaging.onMessage.listen(_showForegroundPush);
       _pushOpenSub?.cancel();
@@ -118,7 +130,17 @@ class NotificationsService {
 
   Future<void> _initLocalNotifications() async {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const initSettings = InitializationSettings(android: androidInit);
+    // iOS: without Darwin settings the plugin never displays anything on iPhone.
+    // Requesting the permissions here also covers foreground/local notifications.
+    const darwinInit = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
+    const initSettings = InitializationSettings(
+      android: androidInit,
+      iOS: darwinInit,
+    );
     await _local.initialize(
       initSettings,
       onDidReceiveNotificationResponse: (response) {
