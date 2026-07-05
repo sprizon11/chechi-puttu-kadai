@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:chechi_puttu_app/services/birthday_chat_wish_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:chechi_puttu_app/services/chechi_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -117,6 +118,9 @@ class _AdminChatDetailScreenState extends State<AdminChatDetailScreen> {
         'updated_at': FieldValue.serverTimestamp(),
         'unread_customer_to_admin': 0,
       }, SetOptions(merge: true));
+      // Push to the customer (best-effort; the Firestore chat trigger can't
+      // deploy on this named DB, so we notify via callable).
+      unawaited(_notifyCustomer(text));
       if (!mounted) return;
       _input.clear();
       _focus.requestFocus();
@@ -134,6 +138,16 @@ class _AdminChatDetailScreenState extends State<AdminChatDetailScreen> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  Future<void> _notifyCustomer(String text) async {
+    try {
+      await FirebaseFunctions.instance.httpsCallable('notifyChatMessage').call({
+        'customerUid': widget.args.customerUid,
+        'text': text,
+        'sender': 'admin',
+      });
+    } catch (_) {}
   }
 
   void _appendQuick(String line) {

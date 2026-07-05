@@ -1297,6 +1297,53 @@ exports.cancelOrder = onCall(async (request) => {
   });
 });
 
+// Chat push notifications. The Firestore trigger (onSupportMessagePush) can't
+// deploy on this named DB in asia-south1, so the client calls this right after
+// sending a message to notify the other party.
+exports.notifyChatMessage = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  const callerUid = request.auth.uid;
+  const customerUid = String(request.data?.customerUid ?? "").trim();
+  const text = String(request.data?.text ?? "").trim().slice(0, 4000);
+  const sender = String(request.data?.sender ?? "").trim().toLowerCase();
+  if (!customerUid || !text) {
+    throw new HttpsError("invalid-argument", "Missing fields");
+  }
+  const callerIsAdmin = isAdminRequest(request);
+
+  if (sender === "admin") {
+    if (!callerIsAdmin) {
+      throw new HttpsError("permission-denied", "Admins only");
+    }
+    await sendPush({
+      uid: customerUid,
+      title: "New message from support",
+      body: text,
+      data: {type: "chat_message", customer_uid: customerUid},
+    });
+    return {ok: true};
+  }
+
+  // Customer message -> notify admin. Only the customer themselves (or an
+  // admin acting on their behalf) may trigger it.
+  if (callerUid !== customerUid && !callerIsAdmin) {
+    throw new HttpsError("permission-denied", "Not allowed");
+  }
+  const aUid = await adminUid();
+  if (aUid) {
+    const name = await userDisplayName(customerUid);
+    await sendPush({
+      uid: aUid,
+      title: name ? `New message from ${name}` : "New customer message",
+      body: text,
+      data: {type: "chat_message", customer_uid: customerUid},
+    });
+  }
+  return {ok: true};
+});
+
 exports.onOrderCreatedChatMessage = onDocumentCreated(
     {document: "orders/{orderId}", database: FIRESTORE_DB},
     async (event) => {
