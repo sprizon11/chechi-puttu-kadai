@@ -51,6 +51,7 @@ class CustomerOrderTypeService {
 
   CustomerOrderTypeState _stateFromJson(Map<String, dynamic> j) {
     final days = j['days'];
+    final selectedDishes = j['selectedDishes'];
     return CustomerOrderTypeState(
       orderType: CustomerOrderType.fromFirestore(j['orderType'] as String?),
       typeSelected: j['typeSelected'] as bool? ?? false,
@@ -65,6 +66,9 @@ class CustomerOrderTypeService {
           j['scheduleMode'] as String?,
         ),
         days: days is List ? days.map((e) => e.toString()).toList() : const [],
+        selectedDishes: selectedDishes is List
+            ? selectedDishes.map((e) => e.toString()).toList()
+            : const [],
         enrollmentComplete: j['enrollmentComplete'] as bool? ?? false,
       ),
     );
@@ -85,6 +89,7 @@ class CustomerOrderTypeService {
         'preferredTime': state.bulkEnrollment.preferredTime,
         'scheduleMode': state.bulkEnrollment.scheduleMode.firestoreValue,
         'days': state.bulkEnrollment.days,
+        'selectedDishes': state.bulkEnrollment.selectedDishes,
         'enrollmentComplete': state.bulkEnrollment.enrollmentComplete,
       }),
     );

@@ -76,6 +76,7 @@ class BulkOrderEnrollment {
     this.preferredTime = '',
     this.scheduleMode = BulkScheduleMode.allDays,
     this.days = const [],
+    this.selectedDishes = const [],
     this.enrollmentComplete = false,
   });
 
@@ -87,6 +88,10 @@ class BulkOrderEnrollment {
   final String preferredTime;
   final BulkScheduleMode scheduleMode;
   final List<String> days;
+
+  /// Dish titles (from the customer menu catalog) the organisation wants on
+  /// its recurring meal plan.
+  final List<String> selectedDishes;
   final bool enrollmentComplete;
 
   BulkOrderEnrollment copyWith({
@@ -98,6 +103,7 @@ class BulkOrderEnrollment {
     String? preferredTime,
     BulkScheduleMode? scheduleMode,
     List<String>? days,
+    List<String>? selectedDishes,
     bool? enrollmentComplete,
   }) {
     return BulkOrderEnrollment(
@@ -109,6 +115,7 @@ class BulkOrderEnrollment {
       preferredTime: preferredTime ?? this.preferredTime,
       scheduleMode: scheduleMode ?? this.scheduleMode,
       days: days ?? this.days,
+      selectedDishes: selectedDishes ?? this.selectedDishes,
       enrollmentComplete: enrollmentComplete ?? this.enrollmentComplete,
     );
   }
@@ -122,6 +129,7 @@ class BulkOrderEnrollment {
         'preferredTime': preferredTime.trim(),
         'scheduleMode': scheduleMode.firestoreValue,
         'days': days,
+        'selectedDishes': selectedDishes,
         'enrollmentComplete': enrollmentComplete,
       };
 
@@ -130,6 +138,10 @@ class BulkOrderEnrollment {
     final rawDays = m['days'];
     final days = rawDays is List
         ? rawDays.map((e) => e.toString()).toList()
+        : <String>[];
+    final rawDishes = m['selectedDishes'];
+    final selectedDishes = rawDishes is List
+        ? rawDishes.map((e) => e.toString()).toList()
         : <String>[];
     return BulkOrderEnrollment(
       contactName: m['contactName'] as String? ?? '',
@@ -142,6 +154,7 @@ class BulkOrderEnrollment {
         m['scheduleMode'] as String?,
       ),
       days: days,
+      selectedDishes: selectedDishes,
       enrollmentComplete: m['enrollmentComplete'] as bool? ?? false,
     );
   }
