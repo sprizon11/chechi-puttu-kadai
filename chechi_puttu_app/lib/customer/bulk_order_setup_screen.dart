@@ -33,6 +33,7 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
   final _altPhoneCtrl = TextEditingController();
   final _orgCtrl = TextEditingController();
   final _personCtrl = TextEditingController();
+  final _designationCtrl = TextEditingController();
   final _timeCtrl = TextEditingController();
 
   BulkScheduleMode _scheduleMode = BulkScheduleMode.allDays;
@@ -52,6 +53,7 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
       _altPhoneCtrl.text = init.alternatePhone;
       _orgCtrl.text = init.organizationName;
       _personCtrl.text = init.orderPersonName;
+      _designationCtrl.text = init.orderPersonDesignation;
       _timeCtrl.text = init.preferredTime;
       _scheduleMode = init.scheduleMode;
       _selectedDays.addAll(init.days);
@@ -83,6 +85,7 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
     _altPhoneCtrl.dispose();
     _orgCtrl.dispose();
     _personCtrl.dispose();
+    _designationCtrl.dispose();
     _timeCtrl.dispose();
     super.dispose();
   }
@@ -149,6 +152,9 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
         alternatePhone: _altPhoneCtrl.text.trim(),
         organizationName: _orgCtrl.text.trim(),
         orderPersonName: _personCtrl.text.trim(),
+        orderPersonDesignation: widget.orderType == CustomerOrderType.corporate
+            ? _designationCtrl.text.trim()
+            : '',
         preferredTime: _timeCtrl.text.trim(),
         scheduleMode: _scheduleMode,
         days: days,
@@ -261,8 +267,19 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
                               validator: (v) => (v == null || v.trim().isEmpty)
                                   ? 'Required'
                                   : null,
-                              last: true,
+                              last: isHospital,
                             ),
+                            if (!isHospital)
+                              _field(
+                                controller: _designationCtrl,
+                                label: 'Order person job position',
+                                icon: Icons.work_outline_rounded,
+                                validator: (v) =>
+                                    (v == null || v.trim().isEmpty)
+                                        ? 'Required'
+                                        : null,
+                                last: true,
+                              ),
                           ],
                         ),
                       ),

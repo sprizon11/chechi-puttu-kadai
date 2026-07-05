@@ -73,6 +73,7 @@ class BulkOrderEnrollment {
     this.alternatePhone = '',
     this.organizationName = '',
     this.orderPersonName = '',
+    this.orderPersonDesignation = '',
     this.preferredTime = '',
     this.scheduleMode = BulkScheduleMode.allDays,
     this.days = const [],
@@ -85,6 +86,9 @@ class BulkOrderEnrollment {
   final String alternatePhone;
   final String organizationName;
   final String orderPersonName;
+
+  /// Job title / designation of the person who places orders (corporate only).
+  final String orderPersonDesignation;
   final String preferredTime;
   final BulkScheduleMode scheduleMode;
   final List<String> days;
@@ -100,6 +104,7 @@ class BulkOrderEnrollment {
     String? alternatePhone,
     String? organizationName,
     String? orderPersonName,
+    String? orderPersonDesignation,
     String? preferredTime,
     BulkScheduleMode? scheduleMode,
     List<String>? days,
@@ -112,6 +117,8 @@ class BulkOrderEnrollment {
       alternatePhone: alternatePhone ?? this.alternatePhone,
       organizationName: organizationName ?? this.organizationName,
       orderPersonName: orderPersonName ?? this.orderPersonName,
+      orderPersonDesignation:
+          orderPersonDesignation ?? this.orderPersonDesignation,
       preferredTime: preferredTime ?? this.preferredTime,
       scheduleMode: scheduleMode ?? this.scheduleMode,
       days: days ?? this.days,
@@ -126,6 +133,7 @@ class BulkOrderEnrollment {
         'alternatePhone': alternatePhone.trim(),
         'organizationName': organizationName.trim(),
         'orderPersonName': orderPersonName.trim(),
+        'orderPersonDesignation': orderPersonDesignation.trim(),
         'preferredTime': preferredTime.trim(),
         'scheduleMode': scheduleMode.firestoreValue,
         'days': days,
@@ -149,6 +157,7 @@ class BulkOrderEnrollment {
       alternatePhone: m['alternatePhone'] as String? ?? '',
       organizationName: m['organizationName'] as String? ?? '',
       orderPersonName: m['orderPersonName'] as String? ?? '',
+      orderPersonDesignation: m['orderPersonDesignation'] as String? ?? '',
       preferredTime: m['preferredTime'] as String? ?? '',
       scheduleMode: BulkScheduleMode.fromFirestore(
         m['scheduleMode'] as String?,

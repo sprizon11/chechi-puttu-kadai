@@ -61,6 +61,7 @@ class CustomerOrderTypeService {
         alternatePhone: j['alternatePhone'] as String? ?? '',
         organizationName: j['organizationName'] as String? ?? '',
         orderPersonName: j['orderPersonName'] as String? ?? '',
+        orderPersonDesignation: j['orderPersonDesignation'] as String? ?? '',
         preferredTime: j['preferredTime'] as String? ?? '',
         scheduleMode: BulkScheduleMode.fromFirestore(
           j['scheduleMode'] as String?,
@@ -86,6 +87,7 @@ class CustomerOrderTypeService {
         'alternatePhone': state.bulkEnrollment.alternatePhone,
         'organizationName': state.bulkEnrollment.organizationName,
         'orderPersonName': state.bulkEnrollment.orderPersonName,
+        'orderPersonDesignation': state.bulkEnrollment.orderPersonDesignation,
         'preferredTime': state.bulkEnrollment.preferredTime,
         'scheduleMode': state.bulkEnrollment.scheduleMode.firestoreValue,
         'days': state.bulkEnrollment.days,
