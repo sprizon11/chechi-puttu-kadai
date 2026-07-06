@@ -49,15 +49,15 @@ service cloud.firestore {
     // Customers read this to see latest menu card content across devices.
     match /admin_public/{docId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow create, update, delete: if isAdmin();
     }
     match /admin_public/{docId}/snapshots/{snapshotId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow create, update, delete: if isAdmin();
     }
     match /admin_public/{docId}/section_snapshots/{snapshotId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow create, update, delete: if isAdmin();
     }
 
     match /order_reviews/{reviewId} {
