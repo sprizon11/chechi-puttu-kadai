@@ -1345,7 +1345,7 @@ exports.notifyChatMessage = onCall(async (request) => {
 });
 
 exports.onOrderCreatedChatMessage = onDocumentCreated(
-    {document: "orders/{orderId}", database: FIRESTORE_DB},
+    {document: "orders/{orderId}", database: FIRESTORE_DB, region: "asia-south1"},
     async (event) => {
   const data = event.data?.data();
   if (!data) return;
@@ -1626,6 +1626,7 @@ exports.onSupportAbuseGuard = onDocumentCreated(
     {
       document: "support_inbox/{customerUid}/messages/{messageId}",
       database: FIRESTORE_DB,
+      region: "asia-south1",
     },
     async (event) => {
       const customerUid = String(event.params.customerUid || "").trim();

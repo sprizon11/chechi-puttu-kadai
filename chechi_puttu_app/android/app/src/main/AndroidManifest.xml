@@ -39,6 +39,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- FCM: when the app is in background/killed, the system displays the
+             notification on this channel. Must match a channel the app creates
+             at runtime (order_updates in NotificationsService) so background
+             pushes get high importance (heads-up), not a generic fallback. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="order_updates" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

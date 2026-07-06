@@ -11579,8 +11579,11 @@ class _ProductCardState extends State<_ProductCard> {
     final compactHeight =
         widget.height != null && widget.height! <= _kHomeDishCardHeight + 4;
     final imageRadius = compactHeight ? 11.0 : 12.0;
-    final titleMaxLines = 1;
-    final subtitleMaxLines = compactHeight ? 2 : 2;
+    // Home cards have a fixed height: let the title wrap to 2 lines (so long
+    // names like "Ella Adai (per set 2)" show fully) and give the subtitle 1
+    // line so the card height stays identical.
+    final titleMaxLines = 2;
+    final subtitleMaxLines = compactHeight ? 1 : 2;
     return Opacity(
       opacity: disabled ? 0.55 : 1,
       child: Container(
@@ -11648,7 +11651,7 @@ class _ProductCardState extends State<_ProductCard> {
                                   fontWeight: FontWeight.w800,
                                   color: _Theme.text(context),
                                   fontSize: compactHeight ? 12.5 : 13.5,
-                                  height: 1.12,
+                                  height: compactHeight ? 1.06 : 1.12,
                                 ),
                               ),
                               const SizedBox(height: 2),
