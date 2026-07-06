@@ -569,7 +569,54 @@ class _AdminTopBar extends StatelessWidget {
           const Spacer(),
           iconShell(icon: Icons.notifications_none_rounded, onTap: () {}),
           const SizedBox(width: 8),
-          iconShell(icon: Icons.chat_bubble_outline_rounded, onTap: onChats),
+          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: chechiFirestore.collection('support_inbox').snapshots(),
+            builder: (context, snap) {
+              var unread = 0;
+              for (final d in snap.data?.docs ?? const []) {
+                final v = d.data()['unread_customer_to_admin'];
+                final n = v is int ? v : (v as num?)?.toInt() ?? 0;
+                if (n > 0) unread += n;
+              }
+              final chat = iconShell(
+                icon: Icons.chat_bubble_outline_rounded,
+                onTap: onChats,
+              );
+              if (unread == 0) return chat;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  chat,
+                  Positioned(
+                    right: -4,
+                    top: -4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 1,
+                      ),
+                      constraints: const BoxConstraints(minWidth: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFC62828),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: cs.surface, width: 1.5),
+                      ),
+                      child: Text(
+                        unread > 99 ? '99+' : '$unread',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          height: 1.1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
         ],
       ),
     );
@@ -602,7 +649,7 @@ class _FirestoreStatCardsRow extends StatelessWidget {
     }
 
     return SizedBox(
-      height: 132,
+      height: 108,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: EdgeInsets.zero,
@@ -710,8 +757,8 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 132,
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      width: 114,
+      padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
       decoration: BoxDecoration(
         color: cardBg,
         borderRadius: BorderRadius.circular(14),
@@ -724,8 +771,8 @@ class _StatCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.max,
         children: [
           Container(
-            height: 32,
-            width: 32,
+            height: 28,
+            width: 28,
             decoration: BoxDecoration(
               color: iconBg,
               shape: BoxShape.circle,
@@ -737,9 +784,9 @@ class _StatCard extends StatelessWidget {
                 ),
               ],
             ),
-            child: Icon(icon, size: 17, color: iconColor),
+            child: Icon(icon, size: 15, color: iconColor),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 5),
           Text(
             label,
             maxLines: 2,
@@ -757,7 +804,7 @@ class _StatCard extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.poppins(
-              fontSize: 16,
+              fontSize: 15,
               fontWeight: FontWeight.w800,
               color: titleColor,
               height: 1.1,
@@ -991,11 +1038,12 @@ class _QuickActionsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         _QuickAction(
           icon: Icons.room_service_outlined,
-          label: 'Manage\nMenu',
+          label: 'Manage Menu',
           color: const Color(0xFFFFF0E6),
           iconColor: const Color(0xFFEA7A2C),
           onTap: onManageMenu,

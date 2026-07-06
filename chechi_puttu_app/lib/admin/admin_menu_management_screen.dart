@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:chechi_puttu_app/admin/admin_category_edit_screen.dart';
 import 'package:chechi_puttu_app/admin/admin_dish_edit_screen.dart';
 import 'package:chechi_puttu_app/admin/admin_dish_models.dart';
 import 'package:chechi_puttu_app/menu_catalog.dart';
@@ -105,21 +104,6 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
     final saved = _sectionSnapshots[adminSectionStorageKey(sectionId)];
     if (saved != null && saved.title.trim().isNotEmpty) return saved.title.trim();
     return sectionId;
-  }
-
-  AdminSectionEditSnapshot _mergedSection(String sectionId) {
-    final catalog = _catalogSectionForId(sectionId);
-    if (catalog != null) {
-      return mergeSectionWithCatalog(
-        catalog,
-        _sectionSnapshots[adminSectionStorageKey(sectionId)],
-      );
-    }
-    return _sectionSnapshots[adminSectionStorageKey(sectionId)] ??
-        AdminSectionEditSnapshot(
-          title: sectionId,
-          subtitle: 'Chef curated picks',
-        );
   }
 
   String? _sectionTitleForChip(int chipIndex) {
@@ -582,6 +566,9 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
     }
   }
 
+  // Retained for a future rename flow; no caller since the category editor
+  // screen was removed.
+  // ignore: unused_element
   Future<void> _migrateSectionId(String oldId, String newId) async {
     if (oldId == newId) return;
     final idx = _customCategories.indexOf(oldId);
@@ -657,54 +644,40 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
     );
   }
 
-  Future<void> _openCategoryEditor(String sectionId) async {
-    final isCustom = _isCustomSectionId(sectionId);
-    final initial = _mergedSection(sectionId);
-    final result = await Navigator.of(context).push<Object?>(
-      MaterialPageRoute(
-        builder: (ctx) => AdminCategoryEditScreen(
-          sectionId: sectionId,
-          initial: initial,
-          isCustomCategory: isCustom,
+  Future<void> _confirmDeleteCategory(String sectionId) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Delete category?',
+          style: GoogleFonts.playfairDisplay(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: _maroon,
+          ),
         ),
-      ),
-    );
-    if (!mounted || result == null) return;
-
-    if (result is AdminCategoryDeleteRequest) {
-      await _deleteCategory(sectionId);
-      return;
-    }
-    if (result is! AdminCategorySaveResult) return;
-
-    var effectiveId = sectionId;
-    if (result.renamedSectionId != null &&
-        result.renamedSectionId!.trim().isNotEmpty &&
-        result.renamedSectionId != sectionId) {
-      await _migrateSectionId(sectionId, result.renamedSectionId!.trim());
-      effectiveId = result.renamedSectionId!.trim();
-    }
-
-    setState(() {
-      _sectionSnapshots[adminSectionStorageKey(effectiveId)] = result.snapshot;
-    });
-    await _persistSectionOverrides(syncCloud: false);
-    final storageKey = adminSectionStorageKey(effectiveId);
-    final cloudOk = await _syncSectionOverridesToCloud({
-      storageKey: result.snapshot.toJson(),
-    });
-    await CustomerMenuSectionOverrides.instance.reloadFromPrefs();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
         content: Text(
-          cloudOk
-              ? 'Category updated and synced.'
-              : 'Category saved, but cloud sync did not complete. Other phones may still show old data.',
-          style: GoogleFonts.poppins(),
+          'This removes "$sectionId" and all of its dishes from the menu. '
+          'This cannot be undone.',
+          style: GoogleFonts.poppins(fontSize: 13, height: 1.4),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.poppins()),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
       ),
     );
+    if (ok == true) await _deleteCategory(sectionId);
   }
 
   Future<void> _loadCustomCategories() async {
@@ -1399,7 +1372,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
                   onTap: () => setState(() => _categoryIndex = i),
                   onLongPress: i == 0
                       ? null
-                      : () => _openCategoryEditor(_sectionIdForChip(i)!),
+                      : () => _confirmDeleteCategory(_sectionIdForChip(i)!),
                   borderRadius: BorderRadius.circular(12),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
@@ -1450,18 +1423,18 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
             const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: () =>
-                  _openCategoryEditor(_sectionTitleForChip(_categoryIndex)!),
+                  _confirmDeleteCategory(_sectionTitleForChip(_categoryIndex)!),
               style: OutlinedButton.styleFrom(
-                foregroundColor: _maroon,
+                foregroundColor: Colors.red.shade700,
                 side: BorderSide(color: chipBorder),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              icon: const Icon(Icons.edit_outlined, size: 18),
+              icon: const Icon(Icons.delete_outline_rounded, size: 18),
               label: Text(
-                'Edit category (name, subtitle, image)',
+                'Delete category',
                 style: GoogleFonts.poppins(
                   fontWeight: FontWeight.w700,
                   fontSize: 12.5,

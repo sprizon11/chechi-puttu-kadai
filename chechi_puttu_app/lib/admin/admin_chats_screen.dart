@@ -16,7 +16,7 @@ class AdminChatsScreen extends StatefulWidget {
 
 class _AdminChatsScreenState extends State<AdminChatsScreen> {
   final _searchCtrl = TextEditingController();
-  _ChatFilter _filter = _ChatFilter.all;
+  bool _unreadOnly = false;
   bool _broadcasting = false;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _usersSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _msgsSub;
@@ -326,16 +326,9 @@ class _AdminChatsScreenState extends State<AdminChatsScreen> {
     final userList = userMap.values.toList();
     final threads = _buildThreads(userMap, msgDocs);
     final unreadThreads = threads.where((t) => t.unreadCount > 0).toList();
-    final unreadTotal = unreadThreads.fold<int>(0, (s, t) => s + t.unreadCount);
-    final waitingMins = unreadThreads.isEmpty
-        ? 0
-        : unreadThreads
-                .map((t) => DateTime.now().difference(t.lastActivity).inMinutes)
-                .fold<int>(0, (a, b) => a + b) ~/
-            unreadThreads.length;
 
     final filtered = threads.where((t) {
-      if (_filter != _ChatFilter.all && t.filter != _filter) return false;
+      if (_unreadOnly && t.unreadCount == 0) return false;
       final q = _searchCtrl.text.trim().toLowerCase();
       if (q.isEmpty) return true;
       return ('${t.name} ${t.preview} ${t.tag} ${t.mobile ?? ''}'.toLowerCase())
@@ -364,8 +357,6 @@ class _AdminChatsScreenState extends State<AdminChatsScreen> {
             icon: _broadcasting ? Icons.hourglass_top_rounded : Icons.campaign_outlined,
             onTap: _broadcasting ? () {} : () => _openBroadcastDialog(userList),
           ),
-          const SizedBox(width: 8),
-          _CircleAction(icon: Icons.tune_rounded, onTap: () {}),
           const SizedBox(width: 8),
           _CircleAction(
             icon: Icons.add_comment_outlined,
@@ -419,51 +410,31 @@ class _AdminChatsScreenState extends State<AdminChatsScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                decoration: BoxDecoration(
-                  color: cs.surface,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: cs.outlineVariant),
-                ),
-                child: Row(
-                  children: [
-                    _SlaChip(
-                      label: 'Unread',
-                      value: '$unreadTotal',
-                      color: const Color(0xFFC62828),
-                    ),
-                    const SizedBox(width: 8),
-                    _SlaChip(
-                      label: 'Open threads',
-                      value: '${unreadThreads.length}',
-                      color: const Color(0xFF1565C0),
-                    ),
-                    const SizedBox(width: 8),
-                    _SlaChip(
-                      label: 'Avg wait',
-                      value: '${waitingMins}m',
-                      color: const Color(0xFF2E7D32),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
             SizedBox(
               height: 38,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                children: _ChatFilter.values.map((f) {
-                  final sel = _filter == f;
-                  final c = _countFor(f, threads);
+                children: <({String label, bool sel, int count, VoidCallback onTap})>[
+                  (
+                    label: 'All',
+                    sel: !_unreadOnly,
+                    count: threads.length,
+                    onTap: () => setState(() => _unreadOnly = false),
+                  ),
+                  (
+                    label: 'Unread',
+                    sel: _unreadOnly,
+                    count: unreadThreads.length,
+                    onTap: () => setState(() => _unreadOnly = true),
+                  ),
+                ].map((f) {
+                  final sel = f.sel;
+                  final c = f.count;
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: GestureDetector(
-                      onTap: () => setState(() => _filter = f),
+                      onTap: f.onTap,
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
                         curve: Curves.easeOutCubic,
@@ -500,7 +471,7 @@ class _AdminChatsScreenState extends State<AdminChatsScreen> {
                             AnimatedSwitcher(
                               duration: const Duration(milliseconds: 170),
                               child: Container(
-                                key: ValueKey('${f.name}-$c'),
+                                key: ValueKey('${f.label}-$c'),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 7,
                                   vertical: 1.5,
@@ -608,11 +579,6 @@ class _AdminChatsScreenState extends State<AdminChatsScreen> {
         ),
       ),
     );
-  }
-
-  int _countFor(_ChatFilter f, List<_ChatThread> threads) {
-    if (f == _ChatFilter.all) return threads.length;
-    return threads.where((t) => t.filter == f).length;
   }
 }
 
@@ -774,58 +740,6 @@ class _CircleAction extends StatelessWidget {
           border: Border.all(color: cs.outlineVariant),
         ),
         child: Icon(icon, size: 20, color: cs.onSurface),
-      ),
-    );
-  }
-}
-
-class _SlaChip extends StatelessWidget {
-  const _SlaChip({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  final String label;
-  final String value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          color: color.withValues(alpha: 0.08),
-          border: Border.all(color: color.withValues(alpha: 0.25)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.poppins(
-                fontSize: 9.5,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: color,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

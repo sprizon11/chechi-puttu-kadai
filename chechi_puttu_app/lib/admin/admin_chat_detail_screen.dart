@@ -150,15 +150,6 @@ class _AdminChatDetailScreenState extends State<AdminChatDetailScreen> {
     } catch (_) {}
   }
 
-  void _appendQuick(String line) {
-    final t = _input.text;
-    final spacer = t.isEmpty || t.endsWith(' ') ? '' : ' ';
-    _input.text = '$t$spacer$line';
-    _input.selection = TextSelection.collapsed(offset: _input.text.length);
-    setState(() {});
-    _focus.requestFocus();
-  }
-
   Future<void> _callPeer() async {
     final raw = widget.args.peerMobile?.replaceAll(RegExp(r'\s'), '') ?? '';
     if (raw.isEmpty) {
@@ -334,8 +325,6 @@ class _AdminChatDetailScreenState extends State<AdminChatDetailScreen> {
                 },
               ),
             ),
-            _QuickActions(onTap: _appendQuick),
-            const SizedBox(height: 6),
             _ReplyBar(
               controller: _input,
               focusNode: _focus,
@@ -1063,95 +1052,6 @@ class _SlaNudgeCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _QuickActions extends StatelessWidget {
-  const _QuickActions({required this.onTap});
-
-  final void Function(String) onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    Widget chip(String label, IconData icon, String insert) {
-      return Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => onTap(insert),
-          borderRadius: BorderRadius.circular(999),
-          child: Ink(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFE8EF),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: const Color(0xFFFFD0DF)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 15, color: cs.primary),
-                const SizedBox(width: 5),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.poppins(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF6B2F3A),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    final canned = <({String label, IconData icon, String insert})>[
-      (
-        label: 'Track order',
-        icon: Icons.location_on_outlined,
-        insert: 'Could you share your latest order ID so we can track it?',
-      ),
-      (
-        label: 'Delay apology',
-        icon: Icons.access_time_rounded,
-        insert: 'Sorry for the delay. We are checking this with the kitchen now.',
-      ),
-      (
-        label: 'Menu share',
-        icon: Icons.restaurant_menu_rounded,
-        insert: 'Here is today\'s menu — tell us what you would like to order.',
-      ),
-      (
-        label: 'Refund help',
-        icon: Icons.currency_rupee_rounded,
-        insert: 'We have raised your refund request and will update shortly.',
-      ),
-      (
-        label: 'Address confirm',
-        icon: Icons.home_work_outlined,
-        insert: 'Please confirm your exact delivery address and landmark.',
-      ),
-      (
-        label: 'Close ticket',
-        icon: Icons.check_circle_outline_rounded,
-        insert: 'Glad to help. We are marking this issue resolved.',
-      ),
-    ];
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          for (final c in canned) chip(c.label, c.icon, c.insert),
-        ],
       ),
     );
   }
