@@ -186,7 +186,15 @@ class _AdminChatsScreenState extends State<AdminChatsScreen> {
     }
   }
 
-  Future<void> _openStartChatPicker(List<_UserLite> users) async {
+  Future<void> _openStartChatPicker(List<_UserLite> allUsers) async {
+    // Only show customers we can actually identify/contact. Drop incomplete or
+    // anonymous sign-ins that have no name AND no valid phone — they render as
+    // "Customer · <uid>" and can't be meaningfully messaged.
+    final users = allUsers.where((u) {
+      final name = (u.displayName ?? '').trim();
+      final digits = (u.mobile ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+      return name.isNotEmpty || digits.length >= 10;
+    }).toList();
     if (users.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
