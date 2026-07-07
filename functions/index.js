@@ -323,6 +323,87 @@ exports.razorpayWebhook = onRequest(async (req, res) => {
   res.json({ignored: true, event: event ?? null});
 });
 
+// Client-side confirmation: after the Razorpay SDK reports success, the app
+// sends the payment id + signature here. We verify the HMAC signature and
+// create the order immediately (idempotent), so confirmation does not depend on
+// webhook delivery. The razorpayWebhook remains a backup for the same order id.
+exports.verifyRazorpayPayment = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  const uid = request.auth.uid;
+  const {keySecret} = razorpayKeys();
+  if (!keySecret) {
+    throw new HttpsError("failed-precondition", "Razorpay keys not configured");
+  }
+  const orderId = String(request.data?.razorpayOrderId ?? "").trim();
+  const paymentId = String(request.data?.razorpayPaymentId ?? "").trim();
+  const signature = String(request.data?.razorpaySignature ?? "").trim();
+  const sessionId = String(request.data?.sessionId ?? "").trim();
+  if (!orderId || !paymentId || !signature || !sessionId) {
+    throw new HttpsError("invalid-argument", "Missing payment fields");
+  }
+
+  const crypto = require("crypto");
+  const expected = crypto
+      .createHmac("sha256", keySecret)
+      .update(`${orderId}|${paymentId}`)
+      .digest("hex");
+  if (!timingSafeEqual(expected.toLowerCase(), signature.toLowerCase())) {
+    throw new HttpsError("permission-denied", "Signature verification failed");
+  }
+
+  const sessRef = db.collection("checkout_sessions").doc(sessionId);
+  const sessSnap = await sessRef.get();
+  if (!sessSnap.exists) {
+    throw new HttpsError("not-found", "Checkout session not found");
+  }
+  const s = sessSnap.data();
+  if (String(s.uid || "") !== uid) {
+    throw new HttpsError("permission-denied", "Not your checkout");
+  }
+  if (String(s.razorpay_order_id || "") !== orderId) {
+    throw new HttpsError("invalid-argument", "Order mismatch");
+  }
+  if (s.status === "paid" && typeof s.order_id === "string" && s.order_id) {
+    return {status: "paid", orderId: s.order_id};
+  }
+
+  const firestoreOrderId = `rz_${paymentId}`;
+  const orderRef = db.collection("orders").doc(firestoreOrderId);
+  try {
+    await orderRef.create({
+      uid: s.uid,
+      status: "placed",
+      total_rupees: s.total_rupees,
+      delivery_line: s.delivery_line,
+      payment_mode: "razorpay",
+      payment_status: "captured",
+      razorpay_order_id: orderId,
+      razorpay_payment_id: paymentId,
+      checkout_session_id: sessionId,
+      schedule_line: s.schedule_line,
+      items: s.items,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    if (e.code === 6 || e.code === "already-exists") {
+      return {status: "paid", orderId: firestoreOrderId};
+    }
+    console.error("verifyRazorpayPayment order create failed:", e);
+    throw new HttpsError("internal", "Could not place order");
+  }
+
+  await sessRef.update({
+    status: "paid",
+    order_id: firestoreOrderId,
+    razorpay_payment_id: paymentId,
+    updated_at: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return {status: "paid", orderId: firestoreOrderId};
+});
+
 // ─────────────────────────── Cashfree Payments ───────────────────────────
 // Set in Firebase Console → Functions runtime env vars / Secret Manager:
 //   CASHFREE_APP_ID, CASHFREE_SECRET_KEY, CASHFREE_ENV ("production"|"sandbox")

@@ -25,7 +25,7 @@ import 'package:chechi_puttu_app/services/birthday_chat_wish_service.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:chechi_puttu_app/theme/chechi_premium.dart';
 import 'package:chechi_puttu_app/widgets/birthday_home_banner.dart';
-import 'package:chechi_puttu_app/services/cashfree_checkout_service.dart';
+import 'package:chechi_puttu_app/services/razorpay_checkout_service.dart';
 import 'package:chechi_puttu_app/services/notifications_service.dart';
 import 'package:chechi_puttu_app/services/orders_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -36,12 +36,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_cashfree_pg_sdk/api/cferrorresponse/cferrorresponse.dart';
-import 'package:flutter_cashfree_pg_sdk/api/cfpayment/cfwebcheckoutpayment.dart';
-import 'package:flutter_cashfree_pg_sdk/api/cfpaymentgateway/cfpaymentgatewayservice.dart';
-import 'package:flutter_cashfree_pg_sdk/api/cfsession/cfsession.dart';
-import 'package:flutter_cashfree_pg_sdk/utils/cfenums.dart';
-import 'package:flutter_cashfree_pg_sdk/utils/cfexceptions.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7407,32 +7402,45 @@ class _CartTab extends StatefulWidget {
 
 class _CartTabState extends State<_CartTab> {
   late final OrdersService _orders;
-  late final CashfreeCheckoutService _cfCheckout;
-  final CFPaymentGatewayService _cashfree = CFPaymentGatewayService();
-  Completer<bool>? _cfPayDone;
+  late final RazorpayCheckoutService _rzpCheckout;
+  final Razorpay _razorpay = Razorpay();
+  Completer<PaymentSuccessResponse?>? _rzpResult;
 
   @override
   void initState() {
     super.initState();
     _orders = OrdersService();
-    _cfCheckout = CashfreeCheckoutService();
-    _cashfree.setCallback(_onCashfreeVerify, _onCashfreeError);
+    _rzpCheckout = RazorpayCheckoutService();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onRzpSuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _onRzpError);
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _onRzpExternalWallet);
   }
 
-  // Cashfree SDK fires these once the in-app checkout finishes. The server
-  // reconcile is the source of truth — we only use these to know the sheet
-  // closed (the boolean is ignored because Android fires onError even on
-  // successful payments).
-  void _onCashfreeVerify(String orderId) {
-    if (_cfPayDone != null && !_cfPayDone!.isCompleted) {
-      _cfPayDone!.complete(true);
+  @override
+  void dispose() {
+    _razorpay.clear();
+    super.dispose();
+  }
+
+  // The Razorpay SDK fires success only when the payment is captured; the app
+  // then verifies the signature server-side. Error fires on failure/cancel.
+  // The completer bridges these events to the awaiting checkout flow (null =
+  // not completed).
+  void _onRzpSuccess(PaymentSuccessResponse r) {
+    if (_rzpResult != null && !_rzpResult!.isCompleted) {
+      _rzpResult!.complete(r);
     }
   }
 
-  void _onCashfreeError(CFErrorResponse error, String orderId) {
-    if (_cfPayDone != null && !_cfPayDone!.isCompleted) {
-      _cfPayDone!.complete(false);
+  void _onRzpError(PaymentFailureResponse r) {
+    if (_rzpResult != null && !_rzpResult!.isCompleted) {
+      _rzpResult!.complete(null);
     }
+  }
+
+  void _onRzpExternalWallet(ExternalWalletResponse r) {
+    // UPI / cards / net banking resolve via success/error. External wallet
+    // selection continues in the wallet app; no completer action needed.
   }
 
   int _deliveryFeeFor(List<CartLineItem> items) => items.isEmpty ? 0 : 30;
@@ -7486,8 +7494,8 @@ class _CartTabState extends State<_CartTab> {
     return null;
   }
 
-  /// Cashfree in-app checkout → wait for server webhook before placing order.
-  Future<void> _runOnlineCashfreeCheckout({
+  /// Razorpay in-app checkout → verify signature server-side → place order.
+  Future<void> _runOnlineRazorpayCheckout({
     required BuildContext context,
     required ScaffoldMessengerState messenger,
     required List<CartLineItem> lines,
@@ -7517,8 +7525,8 @@ class _CartTabState extends State<_CartTab> {
         },
     ];
 
-    // Show loading immediately so the user isn't staring at a frozen screen
-    // while the Firebase function + Cashfree API call completes (~3-5 s).
+    // Show loading immediately while the Firebase function + Razorpay order
+    // creation completes (~2-4 s).
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -7541,9 +7549,9 @@ class _CartTabState extends State<_CartTab> {
       ),
     );
 
-    late final CashfreeCheckoutResult start;
+    late final RazorpayCheckoutResult start;
     try {
-      start = await _cfCheckout.createCheckout(
+      start = await _rzpCheckout.createCheckout(
         items: items,
         deliveryLine: deliveryLine,
         scheduleLine: scheduleLine,
@@ -7565,30 +7573,31 @@ class _CartTabState extends State<_CartTab> {
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
 
-    // Open the native Cashfree checkout. The Android app package is now
-    // whitelisted (type "App", Approved), so the SDK's package verification
-    // passes and checkout opens instead of showing "Broken Link".
-    final payDone = Completer<bool>();
-    _cfPayDone = payDone;
+    // Open the Razorpay checkout. Success fires only on a captured payment.
+    final payResult = Completer<PaymentSuccessResponse?>();
+    _rzpResult = payResult;
+    final user = FirebaseAuth.instance.currentUser;
+    final phoneDigits = (user?.phoneNumber ?? '').replaceAll(RegExp(r'\D'), '');
+    final contact = phoneDigits.length >= 10
+        ? phoneDigits.substring(phoneDigits.length - 10)
+        : null;
     try {
-      final session = CFSessionBuilder()
-          .setEnvironment(
-            start.isProduction
-                ? CFEnvironment.PRODUCTION
-                : CFEnvironment.SANDBOX,
-          )
-          .setOrderId(start.orderId)
-          .setPaymentSessionId(start.paymentSessionId)
-          .build();
-      final payment =
-          CFWebCheckoutPaymentBuilder().setSession(session).build();
-      _cashfree.doPayment(payment);
-    } on CFException catch (e) {
-      _cfPayDone = null;
+      _razorpay.open(<String, dynamic>{
+        'key': start.keyId,
+        'order_id': start.razorpayOrderId,
+        'amount': start.amountPaise,
+        'currency': 'INR',
+        'name': 'Chechi Puttu Kadai',
+        'description': 'Order payment',
+        'theme': <String, dynamic>{'color': '#7C1D1B'},
+        if (contact != null) 'prefill': <String, dynamic>{'contact': contact},
+      });
+    } catch (e) {
+      _rzpResult = null;
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            'Could not open payment: ${e.message}',
+            'Could not open payment: $e',
             style: GoogleFonts.poppins(),
           ),
         ),
@@ -7596,13 +7605,11 @@ class _CartTabState extends State<_CartTab> {
       return;
     }
 
-    // Wait for the Cashfree sheet to close (verify or error fires the
-    // completer). We only use this to know the WebView dismissed — the boolean
-    // result is intentionally ignored because it's unreliable on Android.
+    PaymentSuccessResponse? success;
     try {
-      await payDone.future.timeout(const Duration(minutes: 12));
+      success = await payResult.future.timeout(const Duration(minutes: 12));
     } on TimeoutException {
-      _cfPayDone = null;
+      _rzpResult = null;
       messenger.showSnackBar(
         SnackBar(
           content: Text(
@@ -7613,12 +7620,26 @@ class _CartTabState extends State<_CartTab> {
       );
       return;
     } catch (_) {
-      _cfPayDone = null;
+      _rzpResult = null;
       return;
     }
-    _cfPayDone = null;
+    _rzpResult = null;
 
     if (!context.mounted) return;
+
+    if (success == null) {
+      // The SDK reported failure/cancellation — Razorpay only fires success on
+      // a captured payment, so no money was taken.
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Payment was not completed. No order was placed.',
+            style: GoogleFonts.poppins(),
+          ),
+        ),
+      );
+      return;
+    }
 
     showDialog<void>(
       context: context,
@@ -7636,7 +7657,7 @@ class _CartTabState extends State<_CartTab> {
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
-                  'Confirming payment with your bank…\n'
+                  'Confirming payment…\n'
                   'Do not close the app.',
                   style: GoogleFonts.poppins(height: 1.35),
                 ),
@@ -7647,12 +7668,22 @@ class _CartTabState extends State<_CartTab> {
       ),
     );
 
-    CashfreePaymentOutcome outcome;
+    RazorpayPaymentOutcome outcome;
     try {
-      outcome = await _cfCheckout.confirmPayment(
-        start.sessionId,
-        timeout: const Duration(minutes: 2),
+      outcome = await _rzpCheckout.verifyPayment(
+        sessionId: start.sessionId,
+        razorpayOrderId: success.orderId ?? start.razorpayOrderId,
+        razorpayPaymentId: success.paymentId ?? '',
+        razorpaySignature: success.signature ?? '',
       );
+      if (!outcome.isTerminal) {
+        // Verify didn't confirm (transient) — fall back to the webhook-updated
+        // session doc.
+        outcome = await _rzpCheckout.confirmPayment(
+          start.sessionId,
+          timeout: const Duration(minutes: 2),
+        );
+      }
     } finally {
       if (context.mounted) {
         Navigator.of(context, rootNavigator: true).pop();
@@ -7676,7 +7707,6 @@ class _CartTabState extends State<_CartTab> {
       if (!context.mounted) return;
       widget.cartLinesNotifier.value = [];
     } else if (outcome.isFailed) {
-      // Cashfree confirms the payment did not go through — safe to say so.
       messenger.showSnackBar(
         SnackBar(
           content: Text(
@@ -7687,8 +7717,8 @@ class _CartTabState extends State<_CartTab> {
       );
     } else {
       // Unconfirmed: timed out without a definite answer. Money may have been
-      // debited — never claim "no order placed". The webhook/reconcile will
-      // still create the order automatically once Cashfree confirms.
+      // debited — never claim "no order placed". The webhook still creates the
+      // order automatically once Razorpay confirms.
       messenger.showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 7),
@@ -7757,7 +7787,7 @@ class _CartTabState extends State<_CartTab> {
                   iconBg: const Color(0xFFE3F2FD),
                   iconColor: const Color(0xFF1565C0),
                   title: 'Online Payment',
-                  subtitle: 'UPI, cards, net banking via Cashfree',
+                  subtitle: 'UPI, cards, net banking via Razorpay',
                   onTap: () =>
                       Navigator.pop(ctx, _CheckoutPaymentMode.onlinePayment),
                 ),
@@ -7776,7 +7806,7 @@ class _CartTabState extends State<_CartTab> {
         _lineSum(lines) + _deliveryFeeFor(lines) + _packagingFeeFor(lines);
 
     if (pay == _CheckoutPaymentMode.onlinePayment) {
-      await _runOnlineCashfreeCheckout(
+      await _runOnlineRazorpayCheckout(
         context: context,
         messenger: messenger,
         lines: lines,
