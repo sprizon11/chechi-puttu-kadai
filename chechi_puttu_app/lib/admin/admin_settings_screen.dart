@@ -1,18 +1,12 @@
-import 'dart:convert';
-
-import 'package:chechi_puttu_app/admin/admin_dish_models.dart';
 import 'package:chechi_puttu_app/admin/admin_shop_location_screen.dart';
 import 'package:chechi_puttu_app/services/shop_location_service.dart';
 import 'package:chechi_puttu_app/services/app_refresh.dart';
-import 'package:chechi_puttu_app/services/customer_menu_section_overrides.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class AdminSettingsBody extends StatefulWidget {
@@ -32,8 +26,6 @@ class AdminSettingsBody extends StatefulWidget {
 class _AdminSettingsBodyState extends State<AdminSettingsBody> {
   String _language = 'English';
   String _shopLocationSubtitle = 'Set kadai location on map';
-  static const _prefsCustomCategoriesKey = 'chechi_admin_custom_categories_v1';
-  static const _prefsSectionScheduleKey = 'chechi_menu_section_schedule_v1';
 
   @override
   void initState() {
@@ -337,102 +329,6 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
     }
   }
 
-  Future<void> _backupAdminSettings() async {
-    final p = await SharedPreferences.getInstance();
-    final payload = <String, dynamic>{
-      'version': 1,
-      'createdAt': DateTime.now().toIso8601String(),
-      'language': _language,
-      'menuSnapshots': p.getString(kAdminDishSnapshotsPrefsKey) ?? '{}',
-      'sectionSnapshots':
-          p.getString(kAdminSectionOverridesPrefsKey) ?? '{}',
-      'customCategories': p.getStringList(_prefsCustomCategoriesKey) ?? const [],
-      'menuSectionSchedule': p.getString(_prefsSectionScheduleKey) ?? '{}',
-    };
-    await Clipboard.setData(ClipboardData(text: jsonEncode(payload)));
-    if (!mounted) return;
-    _snack('Admin settings backup copied to clipboard.');
-  }
-
-  Future<void> _restoreAdminSettings() async {
-    final ctrl = TextEditingController();
-    final doRestore = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(
-          'Restore settings backup',
-          style: GoogleFonts.playfairDisplay(
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        content: SizedBox(
-          width: 420,
-          child: TextField(
-            controller: ctrl,
-            minLines: 8,
-            maxLines: 16,
-            decoration: const InputDecoration(
-              hintText: 'Paste backup JSON',
-              border: OutlineInputBorder(),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Restore'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted || doRestore != true) {
-      ctrl.dispose();
-      return;
-    }
-    try {
-      final parsed = jsonDecode(ctrl.text.trim());
-      if (parsed is! Map<String, dynamic>) throw const FormatException('bad');
-      final p = await SharedPreferences.getInstance();
-      final snapshots = parsed['menuSnapshots'];
-      final sectionSnapshots = parsed['sectionSnapshots'];
-      final customCategories = parsed['customCategories'];
-      final sectionSchedule = parsed['menuSectionSchedule'];
-      final language = parsed['language'];
-      if (snapshots is String) {
-        await p.setString(kAdminDishSnapshotsPrefsKey, snapshots);
-      }
-      if (sectionSnapshots is String) {
-        await p.setString(kAdminSectionOverridesPrefsKey, sectionSnapshots);
-      }
-      if (customCategories is List) {
-        final list = customCategories
-            .map((e) => e.toString().trim())
-            .where((e) => e.isNotEmpty)
-            .toList();
-        await p.setStringList(_prefsCustomCategoriesKey, list);
-      }
-      if (sectionSchedule is String) {
-        await p.setString(_prefsSectionScheduleKey, sectionSchedule);
-      }
-      if (language is String && language.trim().isNotEmpty && mounted) {
-        setState(() => _language = language.trim());
-      }
-      await CustomerMenuSectionOverrides.instance.reloadFromPrefs();
-      if (!mounted) return;
-      _snack('Settings restored. Re-open affected screens to refresh.');
-    } catch (_) {
-      if (!mounted) return;
-      _snack('Invalid backup JSON.');
-    } finally {
-      ctrl.dispose();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -485,18 +381,6 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
                 subtitle: 'Update your password',
                 onTap: _changePassword,
               ),
-              _SettingsTile(
-                icon: Icons.group_outlined,
-                iconBg: const Color(0xFFF3E5F5),
-                iconColor: const Color(0xFF7B1FA2),
-                title: 'Manage Staff',
-                subtitle: 'Add or remove staff accounts',
-                onTap: () => _showInfoDialog(
-                  'Manage Staff',
-                  'Staff management UI can be added here.\n'
-                      'Current app is using one admin account.',
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -512,40 +396,12 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
                 onTap: _openShopLocation,
               ),
               _SettingsTile(
-                icon: Icons.storefront_outlined,
-                iconBg: const Color(0xFFFFF0E6),
-                iconColor: const Color(0xFF9A4632),
-                title: 'Business Profile',
-                subtitle: 'Update business information',
-                onTap: () => _showInfoDialog(
-                  'Business Profile',
-                  'Business profile editor can be connected here.\n'
-                      'For now, this opens as an actionable placeholder.',
-                ),
-              ),
-              _SettingsTile(
                 icon: Icons.menu_book_outlined,
                 iconBg: const Color(0xFFE8F5E9),
                 iconColor: const Color(0xFF2E7D32),
                 title: 'Menu Management',
                 subtitle: 'Manage your menu items and categories',
                 onTap: () => widget.onOpenTab(1),
-              ),
-              _SettingsTile(
-                icon: Icons.backup_outlined,
-                iconBg: const Color(0xFFE3F2FD),
-                iconColor: const Color(0xFF1565C0),
-                title: 'Backup Admin Settings',
-                subtitle: 'Copy menu/schedule/settings backup JSON',
-                onTap: _backupAdminSettings,
-              ),
-              _SettingsTile(
-                icon: Icons.settings_backup_restore_rounded,
-                iconBg: const Color(0xFFF3E5F5),
-                iconColor: const Color(0xFF7B1FA2),
-                title: 'Restore Admin Settings',
-                subtitle: 'Restore backup JSON to this device',
-                onTap: _restoreAdminSettings,
               ),
             ],
           ),

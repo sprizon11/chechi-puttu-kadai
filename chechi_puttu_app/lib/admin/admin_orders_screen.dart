@@ -158,37 +158,6 @@ class _AdminOrdersBodyState extends State<AdminOrdersBody> {
                       ],
                     ),
                   ),
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      IconButton(
-                        onPressed: () {},
-                        icon: Icon(Icons.notifications_outlined, color: cs.onSurface),
-                      ),
-                      if (_countForTab(docs, 0) > 0)
-                        Positioned(
-                          right: 6,
-                          top: 6,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFE53935),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '${_countForTab(docs, 0)}',
-                              style: GoogleFonts.poppins(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                                height: 1,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(width: 4),
                   Material(
                     color: surface,
                     borderRadius: BorderRadius.circular(10),

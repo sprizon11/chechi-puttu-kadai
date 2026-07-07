@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:chechi_puttu_app/admin/admin_dish_edit_screen.dart';
 import 'package:chechi_puttu_app/admin/admin_dish_models.dart';
@@ -1834,18 +1835,28 @@ class _DishThumb extends StatelessWidget {
 
   static const _maroon = Color(0xFF5D1F1A);
 
+  // Cache decoded thumbnail bytes by base64 hash. The menu list rebuilds on
+  // every search keystroke / category change, so without this each rebuild
+  // re-decoded every dish image — the main source of the lag.
+  static final Map<int, Uint8List> _decodeCache = {};
+
   @override
   Widget build(BuildContext context) {
     final b64 = imageBase64;
     if (b64 != null && b64.isNotEmpty) {
       try {
-        final bytes = base64Decode(b64);
+        final key = b64.hashCode;
+        final bytes = _decodeCache[key] ??= base64Decode(b64);
         return Image.memory(
           bytes,
-          key: ValueKey(b64.hashCode),
+          key: ValueKey(key),
           fit: BoxFit.cover,
           width: 72,
           height: 72,
+          // Decode at thumbnail resolution (2x for density) instead of the
+          // full image — huge decode/memory win for the grid.
+          cacheWidth: 150,
+          cacheHeight: 150,
           gaplessPlayback: true,
           errorBuilder: (_, _, _) => _fallback(),
         );
