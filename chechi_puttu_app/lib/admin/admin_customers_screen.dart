@@ -443,7 +443,6 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
     final muted = theme.brightness == Brightness.dark
         ? cs.onSurface.withValues(alpha: 0.72)
         : const Color(0xFF7A6A62);
@@ -484,99 +483,40 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: cs.outlineVariant),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: isDark
-                      ? [
-                          cs.surface.withValues(alpha: 0.96),
-                          cs.surfaceContainerHighest.withValues(alpha: 0.42),
-                        ]
-                      : [
-                        const Color(0xFFFFFCF8),
-                        const Color(0xFFF9F1E7),
-                      ],
+            const SizedBox(height: 8),
+            Text(
+              'Customers',
+              style: GoogleFonts.playfairDisplay(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                color: _maroon,
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Customer Studio',
-                        style: GoogleFonts.playfairDisplay(
-                          fontSize: 31,
-                          fontWeight: FontWeight.w700,
-                          color: _maroon,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: cs.surface,
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: cs.outlineVariant),
-                      ),
-                      child: Text(
-                        '${searched.length} visible',
-                        style: GoogleFonts.poppins(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          color: cs.onSurface,
-                        ),
-                      ),
-                    ),
-                  ],
+            if (_usersErr != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Could not load user profiles. Deploy updated Firestore rules '
+                'so admins can read `users`.\n$_usersErr',
+                style: GoogleFonts.poppins(
+                  fontSize: 11.5,
+                  color: cs.error,
+                  height: 1.35,
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'Search, segment, and act on customer behavior with one premium dashboard view.',
-                  style: GoogleFonts.poppins(
-                    fontSize: 12.5,
-                    height: 1.35,
-                    fontWeight: FontWeight.w500,
-                    color: muted,
-                  ),
+              ),
+            ],
+            if (_ordersErr != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Could not load orders (order counts may be incomplete).\n'
+                '$_ordersErr',
+                style: GoogleFonts.poppins(
+                  fontSize: 11.5,
+                  color: cs.error,
+                  height: 1.35,
                 ),
-                if (_usersErr != null) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    'Could not load user profiles. Deploy updated Firestore rules '
-                    'so admins can read `users`.\n$_usersErr',
-                    style: GoogleFonts.poppins(
-                      fontSize: 11.5,
-                      color: cs.error,
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-                if (_ordersErr != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Could not load orders (order counts may be incomplete).\n'
-                    '$_ordersErr',
-                    style: GoogleFonts.poppins(
-                      fontSize: 11.5,
-                      color: cs.error,
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
+              ),
+            ],
+            const SizedBox(height: 14),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -754,67 +694,6 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
             ],
           ),
           const SizedBox(height: 12),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _SegmentPill(
-                  label: _CustomerSegment.all.label,
-                  selected: _segment == _CustomerSegment.all,
-                  onTap: () => setState(() => _segment = _CustomerSegment.all),
-                ),
-                const SizedBox(width: 8),
-                _SegmentPill(
-                  label: _CustomerSegment.birthdayToday
-                      .labelWithCount(metrics.birthdaysToday),
-                  selected: _segment == _CustomerSegment.birthdayToday,
-                  onTap: () =>
-                      setState(() => _segment = _CustomerSegment.birthdayToday),
-                ),
-                const SizedBox(width: 8),
-                _SegmentPill(
-                  label: _CustomerSegment.newThisMonth.label,
-                  selected: _segment == _CustomerSegment.newThisMonth,
-                  onTap: () => setState(() => _segment = _CustomerSegment.newThisMonth),
-                ),
-                const SizedBox(width: 8),
-                _SegmentPill(
-                  label: _CustomerSegment.active.label,
-                  selected: _segment == _CustomerSegment.active,
-                  onTap: () => setState(() => _segment = _CustomerSegment.active),
-                ),
-                const SizedBox(width: 8),
-                _SegmentPill(
-                  label: _CustomerSegment.repeat.label,
-                  selected: _segment == _CustomerSegment.repeat,
-                  onTap: () => setState(() => _segment = _CustomerSegment.repeat),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Customer Directory',
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 21,
-              fontWeight: FontWeight.w700,
-              color: cs.onSurface,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            _segment == _CustomerSegment.birthdayToday
-                ? '${searched.length} member${searched.length == 1 ? '' : 's'} '
-                    'celebrating birthday today '
-                    '(${metrics.birthdaysToday} total with DOB on file).'
-                : 'Tap any customer to view full profile and delete options.',
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: muted,
-            ),
-          ),
-          const SizedBox(height: 10),
           if (searched.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 30),
@@ -1501,50 +1380,6 @@ class _CustomerListTile extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SegmentPill extends StatelessWidget {
-  const _SegmentPill({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: selected ? cs.primary : cs.outlineVariant,
-            ),
-            color: selected
-                ? cs.primary.withValues(alpha: 0.14)
-                : cs.surface,
-          ),
-          child: Text(
-            label,
-            style: GoogleFonts.poppins(
-              fontSize: 11.5,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-              color: selected ? cs.primary : cs.onSurfaceVariant,
-            ),
-          ),
         ),
       ),
     );

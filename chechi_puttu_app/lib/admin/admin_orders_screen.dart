@@ -357,67 +357,6 @@ class _AdminOrdersBodyState extends State<AdminOrdersBody> {
                     ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Column(
-                children: [
-                  Text(
-                    '${filtered.length} ${tabLabels[_tab].toLowerCase()} shown.',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.poppins(fontSize: 11.5, color: muted),
-                  ),
-                  if (_tab == 0) ...[
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.info_outline_rounded, size: 16, color: muted),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            'Accept moves order to Preparing. Then use Mark Ready and Mark Completed.',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.poppins(fontSize: 11, color: muted),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ] else if (_tab == 1) ...[
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.info_outline_rounded, size: 16, color: muted),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            'Tap Mark Ready when food is packed for pickup/delivery.',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.poppins(fontSize: 11, color: muted),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ] else if (_tab == 2) ...[
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.info_outline_rounded, size: 16, color: muted),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            'Tap Mark Completed after customer receives the order.',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.poppins(fontSize: 11, color: muted),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
               ],
             );
           },

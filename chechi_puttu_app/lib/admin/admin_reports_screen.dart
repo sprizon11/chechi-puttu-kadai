@@ -10,6 +10,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:pdf/pdf.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:share_plus/share_plus.dart';
 
 class AdminReportsBody extends StatefulWidget {
   const AdminReportsBody({super.key});
@@ -25,18 +26,6 @@ class _AdminReportsBodyState extends State<AdminReportsBody> {
   String _csvCell(String value) {
     final escaped = value.replaceAll('"', '""');
     return '"$escaped"';
-  }
-
-  Future<Directory> _bestDownloadDirectory() async {
-    try {
-      final d = await getDownloadsDirectory();
-      if (d != null) return d;
-    } catch (_) {}
-    try {
-      final d = await getExternalStorageDirectory();
-      if (d != null) return d;
-    } catch (_) {}
-    return getApplicationDocumentsDirectory();
   }
 
   String _safeRangeLabel(DateTime start, DateTime end) {
@@ -67,19 +56,17 @@ class _AdminReportsBodyState extends State<AdminReportsBody> {
       ].join(','));
     }
     final csv = rows.join('\n');
-    final dir = await _bestDownloadDirectory();
+    final dir = await getTemporaryDirectory();
     final file = File(
       '${dir.path}/chechi_report_${_safeRangeLabel(start, end)}.csv',
     );
     await file.writeAsString(csv, flush: true);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'CSV downloaded: ${file.path}',
-          style: GoogleFonts.poppins(),
-        ),
-      ),
+    // Open the native share sheet so the admin can save it to Files/Drive or
+    // send it — writing to the app sandbox left it where users couldn't find it.
+    await Share.shareXFiles(
+      [XFile(file.path, mimeType: 'text/csv')],
+      subject: 'Chechi Puttu report (CSV)',
     );
   }
 
@@ -132,19 +119,15 @@ class _AdminReportsBodyState extends State<AdminReportsBody> {
       ),
     );
     final bytes = await pdf.save();
-    final dir = await _bestDownloadDirectory();
+    final dir = await getTemporaryDirectory();
     final file = File(
       '${dir.path}/chechi_report_${_safeRangeLabel(start, end)}.pdf',
     );
     await file.writeAsBytes(bytes, flush: true);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'PDF downloaded: ${file.path}',
-          style: GoogleFonts.poppins(),
-        ),
-      ),
+    await Share.shareXFiles(
+      [XFile(file.path, mimeType: 'application/pdf')],
+      subject: 'Chechi Puttu report (PDF)',
     );
   }
 
@@ -261,25 +244,6 @@ class _AdminReportsBodyState extends State<AdminReportsBody> {
         final statusBreakdown = _statusBreakdown(current);
         final paymentBreakdown = _paymentBreakdown(current);
         final spotsAndLabels = _lineSeries(current, start, spanDays);
-        final uniqueCustomers = current
-            .map((d) => _uid(d.data()))
-            .where((u) => u.trim().isNotEmpty)
-            .toSet()
-            .length;
-        final repeatRate = uniqueCustomers == 0
-            ? 0.0
-            : (currentSummary.repeatCustomers * 100.0 / uniqueCustomers);
-        final cancelledCount = current.where((d) {
-          final s = ((d.data()['status'] as String?) ?? '').toLowerCase();
-          return s == 'cancelled' || s == 'rejected';
-        }).length;
-        final cancelRate = currentSummary.totalOrders == 0
-            ? 0.0
-            : (cancelledCount * 100.0 / currentSummary.totalOrders);
-        final avgOrderValue = currentSummary.totalOrders == 0
-            ? 0.0
-            : (currentSummary.revenue / currentSummary.totalOrders);
-        final peakHour = _peakHourLabel(current);
 
         return AppPullToRefresh(
           onRefresh: AppRefresh.refreshAdminMenuData,
@@ -338,15 +302,6 @@ class _AdminReportsBodyState extends State<AdminReportsBody> {
                           ),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Track growth, quality, and operational signals in one premium dashboard.',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w500,
-                        color: muted,
-                      ),
                     ),
                     const SizedBox(height: 12),
                     InkWell(
@@ -520,41 +475,6 @@ class _AdminReportsBodyState extends State<AdminReportsBody> {
                 },
               ),
               const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-                decoration: BoxDecoration(
-                  color: cs.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: cs.outlineVariant),
-                ),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _InsightChip(
-                      label: 'Repeat Rate',
-                      value: '${repeatRate.toStringAsFixed(1)}%',
-                      color: const Color(0xFF2E7D32),
-                    ),
-                    _InsightChip(
-                      label: 'Cancel Rate',
-                      value: '${cancelRate.toStringAsFixed(1)}%',
-                      color: const Color(0xFFC62828),
-                    ),
-                    _InsightChip(
-                      label: 'Avg Order',
-                      value: '₹${avgOrderValue.toStringAsFixed(0)}',
-                      color: const Color(0xFF1565C0),
-                    ),
-                    _InsightChip(
-                      label: 'Peak Hour',
-                      value: peakHour,
-                      color: const Color(0xFF7B1FA2),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
               _SalesOverviewCard(
                 spots: spotsAndLabels.$1,
                 labels: spotsAndLabels.$2,
@@ -723,51 +643,6 @@ class _ReportMetricCard extends StatelessWidget {
               fontSize: 10.2,
               fontWeight: FontWeight.w600,
               color: cs.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InsightChip extends StatelessWidget {
-  const _InsightChip({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  final String label;
-  final String value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.28)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '$label: ',
-            style: GoogleFonts.poppins(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w600,
-              color: color,
-            ),
-          ),
-          Text(
-            value,
-            style: GoogleFonts.poppins(
-              fontSize: 10.8,
-              fontWeight: FontWeight.w800,
-              color: color,
             ),
           ),
         ],
@@ -1025,19 +900,21 @@ class _StatusCard extends StatelessWidget {
   final int totalOrders;
   final List<MapEntry<String, int>> statusBreakdown;
 
+  static const _colors = <Color>[
+    Color(0xFF4CAF50),
+    Color(0xFFE53935),
+    Color(0xFFFFA726),
+    Color(0xFF5C6BC0),
+    Color(0xFF8D6E63),
+    Color(0xFF26A69A),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final colors = <Color>[
-      const Color(0xFF4CAF50),
-      const Color(0xFFE53935),
-      const Color(0xFFFFA726),
-      const Color(0xFF5C6BC0),
-      const Color(0xFF8D6E63),
-    ];
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
       decoration: BoxDecoration(
         color: cs.surface,
         borderRadius: BorderRadius.circular(14),
@@ -1046,82 +923,101 @@ class _StatusCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Orders by Status',
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: cs.onSurface,
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 138,
-            child: PieChart(
-              PieChartData(
-                sectionsSpace: 1.5,
-                centerSpaceRadius: 32,
-                sections: [
-                  for (var i = 0; i < statusBreakdown.length; i++)
-                    PieChartSectionData(
-                      value: statusBreakdown[i].value.toDouble(),
-                      color: colors[i % colors.length],
-                      radius: 44,
-                      title: '',
-                    ),
-                ],
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Orders by Status',
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: cs.onSurface,
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '$totalOrders total',
-            style: GoogleFonts.poppins(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: cs.onSurface,
-            ),
-          ),
-          const SizedBox(height: 6),
-          for (var i = 0; i < statusBreakdown.length && i < 4; i++)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: colors[i % colors.length],
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      statusBreakdown[i].key,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.poppins(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    '${statusBreakdown[i].value}',
-                    style: GoogleFonts.poppins(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: cs.onSurface,
-                    ),
-                  ),
-                ],
+              Text(
+                '$totalOrders total',
+                style: GoogleFonts.poppins(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: cs.onSurfaceVariant,
+                ),
               ),
-            ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (statusBreakdown.isEmpty)
+            Text(
+              'No orders in this range.',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: cs.onSurfaceVariant,
+              ),
+            )
+          else
+            for (var i = 0; i < statusBreakdown.length; i++) ...[
+              _statusBar(context, statusBreakdown[i], _colors[i % _colors.length]),
+              if (i < statusBreakdown.length - 1) const SizedBox(height: 12),
+            ],
         ],
       ),
+    );
+  }
+
+  Widget _statusBar(
+    BuildContext context,
+    MapEntry<String, int> entry,
+    Color color,
+  ) {
+    final cs = Theme.of(context).colorScheme;
+    final pct = totalOrders == 0 ? 0.0 : entry.value / totalOrders;
+    final label = entry.key.isEmpty
+        ? 'Unknown'
+        : '${entry.key[0].toUpperCase()}${entry.key.substring(1)}';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 9,
+              height: 9,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: cs.onSurface,
+                ),
+              ),
+            ),
+            Text(
+              '${entry.value} · ${(pct * 100).toStringAsFixed(0)}%',
+              style: GoogleFonts.poppins(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: pct.clamp(0.0, 1.0),
+            minHeight: 8,
+            backgroundColor: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1479,28 +1375,6 @@ String _title(String s) {
       .split(RegExp(r'\s+'))
       .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
       .join(' ');
-}
-
-String _peakHourLabel(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
-  final counts = List<int>.filled(24, 0);
-  for (final d in docs) {
-    final t = _createdAt(d.data());
-    if (t == null) continue;
-    counts[t.hour]++;
-  }
-  var bestHour = 0;
-  var bestCount = 0;
-  for (var h = 0; h < counts.length; h++) {
-    if (counts[h] > bestCount) {
-      bestCount = counts[h];
-      bestHour = h;
-    }
-  }
-  final start = bestHour % 12 == 0 ? 12 : bestHour % 12;
-  final endHour = (bestHour + 1) % 24;
-  final end = endHour % 12 == 0 ? 12 : endHour % 12;
-  final ampm = bestHour >= 12 ? 'PM' : 'AM';
-  return '$start-$end $ampm';
 }
 
 String _fmtInr(int rupees) {
