@@ -1,11 +1,12 @@
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {onRequest} = require("firebase-functions/v2/https");
-const {onDocumentCreated, onDocumentUpdated} = require("firebase-functions/v2/firestore");
+const {onDocumentCreated, onDocumentUpdated, onDocumentWritten} = require("firebase-functions/v2/firestore");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const functionsV1 = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const {initializeFirestore} = require("firebase-admin/firestore");
 const Razorpay = require("razorpay");
+const {google} = require("googleapis");
 
 const app = admin.initializeApp();
 /** asia-south1 database (Console: `default`). Not (default)/nam5. */
@@ -1746,5 +1747,93 @@ exports.onSupportAbuseGuard = onDocumentCreated(
         body: `User ${customerUid} sent ${recentCustomerCount} messages in ~2 minutes.`,
         data: {type: "support_abuse_alert", customer_uid: customerUid},
       });
+    },
+);
+
+// ─────────── Bulk (hospital/corporate) enrollment → Google Sheet ───────────
+// When a hospital/corporate customer completes the enrollment form, append a
+// row to the shop's Google Sheet. The sheet must be shared (Editor) with this
+// function's service account: 316102307451-compute@developer.gserviceaccount.com
+const BULK_ORDERS_SHEET_ID = "169gBdQ9r0hrIshrkWMVni-a8KCKZ6qwPCas9rqGHHDE";
+const BULK_ORDERS_SHEET_TAB = "Sheet1";
+const BULK_ORDERS_HEADER = [
+  "Submitted At", "Type", "Organisation", "Your Name", "Order Person",
+  "Job Position", "Phone", "Alt Phone", "Preferred Time", "Delivery Days",
+  "Selected Dishes", "Customer UID",
+];
+
+async function appendBulkOrderRow(row) {
+  const auth = new google.auth.GoogleAuth({
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+  const sheets = google.sheets({version: "v4", auth});
+
+  // Write the header row once, only if the sheet is currently empty.
+  const first = await sheets.spreadsheets.values.get({
+    spreadsheetId: BULK_ORDERS_SHEET_ID,
+    range: `${BULK_ORDERS_SHEET_TAB}!A1:A1`,
+  });
+  if (!first.data.values || first.data.values.length === 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: BULK_ORDERS_SHEET_ID,
+      range: `${BULK_ORDERS_SHEET_TAB}!A1`,
+      valueInputOption: "RAW",
+      requestBody: {values: [BULK_ORDERS_HEADER]},
+    });
+  }
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: BULK_ORDERS_SHEET_ID,
+    range: `${BULK_ORDERS_SHEET_TAB}!A1`,
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: {values: [row]},
+  });
+}
+
+exports.onBulkEnrollmentToSheet = onDocumentWritten(
+    {document: "users/{userId}", database: FIRESTORE_DB, region: "asia-south1"},
+    async (event) => {
+      const after = event.data?.after?.data();
+      if (!after) return; // doc deleted
+      const before = event.data?.before?.data() || {};
+      const beforeBulk = before.bulkOrder || {};
+      const afterBulk = after.bulkOrder || {};
+
+      // Fire only when an enrollment newly becomes complete (one row per submit).
+      if (afterBulk.enrollmentComplete !== true) return;
+      if (beforeBulk.enrollmentComplete === true) return;
+
+      const orderType = String(after.orderType || "").trim().toLowerCase();
+      if (orderType !== "hospital" && orderType !== "corporate") return;
+
+      const days = Array.isArray(afterBulk.days) ? afterBulk.days.join(", ") : "";
+      const dishes = Array.isArray(afterBulk.selectedDishes) ?
+        afterBulk.selectedDishes.join(", ") : "";
+      const submittedAt = new Date().toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+      });
+
+      const row = [
+        submittedAt,
+        orderType === "hospital" ? "Hospital" : "Corporate",
+        String(afterBulk.organizationName || ""),
+        String(afterBulk.contactName || ""),
+        String(afterBulk.orderPersonName || ""),
+        String(afterBulk.orderPersonDesignation || ""),
+        String(afterBulk.phone || ""),
+        String(afterBulk.alternatePhone || ""),
+        String(afterBulk.preferredTime || ""),
+        days,
+        dishes,
+        event.params.userId,
+      ];
+
+      try {
+        await appendBulkOrderRow(row);
+        console.log(`Bulk enrollment row added for ${event.params.userId}`);
+      } catch (e) {
+        console.error("bulk enrollment -> sheet failed:", e);
+      }
     },
 );
