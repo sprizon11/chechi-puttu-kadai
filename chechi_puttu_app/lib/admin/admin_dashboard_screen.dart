@@ -5,6 +5,7 @@ import 'package:chechi_puttu_app/admin/admin_orders_screen.dart';
 import 'package:chechi_puttu_app/admin/admin_reports_screen.dart';
 import 'package:chechi_puttu_app/admin/admin_settings_screen.dart';
 import 'package:chechi_puttu_app/services/app_refresh.dart';
+import 'package:chechi_puttu_app/theme/chechi_motion.dart';
 import 'package:chechi_puttu_app/theme/chechi_premium.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -34,7 +35,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   void _openChats() {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const AdminChatsScreen()),
+      ChechiPageRoute(builder: (_) => const AdminChatsScreen()),
     );
   }
 

@@ -8,6 +8,7 @@ import 'package:chechi_puttu_app/services/customer_menu_overrides.dart';
 import 'package:chechi_puttu_app/services/customer_menu_section_overrides.dart';
 import 'package:chechi_puttu_app/services/menu_deleted_dishes.dart';
 import 'package:chechi_puttu_app/services/menu_image_utils.dart';
+import 'package:chechi_puttu_app/theme/chechi_motion.dart';
 import 'package:chechi_puttu_app/theme/chechi_premium.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -912,7 +913,7 @@ class _AdminMenuManagementBodyState extends State<AdminMenuManagementBody> {
     required AdminDishEditSnapshot initial,
   }) async {
     final result = await Navigator.of(context).push<AdminDishEditSnapshot>(
-      MaterialPageRoute(
+      ChechiPageRoute(
         builder: (ctx) => AdminDishEditScreen(
           sectionTitle: sectionTitle,
           catalogDish: dish,

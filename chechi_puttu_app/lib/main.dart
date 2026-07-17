@@ -23,6 +23,7 @@ import 'package:chechi_puttu_app/services/menu_deleted_dishes.dart';
 import 'package:chechi_puttu_app/services/user_profile_service.dart';
 import 'package:chechi_puttu_app/services/birthday_chat_wish_service.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
+import 'package:chechi_puttu_app/theme/chechi_motion.dart';
 import 'package:chechi_puttu_app/theme/chechi_premium.dart';
 import 'package:chechi_puttu_app/widgets/birthday_home_banner.dart';
 import 'package:chechi_puttu_app/services/razorpay_checkout_service.dart';
@@ -77,7 +78,7 @@ class _ChechiPuttuAppState extends State<ChechiPuttuApp> {
       themeMode: ThemeMode.light,
       theme: _buildLightTheme(),
       darkTheme: _buildDarkTheme(),
-      themeAnimationDuration: const Duration(milliseconds: 320),
+      themeAnimationDuration: ChechiBrand.normal,
       themeAnimationCurve: Curves.easeOutCubic,
       builder: (context, child) {
         if (child == null) return const SizedBox.shrink();
@@ -1647,7 +1648,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 3),
                   child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 220),
+                    duration: ChechiBrand.fast,
                     height: 4,
                     decoration: BoxDecoration(
                       color: on ? active : inactive,
@@ -2410,9 +2411,131 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     );
   }
 
-  /// Step 0 phone gate for Google sign-ups: send OTP, verify, then Next opens.
+  /// Returns the OTP slot to the number so a typo can be corrected.
+  void _changeMobileNumber() {
+    if (_otpBusy || _busy) return;
+    _stopResendTimer();
+    setState(() {
+      _otpSent = false;
+      _phoneVerificationId = null;
+      _otpSentForDigits = '';
+      _otpCtrl.clear();
+    });
+  }
+
+  Widget _mobileInputCard(Color titleMaroon, Color bodyMuted) {
+    return _AuthGlassInputCard(
+      key: const ValueKey<String>('signup_field_mobile'),
+      icon: Icons.phone_outlined,
+      iconColor: bodyMuted,
+      trailing: _phoneVerified
+          ? const Icon(
+              Icons.verified_rounded,
+              size: 18,
+              color: Color(0xFF1B7A3D),
+            )
+          : null,
+      child: Material(
+        color: Colors.transparent,
+        child: TextField(
+          controller: _mobileCtrl,
+          enabled: !_busy && !_otpBusy && !_phoneVerified,
+          keyboardType: TextInputType.phone,
+          maxLength: 10,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: titleMaroon,
+          ),
+          decoration: authGlassFieldDecoration(
+            hintText: '10-digit mobile number',
+          ).copyWith(counterText: ''),
+        ),
+      ),
+    );
+  }
+
+  Widget _otpInputCard(Color titleMaroon, Color bodyMuted) {
+    return _AuthGlassInputCard(
+      key: const ValueKey<String>('signup_field_otp'),
+      icon: Icons.lock_outline_rounded,
+      iconColor: bodyMuted,
+      child: Material(
+        color: Colors.transparent,
+        child: TextField(
+          controller: _otpCtrl,
+          focusNode: _otpFocus,
+          enabled: !_otpBusy && !_busy,
+          keyboardType: TextInputType.number,
+          maxLength: 6,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 4,
+            color: titleMaroon,
+          ),
+          decoration: authGlassFieldDecoration(
+            hintText: 'Enter 6-digit OTP',
+          ).copyWith(counterText: ''),
+          onChanged: (v) {
+            setState(() {});
+            if (v.length == 6) unawaited(_verifyPhoneOtp());
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Step 0 phone gate for Google sign-ups. The number field itself becomes the
+  /// OTP field once the code is sent — one slot, never two stacked fields.
   List<Widget> _phoneOtpSection(Color titleMaroon, Color bodyMuted) {
     if (!_needsPhoneOtp) return const [];
+    final otpMode = _otpSent && !_phoneVerified;
+    final label = otpMode
+        ? 'OTP sent to +91 $_otpSentForDigits'
+        : 'Mobile number';
+
+    return [
+      const SizedBox(height: 14),
+      AnimatedSwitcher(
+        duration: ChechiBrand.fast,
+        child: Text(
+          label,
+          key: ValueKey<String>(label),
+          style: GoogleFonts.poppins(
+            color: bodyMuted,
+            fontSize: 13,
+            height: 1.3,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      const SizedBox(height: 4),
+      AnimatedSwitcher(
+        duration: ChechiBrand.normal,
+        switchInCurve: ChechiBrand.ease,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) {
+          final slide = Tween<Offset>(
+            begin: const Offset(0.14, 0),
+            end: Offset.zero,
+          ).animate(animation);
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(position: slide, child: child),
+          );
+        },
+        child: otpMode
+            ? _otpInputCard(titleMaroon, bodyMuted)
+            : _mobileInputCard(titleMaroon, bodyMuted),
+      ),
+      ..._phoneActionRow(bodyMuted),
+    ];
+  }
+
+  List<Widget> _phoneActionRow(Color bodyMuted) {
     const okGreen = Color(0xFF1B7A3D);
 
     if (_phoneVerified) {
@@ -2450,45 +2573,6 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     }
 
     return [
-      const SizedBox(height: 12),
-      Text(
-        'Enter the 6-digit OTP',
-        style: GoogleFonts.poppins(
-          color: bodyMuted,
-          fontSize: 13,
-          height: 1.3,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      const SizedBox(height: 4),
-      _AuthGlassInputCard(
-        icon: Icons.lock_outline_rounded,
-        iconColor: bodyMuted,
-        child: Material(
-          color: Colors.transparent,
-          child: TextField(
-            controller: _otpCtrl,
-            focusNode: _otpFocus,
-            enabled: !_otpBusy && !_busy,
-            keyboardType: TextInputType.number,
-            maxLength: 6,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 4,
-              color: titleMaroon,
-            ),
-            decoration: authGlassFieldDecoration(
-              hintText: 'Enter OTP',
-            ).copyWith(counterText: ''),
-            onChanged: (v) {
-              setState(() {});
-              if (v.length == 6) unawaited(_verifyPhoneOtp());
-            },
-          ),
-        ),
-      ),
       const SizedBox(height: 10),
       Row(
         children: [
@@ -2500,6 +2584,26 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
           const Spacer(),
           _resendControl(bodyMuted),
         ],
+      ),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton(
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(0, 32),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          onPressed: (_otpBusy || _busy) ? null : _changeMobileNumber,
+          child: Text(
+            'Change number',
+            style: GoogleFonts.poppins(
+              color: bodyMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        ),
       ),
     ];
   }
@@ -2615,49 +2719,8 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                   ],
                 ),
               ),
-        if (createStyle && !_lockVerifiedMobile) ...[
-          const SizedBox(height: 14),
-          Text(
-            'Mobile number',
-            style: GoogleFonts.poppins(
-              color: bodyMuted,
-              fontSize: 13,
-              height: 1.3,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          _AuthGlassInputCard(
-            icon: Icons.phone_outlined,
-            iconColor: bodyMuted,
-            trailing: _phoneVerified
-                ? Icon(
-                    Icons.verified_rounded,
-                    size: 18,
-                    color: const Color(0xFF1B7A3D),
-                  )
-                : null,
-            child: Material(
-              color: Colors.transparent,
-              child: TextField(
-                controller: _mobileCtrl,
-                enabled: !_busy && !_otpBusy && !_phoneVerified,
-                keyboardType: TextInputType.phone,
-                maxLength: 10,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: titleMaroon,
-                ),
-                decoration: authGlassFieldDecoration(
-                  hintText: '10-digit mobile number',
-                ).copyWith(counterText: ''),
-              ),
-            ),
-          ),
+        if (createStyle && !_lockVerifiedMobile)
           ..._phoneOtpSection(titleMaroon, bodyMuted),
-        ],
         if (createStyle) ...[
           const SizedBox(height: 12),
           Align(
@@ -4243,6 +4306,7 @@ InputDecoration authGlassFieldDecoration({
 /// Login / signup glass field shell (icon + child).
 class _AuthGlassInputCard extends StatelessWidget {
   const _AuthGlassInputCard({
+    super.key,
     required this.icon,
     required this.iconColor,
     required this.child,
@@ -4869,7 +4933,7 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _openEditProfile() async {
     if (!mounted) return;
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
+      ChechiPageRoute(
         builder: (ctx) => EditProfileScreen(
           isDark: widget.isDark,
           onToggleTheme: widget.onToggleTheme,
@@ -4935,7 +4999,7 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _openCustomerChat() async {
     if (!mounted) return;
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => const CustomerChatScreen()),
+      ChechiPageRoute(builder: (_) => const CustomerChatScreen()),
     );
   }
 
@@ -5042,7 +5106,7 @@ class _HomeScreenState extends State<HomeScreen>
     _lastNavIndex = widget.navIndexNotifier.value;
     _tabAnim = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
+      duration: ChechiBrand.fast,
     )..value = 1;
     _navListener = () {
       final v = widget.navIndexNotifier.value;
@@ -5952,7 +6016,9 @@ class _HomeScreenState extends State<HomeScreen>
                   itemCount: dishes.length,
                   itemBuilder: (context, idx) {
                     final m = _mergedDish(sectionId, dishes[idx]);
-                    return LayoutBuilder(
+                    return ChechiReveal.staggered(
+                      index: idx,
+                      child: LayoutBuilder(
                       builder: (context, constraints) {
                         final h = constraints.maxWidth / 0.88;
                         return _ProductCard(
@@ -5977,6 +6043,7 @@ class _HomeScreenState extends State<HomeScreen>
                               _removeDishFromCart(m.title, m.subtitle),
                         );
                       },
+                      ),
                     );
                   },
                 ),
@@ -10219,8 +10286,8 @@ class _OrdersFilterRow extends StatelessWidget {
                   onTap: () => onChanged(i),
                   borderRadius: BorderRadius.circular(20),
                   child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    curve: Curves.easeOut,
+                    duration: ChechiBrand.fast,
+                    curve: ChechiBrand.ease,
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
                       color: selected == i
@@ -11001,7 +11068,7 @@ class _CategoriesTab extends StatelessWidget {
                                     imageAsset: fallbackAsset,
                                     onOpen: () {
                                       Navigator.of(context).push<void>(
-                                        MaterialPageRoute<void>(
+                                        ChechiPageRoute<void>(
                                           builder: (ctx) =>
                                               _MenuVarietyDetailScreen(
                                             section: sec,

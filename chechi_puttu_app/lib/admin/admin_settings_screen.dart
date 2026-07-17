@@ -5,6 +5,7 @@ import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:chechi_puttu_app/theme/chechi_motion.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -45,7 +46,7 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
 
   Future<void> _openShopLocation() async {
     final saved = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const AdminShopLocationScreen()),
+      ChechiPageRoute(builder: (_) => const AdminShopLocationScreen()),
     );
     if (saved == true) {
       await _loadShopLocationSubtitle();

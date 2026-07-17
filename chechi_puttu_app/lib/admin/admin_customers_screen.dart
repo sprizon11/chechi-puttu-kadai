@@ -6,6 +6,7 @@ import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:chechi_puttu_app/theme/chechi_motion.dart';
 import 'package:flutter/material.dart';
 import 'package:chechi_puttu_app/services/app_map_tiles.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -149,7 +150,7 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
     }
     if (!mounted) return;
     await Navigator.of(context, rootNavigator: true).push<void>(
-      MaterialPageRoute(
+      ChechiPageRoute(
         builder: (_) => AdminCustomerMapScreen(
           customerName: c.displayName,
           latitude: c.latitude!,

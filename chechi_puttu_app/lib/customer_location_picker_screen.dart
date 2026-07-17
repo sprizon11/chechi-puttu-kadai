@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:chechi_puttu_app/theme/chechi_motion.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:chechi_puttu_app/services/app_map_tiles.dart';
@@ -504,7 +505,7 @@ Future<CustomerMapPickResult?> openCustomerLocationPicker(
   String? initialAddressHint,
 }) {
   return Navigator.of(context).push<CustomerMapPickResult>(
-    MaterialPageRoute(
+    ChechiPageRoute(
       builder: (_) => CustomerLocationPickerScreen(
         initialLatitude: initialLatitude,
         initialLongitude: initialLongitude,

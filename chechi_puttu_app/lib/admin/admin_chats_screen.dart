@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:chechi_puttu_app/services/chechi_firestore.dart';
+import 'package:chechi_puttu_app/theme/chechi_motion.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -81,7 +82,7 @@ class _AdminChatsScreenState extends State<AdminChatsScreen> {
     }, SetOptions(merge: true));
     if (!mounted) return;
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      ChechiPageRoute<void>(
         builder: (_) => AdminChatDetailScreen(
           args: AdminChatDetailArgs(
             customerUid: t.uid,
