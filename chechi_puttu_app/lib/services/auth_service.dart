@@ -234,6 +234,112 @@ class AuthService {
     return signInWithPhoneCredential(credential);
   }
 
+  /// Sends an SMS OTP for *linking* a number to the signed-in account.
+  /// Unlike [startPhoneVerification] this never signs in — an auto-retrieved
+  /// credential is handed back so the caller can link it, because signing in
+  /// here would replace the Google user we are trying to attach the phone to.
+  Future<void> startPhoneVerificationForLink({
+    required String phoneNumber,
+    required void Function(String verificationId) onCodeSent,
+    required void Function(FirebaseAuthException e) onVerificationFailed,
+    required Future<void> Function(PhoneAuthCredential credential)
+        onAutoVerified,
+  }) async {
+    if (kIsWeb) {
+      onVerificationFailed(
+        FirebaseAuthException(
+          code: 'operation-not-allowed',
+          message: 'Phone verification runs in the Android/iOS app.',
+        ),
+      );
+      return;
+    }
+    final formatted = normalizePhoneForFirebase(phoneNumber);
+    if (kDebugMode) {
+      debugPrint('[FirebaseAuth] link verifyPhoneNumber using: $formatted');
+    }
+    if (formatted.replaceAll(RegExp(r'\D'), '').length < 10) {
+      onVerificationFailed(
+        FirebaseAuthException(
+          code: 'invalid-phone-number',
+          message: 'Enter a valid mobile number.',
+        ),
+      );
+      return;
+    }
+
+    try {
+      await _auth.initializeRecaptchaConfig();
+    } catch (_) {}
+
+    await _auth.verifyPhoneNumber(
+      phoneNumber: formatted,
+      timeout: const Duration(seconds: 90),
+      verificationCompleted: (PhoneAuthCredential credential) async {
+        await onAutoVerified(credential);
+      },
+      verificationFailed: (FirebaseAuthException e) {
+        if (kDebugMode) {
+          debugPrint('[FirebaseAuth link] code=${e.code} message=${e.message}');
+        }
+        onVerificationFailed(e);
+      },
+      codeSent: (String verificationId, int? resendToken) {
+        onCodeSent(verificationId);
+      },
+      codeAutoRetrievalTimeout: (_) {},
+    );
+  }
+
+  /// Attaches an OTP-verified number to the signed-in account so that later
+  /// phone sign-ins resolve to this same uid instead of minting a new one.
+  /// Throws `credential-already-in-use` when the number belongs to another
+  /// account — one number, one account.
+  Future<void> linkPhoneCredential(PhoneAuthCredential credential) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw FirebaseAuthException(
+        code: 'no-current-user',
+        message: 'Not signed in.',
+      );
+    }
+    await user.linkWithCredential(credential);
+    await user.reload();
+  }
+
+  /// Recovery for `credential-already-in-use`: the number already owns an
+  /// account, and the phone is the primary identity, so sign into that account
+  /// instead. The account being held here is a fresh sign-in that never
+  /// completed its profile, so it is discarded to avoid a stranded auth user.
+  ///
+  /// Pass `FirebaseAuthException.credential` from the failed link, not the
+  /// credential that was handed to it — the failed attempt consumes the SMS
+  /// code, and Firebase returns a fresh usable one on the exception.
+  Future<AuthSignInResult> switchToExistingPhoneAccount(
+    AuthCredential credential,
+  ) async {
+    final stranded = _auth.currentUser;
+    if (stranded != null && stranded.phoneNumber == null) {
+      try {
+        await stranded.delete();
+      } catch (_) {
+        // Needs a recent login, or it is already gone. Signing in still wins.
+      }
+    }
+    final cred = await _auth.signInWithCredential(credential);
+    final user = cred.user;
+    if (user == null) {
+      throw FirebaseAuthException(
+        code: 'unknown',
+        message: 'Phone sign-in failed',
+      );
+    }
+    return AuthSignInResult(
+      user: user,
+      isNewUser: cred.additionalUserInfo?.isNewUser ?? false,
+    );
+  }
+
   Future<AuthSignInResult?> signInWithGoogle() async {
     if (kIsWeb) {
       throw FirebaseAuthException(

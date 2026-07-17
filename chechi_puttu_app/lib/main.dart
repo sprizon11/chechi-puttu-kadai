@@ -768,6 +768,16 @@ String _readableAuthError(Object e) {
           'In Firebase, add your app SHA-1 (debug SHA for USB install, '
           'Play signing SHA for Play Store). Then try again.';
     }
+    if (code == 'invalid-verification-code') {
+      return 'That OTP is incorrect. Check the 6-digit code and try again.';
+    }
+    if (code == 'session-expired' || code == 'invalid-verification-id') {
+      return 'The OTP expired. Tap Resend OTP to get a new code.';
+    }
+    if (code == 'credential-already-in-use') {
+      return 'This mobile number already has an account. '
+          'Sign in with the number using OTP.';
+    }
     // Firebase phone abuse / rate limits (message text varies by SDK).
     if (code == 'too-many-requests' ||
         lower.contains('blocked all requests') ||
@@ -1080,10 +1090,28 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _mobileCtrl = TextEditingController();
+  final _otpCtrl = TextEditingController();
+  final _otpFocus = FocusNode();
   bool _busy = false;
   DateTime? _dob;
   bool _lockVerifiedMobile = false;
   bool _obscurePassword = true;
+
+  /// Phone OTP gate on step 0. Google sign-in arrives with no phone attached,
+  /// so the number is verified and linked here — that link is what makes a
+  /// later phone sign-in land on this same account instead of a new one.
+  static const int _kResendCooldownSeconds = 60;
+  String? _phoneVerificationId;
+  bool _otpSent = false;
+  bool _otpBusy = false;
+  bool _phoneVerified = false;
+  String _otpSentForDigits = '';
+  Timer? _resendTimer;
+  int _resendIn = 0;
+
+  bool get _needsPhoneOtp => !widget.forProfileEdit && !_lockVerifiedMobile;
+
+  String _mobileDigits() => _mobileCtrl.text.replaceAll(RegExp(r'\D'), '');
 
   static const _monthShort = <String>[
     'Jan',
@@ -1134,7 +1162,41 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         _mobileCtrl.text = user.phoneNumber!.trim();
       }
     }
+    _mobileCtrl.addListener(_onMobileChanged);
     _prefillSavedProfile(user);
+  }
+
+  /// Editing the number after an OTP was sent invalidates it — the
+  /// verificationId is bound to the number it was sent to.
+  void _onMobileChanged() {
+    if (!_needsPhoneOtp) return;
+    if ((_otpSent || _phoneVerified) && _mobileDigits() != _otpSentForDigits) {
+      _stopResendTimer();
+      _phoneVerificationId = null;
+      _otpCtrl.clear();
+      _otpSent = false;
+      _phoneVerified = false;
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _startResendTimer() {
+    _resendTimer?.cancel();
+    _resendIn = _kResendCooldownSeconds;
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      setState(() => _resendIn--);
+      if (_resendIn <= 0) t.cancel();
+    });
+  }
+
+  void _stopResendTimer() {
+    _resendTimer?.cancel();
+    _resendTimer = null;
+    _resendIn = 0;
   }
 
   Future<void> _prefillSavedProfile(User? user) async {
@@ -1187,12 +1249,149 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     if (picked != null && mounted) setState(() => _dob = picked);
   }
 
+  Future<void> _sendPhoneOtp({bool resend = false}) async {
+    if (_otpBusy || _busy) return;
+    if (_mobileDigits().length < 10) {
+      _snack('Please enter a valid 10-digit mobile number');
+      return;
+    }
+    final digits = _mobileDigits();
+    setState(() => _otpBusy = true);
+
+    var finished = false;
+    final watchdog = Timer(const Duration(seconds: 75), () {
+      if (!mounted || finished) return;
+      finished = true;
+      setState(() => _otpBusy = false);
+      _snack('OTP request timed out. Check your internet and try again.');
+    });
+
+    try {
+      await authService.startPhoneVerificationForLink(
+        phoneNumber: _mobileCtrl.text,
+        onCodeSent: (id) {
+          finished = true;
+          watchdog.cancel();
+          if (!mounted) return;
+          setState(() {
+            _phoneVerificationId = id;
+            _otpSent = true;
+            _otpSentForDigits = digits;
+            _otpBusy = false;
+            _otpCtrl.clear();
+          });
+          _startResendTimer();
+          _snack(
+            resend ? 'OTP sent again. Check your SMS.' : 'OTP sent. Check your SMS.',
+          );
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _otpFocus.requestFocus();
+          });
+        },
+        onVerificationFailed: (e) {
+          finished = true;
+          watchdog.cancel();
+          if (!mounted) return;
+          setState(() => _otpBusy = false);
+          _snack(_readableAuthError(e));
+        },
+        onAutoVerified: (credential) async {
+          finished = true;
+          watchdog.cancel();
+          if (!mounted) return;
+          setState(() {
+            _otpSent = true;
+            _otpSentForDigits = digits;
+          });
+          await _linkVerifiedPhone(credential);
+        },
+      );
+    } catch (e) {
+      finished = true;
+      watchdog.cancel();
+      if (mounted) {
+        setState(() => _otpBusy = false);
+        _snack(_readableAuthError(e));
+      }
+    }
+  }
+
+  Future<void> _verifyPhoneOtp() async {
+    if (_otpBusy || _busy) return;
+    final id = _phoneVerificationId;
+    if (id == null || id.isEmpty) {
+      _snack('Tap Send OTP first');
+      return;
+    }
+    if (_otpCtrl.text.trim().length < 6) {
+      _snack('Enter the 6-digit code');
+      return;
+    }
+    setState(() => _otpBusy = true);
+    await _linkVerifiedPhone(
+      PhoneAuthProvider.credential(
+        verificationId: id,
+        smsCode: _otpCtrl.text.trim(),
+      ),
+    );
+  }
+
+  Future<void> _linkVerifiedPhone(PhoneAuthCredential credential) async {
+    try {
+      await authService.linkPhoneCredential(credential);
+      if (!mounted) return;
+      _stopResendTimer();
+      setState(() {
+        _phoneVerified = true;
+        _otpBusy = false;
+      });
+      FocusScope.of(context).unfocus();
+      _snack('Mobile number verified');
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'credential-already-in-use' ||
+          e.code == 'account-exists-with-different-credential') {
+        await _useExistingAccountForPhone(e.credential ?? credential);
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _otpBusy = false);
+      if (e.code == 'provider-already-linked') {
+        setState(() => _phoneVerified = true);
+        return;
+      }
+      _snack(_readableAuthError(e));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _otpBusy = false);
+      _snack(_readableAuthError(e));
+    }
+  }
+
+  /// One number, one account: the number already owns an account, so sign into
+  /// it rather than building a second one. The gates then route on that uid.
+  Future<void> _useExistingAccountForPhone(AuthCredential credential) async {
+    try {
+      await authService.switchToExistingPhoneAccount(credential);
+      if (!mounted) return;
+      _stopResendTimer();
+      _snack('This number already has an account — signed you back into it.');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _otpBusy = false);
+      _snack(_readableAuthError(e));
+    }
+  }
+
   @override
   void dispose() {
+    _stopResendTimer();
+    _mobileCtrl.removeListener(_onMobileChanged);
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _mobileCtrl.dispose();
+    _otpCtrl.dispose();
+    _otpFocus.dispose();
     super.dispose();
   }
 
@@ -1209,6 +1408,10 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             _snack('Please enter a valid 10-digit mobile number');
             return false;
           }
+        }
+        if (_needsPhoneOtp && !_phoneVerified) {
+          _snack('Please verify your mobile number with the OTP');
+          return false;
         }
         return true;
       case 1:
@@ -2135,6 +2338,172 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     );
   }
 
+  Widget _otpActionButton({
+    required String label,
+    required bool enabled,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      height: 40,
+      child: FilledButton(
+        style: FilledButton.styleFrom(
+          backgroundColor: const Color(0xFF5D1109),
+          disabledBackgroundColor: const Color(0xFF5D1109).withValues(
+            alpha: 0.35,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 22),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        onPressed: enabled ? onPressed : null,
+        child: _otpBusy
+            ? const SizedBox(
+                height: 18,
+                width: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : Text(
+                label,
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _resendControl(Color bodyMuted) {
+    if (_resendIn > 0) {
+      return Text(
+        'Resend OTP in ${_resendIn}s',
+        style: GoogleFonts.poppins(
+          color: bodyMuted,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      );
+    }
+    return TextButton(
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: const Size(0, 36),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      onPressed: (_otpBusy || _busy)
+          ? null
+          : () => unawaited(_sendPhoneOtp(resend: true)),
+      child: Text(
+        'Resend OTP',
+        style: GoogleFonts.poppins(
+          color: const Color(0xFF5D1109),
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          decoration: TextDecoration.underline,
+        ),
+      ),
+    );
+  }
+
+  /// Step 0 phone gate for Google sign-ups: send OTP, verify, then Next opens.
+  List<Widget> _phoneOtpSection(Color titleMaroon, Color bodyMuted) {
+    if (!_needsPhoneOtp) return const [];
+    const okGreen = Color(0xFF1B7A3D);
+
+    if (_phoneVerified) {
+      return [
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            const Icon(Icons.check_circle_rounded, size: 16, color: okGreen),
+            const SizedBox(width: 6),
+            Text(
+              'Mobile number verified',
+              style: GoogleFonts.poppins(
+                color: okGreen,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ];
+    }
+
+    if (!_otpSent) {
+      return [
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: _otpActionButton(
+            label: 'Send OTP',
+            enabled: !_otpBusy && !_busy && _mobileDigits().length == 10,
+            onPressed: () => unawaited(_sendPhoneOtp()),
+          ),
+        ),
+      ];
+    }
+
+    return [
+      const SizedBox(height: 12),
+      Text(
+        'Enter the 6-digit OTP',
+        style: GoogleFonts.poppins(
+          color: bodyMuted,
+          fontSize: 13,
+          height: 1.3,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      const SizedBox(height: 4),
+      _AuthGlassInputCard(
+        icon: Icons.lock_outline_rounded,
+        iconColor: bodyMuted,
+        child: Material(
+          color: Colors.transparent,
+          child: TextField(
+            controller: _otpCtrl,
+            focusNode: _otpFocus,
+            enabled: !_otpBusy && !_busy,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 4,
+              color: titleMaroon,
+            ),
+            decoration: authGlassFieldDecoration(
+              hintText: 'Enter OTP',
+            ).copyWith(counterText: ''),
+            onChanged: (v) {
+              setState(() {});
+              if (v.length == 6) unawaited(_verifyPhoneOtp());
+            },
+          ),
+        ),
+      ),
+      const SizedBox(height: 10),
+      Row(
+        children: [
+          _otpActionButton(
+            label: 'Verify',
+            enabled: !_otpBusy && !_busy && _otpCtrl.text.trim().length == 6,
+            onPressed: () => unawaited(_verifyPhoneOtp()),
+          ),
+          const Spacer(),
+          _resendControl(bodyMuted),
+        ],
+      ),
+    ];
+  }
+
   Widget _buildStepName(
     BuildContext context,
     Color orange,
@@ -2261,12 +2630,21 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
           _AuthGlassInputCard(
             icon: Icons.phone_outlined,
             iconColor: bodyMuted,
+            trailing: _phoneVerified
+                ? Icon(
+                    Icons.verified_rounded,
+                    size: 18,
+                    color: const Color(0xFF1B7A3D),
+                  )
+                : null,
             child: Material(
               color: Colors.transparent,
               child: TextField(
                 controller: _mobileCtrl,
-                enabled: !_busy,
+                enabled: !_busy && !_otpBusy && !_phoneVerified,
                 keyboardType: TextInputType.phone,
+                maxLength: 10,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 style: GoogleFonts.poppins(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -2274,10 +2652,11 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                 ),
                 decoration: authGlassFieldDecoration(
                   hintText: '10-digit mobile number',
-                ),
+                ).copyWith(counterText: ''),
               ),
             ),
           ),
+          ..._phoneOtpSection(titleMaroon, bodyMuted),
         ],
         if (createStyle) ...[
           const SizedBox(height: 12),
