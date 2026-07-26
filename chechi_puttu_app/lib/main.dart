@@ -733,6 +733,7 @@ class _AuthGateHomeState extends State<_AuthGateHome> {
           onToggleTheme: widget.onToggleTheme,
           navIndexNotifier: _homeNavIndexNotifier,
           cartLinesNotifier: _cartLinesNotifier,
+          onStartBulkOrder: _onOrderTypeChosen,
         );
       },
     );
@@ -4511,12 +4512,17 @@ class HomeScreen extends StatefulWidget {
     required this.onToggleTheme,
     required this.navIndexNotifier,
     required this.cartLinesNotifier,
+    required this.onStartBulkOrder,
   });
 
   final bool isDark;
   final VoidCallback onToggleTheme;
   final ValueNotifier<int> navIndexNotifier;
   final ValueNotifier<List<CartLineItem>> cartLinesNotifier;
+
+  /// Switches the account into a hospital/corporate bulk-order plan. Routes the
+  /// app to the bulk enrollment screen via the order-type gate.
+  final Future<void> Function(CustomerOrderType type) onStartBulkOrder;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -4945,6 +4951,46 @@ class _HomeScreenState extends State<HomeScreen>
       ),
     );
     if (mounted) setState(() {});
+  }
+
+  Future<void> _handleStartBulkOrder(CustomerOrderType type) async {
+    final isHospital = type == CustomerOrderType.hospital;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Icon(
+          isHospital
+              ? Icons.local_hospital_rounded
+              : Icons.apartment_rounded,
+          color: ChechiBrand.maroon,
+        ),
+        title: Text(
+          isHospital ? 'Hospital order' : 'Corporate order',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'Set up a recurring bulk meal plan for your '
+          '${isHospital ? 'hospital' : 'organisation'}. '
+          'You can switch back to normal ordering anytime from your profile.',
+          style: GoogleFonts.poppins(fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.poppins()),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: ChechiBrand.maroon,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Continue', style: GoogleFonts.poppins()),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await widget.onStartBulkOrder(type);
   }
 
   void _handleProfileSettingsTap(BuildContext menuContext, String label) {
@@ -6409,6 +6455,7 @@ class _HomeScreenState extends State<HomeScreen>
                               },
                               onSettingsTap: _handleProfileSettingsTap,
                               onOrdersStatTap: _goToOrdersWithFilter,
+                              onStartBulkOrder: _handleStartBulkOrder,
                               isDark: widget.isDark,
                               onToggleTheme: widget.onToggleTheme,
                               onRefresh: _handlePullToRefresh,
@@ -7073,6 +7120,7 @@ class _ProfileTab extends StatelessWidget {
     required this.onEditProfile,
     required this.onSettingsTap,
     required this.onOrdersStatTap,
+    required this.onStartBulkOrder,
     required this.isDark,
     required this.onToggleTheme,
     required this.onRefresh,
@@ -7085,6 +7133,7 @@ class _ProfileTab extends StatelessWidget {
   final VoidCallback onEditProfile;
   final void Function(BuildContext context, String label) onSettingsTap;
   final ValueChanged<int> onOrdersStatTap;
+  final Future<void> Function(CustomerOrderType type) onStartBulkOrder;
   final bool isDark;
   final VoidCallback onToggleTheme;
   final Future<void> Function() onRefresh;
@@ -7232,6 +7281,13 @@ class _ProfileTab extends StatelessWidget {
                 child: _ProfileOrdersSummary(
                   onViewAll: onViewAllOrders,
                   onStatTap: onOrdersStatTap,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: _ProfileBulkOrderSection(
+                  onStartBulkOrder: onStartBulkOrder,
                 ),
               ),
               const SizedBox(height: 18),
@@ -7669,6 +7725,131 @@ class _ProfileSettingsTile extends StatelessWidget {
                 ),
               ),
             ),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 22,
+              color: _ProfilePalette.mutedOf(context).withValues(alpha: 0.65),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Profile entry points into hospital / corporate recurring bulk orders, so a
+/// normal customer can start a business plan without re-onboarding.
+class _ProfileBulkOrderSection extends StatelessWidget {
+  const _ProfileBulkOrderSection({required this.onStartBulkOrder});
+
+  final Future<void> Function(CustomerOrderType type) onStartBulkOrder;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: 8),
+          child: Text(
+            'Business & Bulk Orders',
+            style: GoogleFonts.playfairDisplay(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: _ProfilePalette.titleOf(context),
+            ),
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: _ProfilePalette.cardFillOf(context),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _ProfilePalette.cardBorderOf(context)),
+          ),
+          child: Column(
+            children: [
+              _ProfileBulkOrderTile(
+                icon: Icons.local_hospital_rounded,
+                title: CustomerOrderType.hospital.title,
+                subtitle: CustomerOrderType.hospital.subtitle,
+                onTap: () =>
+                    unawaited(onStartBulkOrder(CustomerOrderType.hospital)),
+              ),
+              Divider(
+                height: 1,
+                color: _ProfilePalette.listDividerOf(context),
+              ),
+              _ProfileBulkOrderTile(
+                icon: Icons.apartment_rounded,
+                title: CustomerOrderType.corporate.title,
+                subtitle: CustomerOrderType.corporate.subtitle,
+                onTap: () =>
+                    unawaited(onStartBulkOrder(CustomerOrderType.corporate)),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProfileBulkOrderTile extends StatelessWidget {
+  const _ProfileBulkOrderTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: ChechiBrand.maroon.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(icon, size: 21, color: ChechiBrand.maroon),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.poppins(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: _ProfilePalette.titleOf(context),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.poppins(
+                      fontSize: 11.5,
+                      height: 1.3,
+                      color: _ProfilePalette.mutedOf(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
             Icon(
               Icons.chevron_right_rounded,
               size: 22,
