@@ -41,7 +41,6 @@ export const CATALOG = [
     subtitle: 'Chef specials, meals & festive picks',
     dishes: [
       { title: 'Chef Special Thali',  subtitle: 'Rice, curries & sides',            price: '₹180', badge: 'Chef pick' },
-      { title: 'Malabar Parotta',     subtitle: 'Flaky layered flatbread',           price: '₹45' },
       { title: 'Mixed Veg Curry',     subtitle: 'Chef special coconut gravy',        price: '₹130' },
       { title: 'Ghee Rice',           subtitle: 'Aromatic neichoru',                 price: '₹120' },
     ],
