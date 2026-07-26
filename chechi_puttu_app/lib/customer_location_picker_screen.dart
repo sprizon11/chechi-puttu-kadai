@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:chechi_puttu_app/theme/chechi_motion.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:chechi_puttu_app/services/address_format.dart';
 import 'package:chechi_puttu_app/services/app_map_tiles.dart';
 import 'package:chechi_puttu_app/services/delivery_area.dart';
 import 'package:chechi_puttu_app/services/shop_location_service.dart';
@@ -42,7 +43,12 @@ class CustomerLocationPickerScreen extends StatefulWidget {
 class _CustomerLocationPickerScreenState
     extends State<CustomerLocationPickerScreen> {
   static const _maroon = Color(0xFF7C1D1B);
-  static const _defaultCenter = LatLng(11.1271, 78.6569);
+  // Coimbatore city centre — the only area served, and a sane fallback when
+  // no GPS or shop pin is available.
+  static const _defaultCenter = LatLng(
+    DeliveryArea.centerLatitude,
+    DeliveryArea.centerLongitude,
+  );
   static const _nominatimUa =
       'ChechiPuttuKadai/1.0 (location picker; +https://github.com)';
 
@@ -134,26 +140,10 @@ class _CustomerLocationPickerScreenState
       if (res.statusCode != 200) return null;
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final addr = data['address'] as Map<String, dynamic>?;
-      if (addr == null) {
-        final name = (data['display_name'] as String?)?.trim();
-        return name?.isEmpty ?? true ? null : name;
+      if (addr != null) {
+        final line = formatNominatimAddress(addr);
+        if (line.isNotEmpty) return line;
       }
-      final parts = <String>[];
-      void add(dynamic v) {
-        if (v is! String) return;
-        final t = v.trim();
-        if (t.isEmpty) return;
-        if (RegExp(r'^[0-9A-Z]{4}\+[0-9A-Z]{2,}$').hasMatch(t)) return;
-        parts.add(t);
-      }
-
-      add(addr['house_number']);
-      add(addr['road'] ?? addr['pedestrian'] ?? addr['residential']);
-      add(addr['neighbourhood'] ?? addr['suburb'] ?? addr['quarter']);
-      add(addr['village'] ?? addr['town'] ?? addr['city']);
-      add(addr['postcode']);
-      add(addr['state']);
-      if (parts.isNotEmpty) return parts.join(', ');
       final display = (data['display_name'] as String?)?.trim();
       return display?.isEmpty ?? true ? null : display;
     } catch (_) {
@@ -161,48 +151,63 @@ class _CustomerLocationPickerScreenState
     }
   }
 
-  Future<void> _reverseGeocode(LatLng point) async {
-    setState(() => _geocoding = true);
+  Future<String?> _reverseGeocodePlatform(LatLng point) async {
     try {
-      final nominatim = await _reverseGeocodeNominatim(point);
-      if (!mounted) return;
-      if (nominatim != null && nominatim.trim().isNotEmpty) {
-        setState(() => _addressLine = nominatim.trim());
-        return;
-      }
-
       final marks = await placemarkFromCoordinates(
         point.latitude,
         point.longitude,
       );
-      if (!mounted) return;
-      if (marks.isEmpty) {
-        setState(() {
-          _addressLine =
-              'Pinned location (${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)})';
-        });
-        return;
-      }
+      if (marks.isEmpty) return null;
       final p = marks.first;
-      final parts = <String>[];
-      void add(String? s) {
-        if (s == null) return;
-        final t = s.trim();
-        if (t.isEmpty) return;
-        if (RegExp(r'^[0-9A-Z]{4}\+[0-9A-Z]{2,}$').hasMatch(t)) return;
-        parts.add(t);
-      }
+      final line = formatPlacemarkParts(
+        name: p.name,
+        subThoroughfare: p.subThoroughfare,
+        thoroughfare: p.thoroughfare,
+        subLocality: p.subLocality,
+        locality: p.locality,
+        subAdministrativeArea: p.subAdministrativeArea,
+        administrativeArea: p.administrativeArea,
+        postalCode: p.postalCode,
+      );
+      return line.isEmpty ? null : line;
+    } catch (_) {
+      return null;
+    }
+  }
 
-      add(p.subThoroughfare);
-      add(p.street);
-      add(p.subLocality);
-      add(p.locality);
-      add(p.postalCode);
-      add(p.administrativeArea);
+  /// Number of comma-separated components — a proxy for how complete an
+  /// address line is, used to pick the richer of two geocoders.
+  static int _detailCount(String? line) {
+    if (line == null) return 0;
+    return line.split(',').where((p) => p.trim().isNotEmpty).length;
+  }
+
+  Future<void> _reverseGeocode(LatLng point) async {
+    setState(() => _geocoding = true);
+    try {
+      // OSM is thin on locality names in Tamil Nadu suburbs while the platform
+      // geocoder (Google/Apple) is strong there, and vice-versa for some
+      // streets — so query both and keep whichever names more of the address.
+      final results = await Future.wait([
+        _reverseGeocodeNominatim(point),
+        _reverseGeocodePlatform(point),
+      ]);
+      if (!mounted) return;
+      final nominatim = results[0]?.trim();
+      final platform = results[1]?.trim();
+
+      String? best;
+      if (_detailCount(platform) > _detailCount(nominatim)) {
+        best = platform;
+      } else {
+        best = nominatim;
+      }
+      best ??= platform;
+
       setState(() {
-        _addressLine = parts.isEmpty
-            ? 'Selected map location'
-            : parts.join(', ');
+        _addressLine = (best != null && best.isNotEmpty)
+            ? best
+            : 'Pinned location (${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)})';
       });
     } catch (_) {
       if (!mounted) return;
