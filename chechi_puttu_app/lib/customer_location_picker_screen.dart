@@ -6,6 +6,7 @@ import 'package:chechi_puttu_app/theme/chechi_motion.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:chechi_puttu_app/services/app_map_tiles.dart';
+import 'package:chechi_puttu_app/services/delivery_area.dart';
 import 'package:chechi_puttu_app/services/shop_location_service.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
@@ -53,6 +54,11 @@ class _CustomerLocationPickerScreenState
   bool _geocoding = false;
   bool _locating = false;
   LatLng _pinCenter = _defaultCenter;
+
+  bool get _pinOutsideServiceArea => !DeliveryArea.isWithinServiceArea(
+    _pinCenter.latitude,
+    _pinCenter.longitude,
+  );
 
   @override
   void initState() {
@@ -264,6 +270,13 @@ class _CustomerLocationPickerScreenState
       _showSnack('Wait for address to load, or move the map again.');
       return;
     }
+    if (!DeliveryArea.isWithinServiceArea(
+      _pinCenter.latitude,
+      _pinCenter.longitude,
+    )) {
+      _showSnack(DeliveryArea.outsideMessage);
+      return;
+    }
     Navigator.of(context).pop((
       street: street,
       latitude: _pinCenter.latitude,
@@ -438,9 +451,47 @@ class _CustomerLocationPickerScreenState
                             ),
                         ],
                       ),
+                      if (_pinOutsideServiceArea) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFDECEA),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFF3C6C1)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.info_outline_rounded,
+                                size: 16,
+                                color: Color(0xFFB3261E),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  DeliveryArea.outsideMessage,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11.5,
+                                    height: 1.35,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFFB3261E),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       FilledButton(
-                        onPressed: _geocoding ? null : _confirm,
+                        onPressed: (_geocoding || _pinOutsideServiceArea)
+                            ? null
+                            : _confirm,
                         style: FilledButton.styleFrom(
                           backgroundColor: _maroon,
                           foregroundColor: Colors.white,

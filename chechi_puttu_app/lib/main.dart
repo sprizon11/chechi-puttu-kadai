@@ -18,6 +18,7 @@ import 'package:chechi_puttu_app/firebase_options.dart';
 import 'package:chechi_puttu_app/services/auth_service.dart';
 import 'package:chechi_puttu_app/services/customer_menu_overrides.dart';
 import 'package:chechi_puttu_app/services/customer_menu_section_overrides.dart';
+import 'package:chechi_puttu_app/services/delivery_area.dart';
 import 'package:chechi_puttu_app/services/app_refresh.dart';
 import 'package:chechi_puttu_app/services/menu_deleted_dishes.dart';
 import 'package:chechi_puttu_app/services/user_profile_service.dart';
@@ -7914,30 +7915,67 @@ class _CartTabState extends State<_CartTab> {
     return true;
   }
 
-  Future<String?> _ensureDeliveryLineForCheckout(BuildContext context) async {
-    var line = widget.deliveryLine.trim();
-    if (_hasValidDeliveryLine(line)) return line;
-
-    await widget.onOpenDeliveryLocation();
-    if (!context.mounted) return null;
-    line = widget.deliveryLine.trim();
-    if (_hasValidDeliveryLine(line)) return line;
-
+  /// Coimbatore-only delivery. The picker already refuses an out-of-area pin,
+  /// but an address can reach checkout from storage or device GPS without
+  /// passing through it, so the order is checked again here.
+  Future<bool> _deliveryLineIsServiceable(String line) async {
     final p = await SharedPreferences.getInstance();
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
-    final street = (p.getString(_deliveryStreetKey(uid)) ?? '').trim();
-    if (_hasValidDeliveryLine(street)) return street;
-    if (!context.mounted) return null;
+    final lat = p.getDouble(_deliveryLatKey(uid));
+    final lng = p.getDouble(_deliveryLngKey(uid));
+    if (lat != null && lng != null) {
+      return DeliveryArea.isWithinServiceArea(lat, lng);
+    }
+    // No coordinates saved: only refuse when the text names another city.
+    return !DeliveryArea.looksOutsideServiceArea(line);
+  }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Please choose your delivery location before placing the order.',
-          style: GoogleFonts.poppins(),
+  Future<String?> _ensureDeliveryLineForCheckout(BuildContext context) async {
+    var line = widget.deliveryLine.trim();
+    if (!_hasValidDeliveryLine(line)) {
+      await widget.onOpenDeliveryLocation();
+      if (!context.mounted) return null;
+      line = widget.deliveryLine.trim();
+    }
+
+    if (!_hasValidDeliveryLine(line)) {
+      final p = await SharedPreferences.getInstance();
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+      line = (p.getString(_deliveryStreetKey(uid)) ?? '').trim();
+    }
+
+    if (!_hasValidDeliveryLine(line)) {
+      if (!context.mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Please choose your delivery location before placing the order.',
+            style: GoogleFonts.poppins(),
+          ),
         ),
-      ),
-    );
-    return null;
+      );
+      return null;
+    }
+
+    if (!await _deliveryLineIsServiceable(line)) {
+      if (!context.mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            DeliveryArea.outsideMessage,
+            style: GoogleFonts.poppins(),
+          ),
+          action: SnackBarAction(
+            label: 'Change',
+            onPressed: () => unawaited(widget.onOpenDeliveryLocation()),
+          ),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+      return null;
+    }
+
+    return line;
   }
 
   /// Razorpay in-app checkout → verify signature server-side → place order.
