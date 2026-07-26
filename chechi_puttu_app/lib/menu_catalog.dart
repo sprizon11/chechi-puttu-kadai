@@ -95,7 +95,6 @@ const kCustomerMenuSections = <MenuCatalogSection>[
     dishes: <MenuCatalogDish>[
       MenuCatalogDish('Chef Special Thali', 'Rice, curries & sides', '₹180',
           badge: 'Chef pick'),
-      MenuCatalogDish('Malabar Parotta', 'Flaky layered flatbread', '₹45'),
       MenuCatalogDish(
         'Mixed Veg Curry',
         'Chef special coconut gravy',
