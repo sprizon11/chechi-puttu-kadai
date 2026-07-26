@@ -52,6 +52,20 @@ class CustomerOrderTypeService {
   CustomerOrderTypeState _stateFromJson(Map<String, dynamic> j) {
     final days = j['days'];
     final selectedDishes = j['selectedDishes'];
+    final titles = selectedDishes is List
+        ? selectedDishes.map((e) => e.toString()).toList()
+        : const <String>[];
+    final rawQuantities = j['dishQuantities'];
+    final dishQuantities = <String, int>{};
+    if (rawQuantities is Map) {
+      rawQuantities.forEach((key, value) {
+        final qty = value is num ? value.toInt() : int.tryParse('$value');
+        if (qty != null && qty > 0) dishQuantities[key.toString()] = qty;
+      });
+    }
+    for (final title in titles) {
+      dishQuantities.putIfAbsent(title, () => kDefaultDishQuantity);
+    }
     return CustomerOrderTypeState(
       orderType: CustomerOrderType.fromFirestore(j['orderType'] as String?),
       typeSelected: j['typeSelected'] as bool? ?? false,
@@ -67,9 +81,8 @@ class CustomerOrderTypeService {
           j['scheduleMode'] as String?,
         ),
         days: days is List ? days.map((e) => e.toString()).toList() : const [],
-        selectedDishes: selectedDishes is List
-            ? selectedDishes.map((e) => e.toString()).toList()
-            : const [],
+        selectedDishes: titles,
+        dishQuantities: dishQuantities,
         enrollmentComplete: j['enrollmentComplete'] as bool? ?? false,
       ),
     );
@@ -92,6 +105,7 @@ class CustomerOrderTypeService {
         'scheduleMode': state.bulkEnrollment.scheduleMode.firestoreValue,
         'days': state.bulkEnrollment.days,
         'selectedDishes': state.bulkEnrollment.selectedDishes,
+        'dishQuantities': state.bulkEnrollment.dishQuantities,
         'enrollmentComplete': state.bulkEnrollment.enrollmentComplete,
       }),
     );

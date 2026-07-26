@@ -66,6 +66,13 @@ const kBulkOrderWeekdayLabels = <String, String>{
   'sunday': 'Sun',
 };
 
+/// Portions a dish starts at when first added to a bulk plan.
+const int kDefaultDishQuantity = 10;
+
+/// Step size for the +/- controls, and the most a single dish can carry.
+const int kDishQuantityStep = 5;
+const int kMaxDishQuantity = 999;
+
 class BulkOrderEnrollment {
   const BulkOrderEnrollment({
     this.contactName = '',
@@ -78,6 +85,7 @@ class BulkOrderEnrollment {
     this.scheduleMode = BulkScheduleMode.allDays,
     this.days = const [],
     this.selectedDishes = const [],
+    this.dishQuantities = const {},
     this.enrollmentComplete = false,
   });
 
@@ -94,9 +102,19 @@ class BulkOrderEnrollment {
   final List<String> days;
 
   /// Dish titles (from the customer menu catalog) the organisation wants on
-  /// its recurring meal plan.
+  /// its recurring meal plan. Kept in sync with [dishQuantities] keys so
+  /// readers that predate per-dish quantities (Cloud Functions, admin) still
+  /// see the plan.
   final List<String> selectedDishes;
+
+  /// Portions per delivery, keyed by dish title. Empty for plans saved before
+  /// quantities existed — treat a missing entry as [kDefaultDishQuantity].
+  final Map<String, int> dishQuantities;
   final bool enrollmentComplete;
+
+  /// Total portions per delivery across every dish on the plan.
+  int get totalPortions =>
+      dishQuantities.values.fold(0, (sum, qty) => sum + qty);
 
   BulkOrderEnrollment copyWith({
     String? contactName,
@@ -109,6 +127,7 @@ class BulkOrderEnrollment {
     BulkScheduleMode? scheduleMode,
     List<String>? days,
     List<String>? selectedDishes,
+    Map<String, int>? dishQuantities,
     bool? enrollmentComplete,
   }) {
     return BulkOrderEnrollment(
@@ -123,6 +142,7 @@ class BulkOrderEnrollment {
       scheduleMode: scheduleMode ?? this.scheduleMode,
       days: days ?? this.days,
       selectedDishes: selectedDishes ?? this.selectedDishes,
+      dishQuantities: dishQuantities ?? this.dishQuantities,
       enrollmentComplete: enrollmentComplete ?? this.enrollmentComplete,
     );
   }
@@ -138,6 +158,7 @@ class BulkOrderEnrollment {
         'scheduleMode': scheduleMode.firestoreValue,
         'days': days,
         'selectedDishes': selectedDishes,
+        'dishQuantities': dishQuantities,
         'enrollmentComplete': enrollmentComplete,
       };
 
@@ -151,6 +172,18 @@ class BulkOrderEnrollment {
     final selectedDishes = rawDishes is List
         ? rawDishes.map((e) => e.toString()).toList()
         : <String>[];
+    final rawQuantities = m['dishQuantities'];
+    final dishQuantities = <String, int>{};
+    if (rawQuantities is Map) {
+      rawQuantities.forEach((key, value) {
+        final qty = value is num ? value.toInt() : int.tryParse('$value');
+        if (qty != null && qty > 0) dishQuantities[key.toString()] = qty;
+      });
+    }
+    // Plans saved before quantities existed carry titles only.
+    for (final title in selectedDishes) {
+      dishQuantities.putIfAbsent(title, () => kDefaultDishQuantity);
+    }
     return BulkOrderEnrollment(
       contactName: m['contactName'] as String? ?? '',
       phone: m['phone'] as String? ?? '',
@@ -164,6 +197,7 @@ class BulkOrderEnrollment {
       ),
       days: days,
       selectedDishes: selectedDishes,
+      dishQuantities: dishQuantities,
       enrollmentComplete: m['enrollmentComplete'] as bool? ?? false,
     );
   }
