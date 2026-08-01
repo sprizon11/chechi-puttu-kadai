@@ -130,8 +130,13 @@ function DeliveryModal({ form, setForm, onSave, onClose, saving, saved }) {
         ))}
         <NumInput label="Delivery Radius (km)" field="deliveryRadiusKm" step={0.5} min={1} />
         <NumInput label="Minimum Order (₹)" field="minOrderRupees" step={10} />
-        <NumInput label="Delivery Fee (₹)" field="deliveryFeeRupees" step={5} />
-        <NumInput label="Packaging Fee (₹)" field="packagingFeeRupees" step={5} />
+        <NumInput label="Delivery Charge (₹)" field="deliveryFeeRupees" step={5} />
+        <NumInput label="Packing Charge (₹)" field="packagingFeeRupees" step={5} />
+        <p className="text-xs text-gray-400 pt-2 leading-snug">
+          Delivery + packing are added to every order and shown on the customer
+          invoice. Total extra now: ₹
+          {(parseFloat(form.deliveryFeeRupees) || 0) + (parseFloat(form.packagingFeeRupees) || 0)}
+        </p>
       </div>
       <div className="flex items-center gap-3 mt-5">
         <button onClick={onSave} disabled={saving} className="btn-primary flex-1 py-3">
@@ -177,7 +182,7 @@ export default function Settings() {
     phone: '', email: '', address: '', announcement: '',
     openTime: '06:00', closeTime: '21:00',
     deliveryRadiusKm: '10', minOrderRupees: '0',
-    deliveryFeeRupees: '30', packagingFeeRupees: '10',
+    deliveryFeeRupees: '40', packagingFeeRupees: '20',
     deliveryEnabled: true, takeawayEnabled: true, scheduledOrdersEnabled: true,
   })
   const [loaded, setLoaded] = useState(false)
@@ -187,21 +192,45 @@ export default function Settings() {
   const [pwMsg,  setPwMsg]  = useState('')
 
   useEffect(() => {
-    getDoc(doc(db, 'admin_public', '__settings__'))
-      .then(snap => { if (snap.exists()) setForm(f => ({ ...f, ...snap.data() })) })
-      .catch(() => {})
+    Promise.all([
+      getDoc(doc(db, 'admin_public', '__settings__')).catch(() => null),
+      // Canonical charges doc — what the customer app and Cloud Functions read.
+      getDoc(doc(db, 'admin_public', 'order_charges')).catch(() => null),
+    ])
+      .then(([settingsSnap, chargesSnap]) => {
+        setForm(f => {
+          const next = { ...f }
+          if (settingsSnap?.exists()) Object.assign(next, settingsSnap.data())
+          if (chargesSnap?.exists()) {
+            const c = chargesSnap.data()
+            if (c.delivery_rupees != null) next.deliveryFeeRupees = String(c.delivery_rupees)
+            if (c.packing_rupees != null) next.packagingFeeRupees = String(c.packing_rupees)
+          }
+          return next
+        })
+      })
       .finally(() => setLoaded(true))
   }, [])
 
   async function saveForm() {
     setSaving(true); setSaved(false)
+    const deliveryRupees = Math.max(0, Math.round(parseFloat(form.deliveryFeeRupees) || 0))
+    const packingRupees = Math.max(0, Math.round(parseFloat(form.packagingFeeRupees) || 0))
     try {
+      // Charges live in their own doc so the app and Cloud Functions read one
+      // source of truth; __settings__ keeps a copy for the rest of this form.
+      await setDoc(doc(db, 'admin_public', 'order_charges'), {
+        delivery_rupees: deliveryRupees,
+        packing_rupees: packingRupees,
+        updatedAt: serverTimestamp(),
+        updatedBy: auth.currentUser?.uid || null,
+      }, { merge: true })
       await setDoc(doc(db, 'admin_public', '__settings__'), {
         ...form,
         deliveryRadiusKm:    parseFloat(form.deliveryRadiusKm) || 10,
         minOrderRupees:      parseFloat(form.minOrderRupees) || 0,
-        deliveryFeeRupees:   parseFloat(form.deliveryFeeRupees) || 0,
-        packagingFeeRupees:  parseFloat(form.packagingFeeRupees) || 0,
+        deliveryFeeRupees:   deliveryRupees,
+        packagingFeeRupees:  packingRupees,
         updatedAt: serverTimestamp(),
       }, { merge: true })
       setSaved(true)
@@ -231,7 +260,7 @@ export default function Settings() {
   )
 
   const hoursLabel = `${form.openTime || '06:00'} – ${form.closeTime || '21:00'}`
-  const deliveryLabel = `Delivery ${form.deliveryEnabled ? 'on' : 'off'} · Takeaway ${form.takeawayEnabled ? 'on' : 'off'}`
+  const deliveryLabel = `Delivery ₹${form.deliveryFeeRupees || 0} + Packing ₹${form.packagingFeeRupees || 0} per order · Delivery ${form.deliveryEnabled ? 'on' : 'off'}`
 
   return (
     <div className="max-w-2xl space-y-4">

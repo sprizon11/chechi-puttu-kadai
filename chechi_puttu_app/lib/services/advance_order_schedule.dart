@@ -1,22 +1,78 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// One meal window for next-day (or later) delivery booking.
+/// One meal window customers can book, with the cut-off that closes it.
+///
+/// Cut-off is expressed as "[cutoffDaysBefore] day(s) before the delivery day,
+/// at [cutoffHour]:[cutoffMinute]":
+///   Breakfast → 1 day before, 5:00 PM
+///   Lunch     → 1 day before, 7:00 PM
+///   Dinner    → same day, 11:00 AM
 class AdvanceMealSlot {
   const AdvanceMealSlot({
     required this.id,
-    required this.label,
+    required this.name,
     required this.startHour,
+    required this.startMinute,
     required this.endHour,
+    required this.endMinute,
+    required this.cutoffDaysBefore,
+    required this.cutoffHour,
+    required this.cutoffMinute,
   });
 
   final String id;
-  final String label;
+  final String name;
   final int startHour;
+  final int startMinute;
   final int endHour;
+  final int endMinute;
+
+  /// 1 = orders close the previous day, 0 = orders close the same morning.
+  final int cutoffDaysBefore;
+  final int cutoffHour;
+  final int cutoffMinute;
+
+  /// e.g. `8:30 – 9:30 AM`
+  String get windowLabel =>
+      '${_clock(startHour, startMinute)} – ${_clock(endHour, endMinute)}';
+
+  /// e.g. `Breakfast · 8:30 – 9:30 AM`
+  String get label => '$name · $windowLabel';
+
+  /// e.g. `Order by 5:00 PM the previous day`
+  String get cutoffLabel => cutoffDaysBefore <= 0
+      ? 'Order by ${_clock(cutoffHour, cutoffMinute)} the same day'
+      : 'Order by ${_clock(cutoffHour, cutoffMinute)} the previous day';
+
+  /// Last moment an order for [deliveryDay] can be placed.
+  DateTime cutoffFor(DateTime deliveryDay) {
+    final day = DateTime(deliveryDay.year, deliveryDay.month, deliveryDay.day)
+        .subtract(Duration(days: cutoffDaysBefore));
+    return DateTime(day.year, day.month, day.day, cutoffHour, cutoffMinute);
+  }
+
+  /// Delivery start time on [deliveryDay].
+  DateTime deliveryStartOn(DateTime deliveryDay) => DateTime(
+        deliveryDay.year,
+        deliveryDay.month,
+        deliveryDay.day,
+        startHour,
+        startMinute,
+      );
+
+  bool isOpenFor(DateTime deliveryDay, [DateTime? now]) =>
+      (now ?? DateTime.now()).isBefore(cutoffFor(deliveryDay));
+
+  static String _clock(int hour, int minute) {
+    final suffix = hour >= 12 ? 'PM' : 'AM';
+    final h12 = hour % 12 == 0 ? 12 : hour % 12;
+    final mm = minute.toString().padLeft(2, '0');
+    return '$h12:$mm $suffix';
+  }
 }
 
-/// Customer-selected date + meal slot (always at least 1 day ahead).
+/// Customer-selected date + meal slot.
 class AdvanceMealBooking {
   const AdvanceMealBooking({
     required this.deliveryDate,
@@ -33,92 +89,98 @@ class AdvanceMealBooking {
     return 'Booked for ${d.day}/${d.month}/${d.year} · ${slot.label}';
   }
 
-  String get mealName {
-    switch (slot.id) {
-      case 'breakfast':
-        return 'Breakfast';
-      case 'lunch':
-        return 'Lunch';
-      case 'dinner':
-        return 'Dinner';
-      default:
-        return slot.label;
-    }
-  }
+  String get mealName => slot.name;
 }
 
-/// Chechi Puttu Kadai — all orders must be booked ≥ 1 day before delivery.
+/// Chechi Puttu Kadai delivery windows and their order cut-offs.
 class AdvanceOrderSchedule {
   AdvanceOrderSchedule._();
 
-  static const advanceDays = 1;
   static const maxBookAheadDays = 30;
 
   static const mealSlots = <AdvanceMealSlot>[
     AdvanceMealSlot(
       id: 'breakfast',
-      label: 'Breakfast · 8:00–10:00 AM',
+      name: 'Breakfast',
       startHour: 8,
-      endHour: 10,
+      startMinute: 30,
+      endHour: 9,
+      endMinute: 30,
+      cutoffDaysBefore: 1,
+      cutoffHour: 17,
+      cutoffMinute: 0,
     ),
     AdvanceMealSlot(
       id: 'lunch',
-      label: 'Lunch · 12:00–2:00 PM',
+      name: 'Lunch',
       startHour: 12,
-      endHour: 14,
+      startMinute: 30,
+      endHour: 13,
+      endMinute: 30,
+      cutoffDaysBefore: 1,
+      cutoffHour: 19,
+      cutoffMinute: 0,
     ),
     AdvanceMealSlot(
       id: 'dinner',
-      label: 'Dinner · 6:00–9:00 PM',
-      startHour: 18,
-      endHour: 21,
+      name: 'Dinner',
+      startHour: 19,
+      startMinute: 30,
+      endHour: 20,
+      endMinute: 30,
+      cutoffDaysBefore: 0,
+      cutoffHour: 11,
+      cutoffMinute: 0,
     ),
   ];
 
-  /// Earliest calendar day customers can choose (tomorrow).
+  /// Returns which slots can still be ordered for [deliveryDay].
+  static List<AdvanceMealSlot> availableSlotsFor(
+    DateTime deliveryDay, [
+    DateTime? from,
+  ]) {
+    final now = from ?? DateTime.now();
+    return mealSlots.where((s) => s.isOpenFor(deliveryDay, now)).toList();
+  }
+
+  /// Earliest calendar day that still has at least one open slot. Dinner closes
+  /// at 11 AM the same day, so today qualifies before 11 AM.
   static DateTime earliestDeliveryDay([DateTime? from]) {
     final now = from ?? DateTime.now();
+    var day = DateTime(now.year, now.month, now.day);
+    for (var i = 0; i <= maxBookAheadDays; i++) {
+      if (availableSlotsFor(day, now).isNotEmpty) return day;
+      day = day.add(const Duration(days: 1));
+    }
+    return DateTime(now.year, now.month, now.day)
+        .add(const Duration(days: 1));
+  }
+
+  /// The three fixed rules, for info panels.
+  static List<String> ruleLines() => [
+        for (final s in mealSlots) '${s.name} ${s.windowLabel} — ${s.cutoffLabel}',
+      ];
+
+  /// Short hint for the cart: what can still be booked next.
+  static String policySummary([DateTime? from]) {
+    final now = from ?? DateTime.now();
+    final day = earliestDeliveryDay(now);
+    final slots = availableSlotsFor(day, now);
+    if (slots.isEmpty) return 'Delivery slots open again soon.';
+    final names = slots.map((s) => s.name.toLowerCase()).join(', ');
+    return 'Next delivery ${_dayWord(day, now).toLowerCase()} — $names. '
+        'Breakfast/lunch close 5 PM/7 PM the day before; dinner closes 11 AM same day.';
+  }
+
+  static String _dayWord(DateTime day, DateTime now) {
     final today = DateTime(now.year, now.month, now.day);
-    return today.add(const Duration(days: advanceDays));
+    final diff = DateTime(day.year, day.month, day.day).difference(today).inDays;
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Tomorrow';
+    return '${day.day}/${day.month}/${day.year}';
   }
 
-  /// Returns a hint based on current time.
-  static String policySummary() {
-    final now = DateTime.now();
-    if (now.hour < 12) {
-      return 'Order before 12 PM → all slots available tomorrow (breakfast, lunch, dinner).';
-    } else if (now.hour < 18) {
-      return 'Order after 12 PM → tomorrow breakfast not available. Lunch & dinner available.';
-    } else {
-      return 'Order after 6 PM → tomorrow dinner only. Pick a later date for more slots.';
-    }
-  }
-
-  /// Returns which slots are available for the given delivery day.
-  /// Rules:
-  ///   Before 12 PM  → tomorrow: Breakfast, Lunch, Dinner
-  ///   12 PM–6 PM    → tomorrow: Lunch, Dinner only
-  ///   After 6 PM    → tomorrow: Dinner only
-  ///   Any later date → always all 3 slots
-  static List<AdvanceMealSlot> availableSlotsFor(DateTime deliveryDay) {
-    final now = DateTime.now();
-    final tomorrow = earliestDeliveryDay(now);
-    final isTomorrow = deliveryDay.year == tomorrow.year &&
-        deliveryDay.month == tomorrow.month &&
-        deliveryDay.day == tomorrow.day;
-    if (isTomorrow) {
-      if (now.hour >= 18) {
-        // After 6 PM — dinner only
-        return [mealSlots.firstWhere((s) => s.id == 'dinner')];
-      } else if (now.hour >= 12) {
-        // After 12 PM — no breakfast
-        return mealSlots.where((s) => s.id != 'breakfast').toList();
-      }
-    }
-    return mealSlots;
-  }
-
-  /// Date picker + breakfast / lunch / dinner sheet.
+  /// Date picker + meal sheet. Days with no open slot are not selectable.
   static Future<AdvanceMealBooking?> pickMealBooking(BuildContext context) async {
     final now = DateTime.now();
     final firstDay = earliestDeliveryDay(now);
@@ -132,6 +194,7 @@ class AdvanceOrderSchedule {
       helpText: 'Pick delivery day',
       cancelText: 'Cancel',
       confirmText: 'Next',
+      selectableDayPredicate: (d) => availableSlotsFor(d, now).isNotEmpty,
       builder: (ctx, child) {
         return Theme(
           data: Theme.of(ctx).copyWith(
@@ -146,7 +209,7 @@ class AdvanceOrderSchedule {
     if (!context.mounted || date == null) return null;
 
     final deliveryDay = DateTime(date.year, date.month, date.day);
-    final slots = availableSlotsFor(deliveryDay);
+    final slots = availableSlotsFor(deliveryDay, now);
 
     final slot = await showModalBottomSheet<AdvanceMealSlot>(
       context: context,
@@ -171,7 +234,7 @@ class AdvanceOrderSchedule {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  policySummary(),
+                  ruleLines().join('\n'),
                   style: GoogleFonts.poppins(
                     fontSize: 12,
                     color: cs.onSurfaceVariant,
@@ -197,10 +260,25 @@ class AdvanceOrderSchedule {
                       s.label,
                       style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                     ),
+                    subtitle: Text(
+                      s.cutoffLabel,
+                      style: GoogleFonts.poppins(
+                        fontSize: 11.5,
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
                     onTap: () => Navigator.pop(ctx, s),
                   ),
                   const SizedBox(height: 8),
                 ],
+                if (slots.isEmpty)
+                  Text(
+                    'Ordering has closed for this day. Please pick a later date.',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12.5,
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -209,16 +287,24 @@ class AdvanceOrderSchedule {
     );
     if (!context.mounted || slot == null) return null;
 
-    final when = DateTime(
-      deliveryDay.year,
-      deliveryDay.month,
-      deliveryDay.day,
-      slot.startHour,
-    );
+    // Re-check the cut-off: the sheet may have been open across it.
+    if (!slot.isOpenFor(deliveryDay)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Ordering for ${slot.name.toLowerCase()} on that day just closed. '
+            'Please pick another slot.',
+            style: GoogleFonts.poppins(),
+          ),
+        ),
+      );
+      return null;
+    }
+
     return AdvanceMealBooking(
       deliveryDate: deliveryDay,
       slot: slot,
-      when: when,
+      when: slot.deliveryStartOn(deliveryDay),
     );
   }
 }

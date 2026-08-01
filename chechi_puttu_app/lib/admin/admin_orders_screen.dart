@@ -22,6 +22,10 @@ class _AdminOrdersBodyState extends State<AdminOrdersBody> {
   String _deliveryLabel = 'All delivery types';
   String _sortLabel = 'Newest';
 
+  /// Calendar filter — when set, only orders created on this day are listed
+  /// (tab counts follow the same filter so the numbers match the list).
+  DateTime? _dayFilter;
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _stream() {
     return chechiFirestore
         .collection('orders')
@@ -68,6 +72,46 @@ class _AdminOrdersBodyState extends State<AdminOrdersBody> {
     return '${d.inDays} days ago';
   }
 
+  bool _matchesDayFilter(Map<String, dynamic> m) {
+    final day = _dayFilter;
+    if (day == null) return true;
+    final created = _readCreatedTs(m);
+    // Epoch 0 = the server timestamp hasn't landed yet, so the order can't be
+    // dated; keep it out of a day view rather than filing it under 1970.
+    if (created.millisecondsSinceEpoch == 0) return false;
+    return created.year == day.year &&
+        created.month == day.month &&
+        created.day == day.day;
+  }
+
+  String _dayFilterLabel(DateTime d) {
+    final now = DateTime.now();
+    if (d.year == now.year && d.month == now.month && d.day == now.day) {
+      return 'Today';
+    }
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${d.day} ${months[d.month - 1]}';
+  }
+
+  Future<void> _pickDayFilter() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dayFilter ?? now,
+      firstDate: DateTime(now.year - 3),
+      lastDate: DateTime(now.year, now.month, now.day),
+      helpText: 'Show orders from',
+      confirmText: 'Apply',
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _dayFilter = DateTime(picked.year, picked.month, picked.day);
+    });
+  }
+
   Future<void> _setStatus(String id, String status) async {
     try {
       await _orders.updateOrderStatus(orderId: id, status: status);
@@ -108,7 +152,10 @@ class _AdminOrdersBodyState extends State<AdminOrdersBody> {
             ),
           );
         }
-        final docs = snap.data?.docs ?? const <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+        final allDocs = snap.data?.docs ?? const <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+        final docs = _dayFilter == null
+            ? allDocs
+            : allDocs.where((e) => _matchesDayFilter(e.data())).toList();
         var filtered = docs.where((e) => _docMatchesTab(e.data(), _tab)).toList();
         if (_sortLabel == 'Oldest') {
           filtered = filtered.reversed.toList();
@@ -159,14 +206,54 @@ class _AdminOrdersBodyState extends State<AdminOrdersBody> {
                     ),
                   ),
                   Material(
-                    color: surface,
+                    color: _dayFilter == null ? surface : _maroon,
                     borderRadius: BorderRadius.circular(10),
                     child: InkWell(
-                      onTap: () {},
+                      onTap: _pickDayFilter,
                       borderRadius: BorderRadius.circular(10),
                       child: Padding(
-                        padding: const EdgeInsets.all(10),
-                        child: Icon(Icons.calendar_today_outlined, size: 18, color: cs.onSurface),
+                        padding: EdgeInsets.fromLTRB(
+                          10,
+                          10,
+                          _dayFilter == null ? 10 : 6,
+                          10,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.calendar_today_outlined,
+                              size: 18,
+                              color: _dayFilter == null
+                                  ? cs.onSurface
+                                  : Colors.white,
+                            ),
+                            if (_dayFilter != null) ...[
+                              const SizedBox(width: 6),
+                              Text(
+                                _dayFilterLabel(_dayFilter!),
+                                style: GoogleFonts.poppins(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              // Clears the day view without opening the picker.
+                              InkWell(
+                                onTap: () => setState(() => _dayFilter = null),
+                                borderRadius: BorderRadius.circular(20),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(4),
+                                  child: Icon(
+                                    Icons.close_rounded,
+                                    size: 14,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -280,20 +367,6 @@ class _AdminOrdersBodyState extends State<AdminOrdersBody> {
                       style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w600),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: () => setState(() {}),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _maroon,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
-                    icon: const Icon(Icons.refresh_rounded, size: 18, color: Colors.white),
-                    label: Text(
-                      'Refresh',
-                      style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w800),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -309,7 +382,10 @@ class _AdminOrdersBodyState extends State<AdminOrdersBody> {
                             height: MediaQuery.sizeOf(context).height * 0.32,
                             child: Center(
                               child: Text(
-                                'No orders in this tab.',
+                                _dayFilter == null
+                                    ? 'No orders in this tab.'
+                                    : 'No orders in this tab on '
+                                        '${_dayFilterLabel(_dayFilter!)}.',
                                 style: GoogleFonts.poppins(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,

@@ -83,6 +83,33 @@ async function loadFirestoreMenuPrices(dbRef) {
   }
 }
 
+/** Delivery + packing charges applied to every order, set by admin in Settings. */
+const DEFAULT_ORDER_CHARGES = {deliveryRupees: 40, packingRupees: 20};
+
+function chargeOrDefault(raw, fallback) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.round(n);
+}
+
+/** Reads `admin_public/order_charges`; falls back to the defaults above. */
+async function loadOrderCharges(dbRef) {
+  if (!dbRef) return DEFAULT_ORDER_CHARGES;
+  try {
+    const snap = await dbRef.collection("admin_public").doc("order_charges").get();
+    const data = snap.exists ? snap.data() || {} : {};
+    return {
+      deliveryRupees: chargeOrDefault(
+          data.delivery_rupees, DEFAULT_ORDER_CHARGES.deliveryRupees),
+      packingRupees: chargeOrDefault(
+          data.packing_rupees, DEFAULT_ORDER_CHARGES.packingRupees),
+    };
+  } catch (e) {
+    console.error("loadOrderCharges failed:", e.message);
+    return DEFAULT_ORDER_CHARGES;
+  }
+}
+
 async function computeServerOrder(items, dbRef) {
   if (!Array.isArray(items) || items.length === 0) throw new Error("EMPTY_CART");
   let firestorePrices = null; // lazy-loaded only when needed
@@ -114,12 +141,20 @@ async function computeServerOrder(items, dbRef) {
     qtySum += qty;
     lines.push({name, subtitle, priceRupees: unit, qty});
   }
-  const del = qtySum > 0 ? 30 : 0;
-  const pack = qtySum > 0 ? 10 : 0;
+  const charges = await loadOrderCharges(dbRef);
+  const del = qtySum > 0 ? charges.deliveryRupees : 0;
+  const pack = qtySum > 0 ? charges.packingRupees : 0;
   const totalRupees = subtotal + del + pack;
   const totalPaise = Math.round(totalRupees * 100);
   if (totalPaise < 100) throw new Error("AMOUNT_TOO_LOW");
-  return {lines, totalRupees, totalPaise, deliveryRupees: del, packagingRupees: pack};
+  return {
+    lines,
+    itemTotalRupees: subtotal,
+    totalRupees,
+    totalPaise,
+    deliveryRupees: del,
+    packagingRupees: pack,
+  };
 }
 
 exports.createRazorpayCheckout = onCall(async (request) => {
@@ -159,6 +194,9 @@ exports.createRazorpayCheckout = onCall(async (request) => {
     status: "pending_payment",
     items: computed.lines,
     total_rupees: computed.totalRupees,
+    item_total_rupees: computed.itemTotalRupees,
+    delivery_charge_rupees: computed.deliveryRupees,
+    packing_charge_rupees: computed.packagingRupees,
     total_paise: computed.totalPaise,
     delivery_line: deliveryLine,
     schedule_line: scheduleLine,
@@ -276,6 +314,9 @@ exports.razorpayWebhook = onRequest(async (req, res) => {
         uid: s.uid,
         status: "placed",
         total_rupees: s.total_rupees,
+        item_total_rupees: s.item_total_rupees ?? null,
+        delivery_charge_rupees: s.delivery_charge_rupees ?? null,
+        packing_charge_rupees: s.packing_charge_rupees ?? null,
         delivery_line: s.delivery_line,
         payment_mode: "razorpay",
         payment_status: "captured",
@@ -377,6 +418,9 @@ exports.verifyRazorpayPayment = onCall(async (request) => {
       uid: s.uid,
       status: "placed",
       total_rupees: s.total_rupees,
+      item_total_rupees: s.item_total_rupees ?? null,
+      delivery_charge_rupees: s.delivery_charge_rupees ?? null,
+      packing_charge_rupees: s.packing_charge_rupees ?? null,
       delivery_line: s.delivery_line,
       payment_mode: "razorpay",
       payment_status: "captured",
@@ -489,6 +533,9 @@ exports.createCashfreeCheckout = onCall(
     status: "pending_payment",
     items: computed.lines,
     total_rupees: computed.totalRupees,
+    item_total_rupees: computed.itemTotalRupees,
+    delivery_charge_rupees: computed.deliveryRupees,
+    packing_charge_rupees: computed.packagingRupees,
     total_paise: computed.totalPaise,
     delivery_line: deliveryLine,
     schedule_line: scheduleLine,
@@ -633,6 +680,9 @@ exports.createCashfreePaymentLink = onCall(
     status: "pending_payment",
     items: computed.lines,
     total_rupees: computed.totalRupees,
+    item_total_rupees: computed.itemTotalRupees,
+    delivery_charge_rupees: computed.deliveryRupees,
+    packing_charge_rupees: computed.packagingRupees,
     total_paise: computed.totalPaise,
     delivery_line: deliveryLine,
     schedule_line: scheduleLine,
@@ -733,6 +783,9 @@ async function finalizeCashfreeSuccess(sessRef, s, cfPaymentId, paidAmount) {
       uid: s.uid,
       status: "placed",
       total_rupees: s.total_rupees,
+      item_total_rupees: s.item_total_rupees ?? null,
+      delivery_charge_rupees: s.delivery_charge_rupees ?? null,
+      packing_charge_rupees: s.packing_charge_rupees ?? null,
       delivery_line: s.delivery_line,
       payment_mode: "cashfree",
       payment_status: "captured",
@@ -1760,6 +1813,9 @@ const BULK_ORDERS_HEADER = [
   "Submitted At", "Type", "Organisation", "Your Name", "Order Person",
   "Job Position", "Phone", "Alt Phone", "Preferred Time", "Delivery Days",
   "Selected Dishes", "Customer UID",
+  // Appended after "Customer UID" so sheets created before these fields
+  // existed keep their column alignment.
+  "Meals", "Total Qty", "Dish Quantities",
 ];
 
 async function appendBulkOrderRow(row) {
@@ -1791,6 +1847,75 @@ async function appendBulkOrderRow(row) {
   });
 }
 
+/**
+ * Confirms a submitted bulk plan to the customer (support-chat record + push)
+ * and alerts the admin that a quotation is due within 24 hours.
+ */
+async function notifyBulkEnrollment({
+  customerUid,
+  typeLabel,
+  org,
+  meals,
+  dishQuantities,
+  totalQuantity,
+  days,
+  phone,
+}) {
+  if (!customerUid) return;
+
+  const lines = [
+    `Your ${typeLabel.toLowerCase()} bulk booking request has been received.`,
+    org ? `Organisation: ${org}` : null,
+    meals ? `Meals: ${meals}` : null,
+    totalQuantity ? `Total quantity: ${totalQuantity} per delivery` : null,
+    dishQuantities ? `Dishes: ${dishQuantities}` : null,
+    days ? `Delivery days: ${days}` : null,
+    "",
+    "Our team will send you a quotation within 24 hours. " +
+      "Reply here if anything needs to change.",
+  ].filter((l) => l !== null);
+  const text = lines.join("\n");
+
+  const threadRef = db.collection("support_inbox").doc(customerUid);
+  const {name, mobile} = await userProfileLite(customerUid);
+  await threadRef.collection("messages").add({
+    text,
+    sender: "system",
+    kind: "bulk_enrollment",
+    auto: true,
+    created_at: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  await threadRef.set({
+    customer_uid: customerUid,
+    customer_name: name || null,
+    customer_mobile: mobile || phone || null,
+    last_message: "Bulk booking request received",
+    last_sender: "system",
+    last_at: admin.firestore.FieldValue.serverTimestamp(),
+    updated_at: admin.firestore.FieldValue.serverTimestamp(),
+  }, {merge: true});
+
+  await sendPush({
+    uid: customerUid,
+    title: "Booking request received",
+    body: "We'll send your quotation within 24 hours.",
+    data: {type: "bulk_enrollment", customer_uid: customerUid},
+  });
+
+  const aUid = await adminUid();
+  if (aUid) {
+    const who = org || name || mobile || "A customer";
+    await sendPush({
+      uid: aUid,
+      title: `New ${typeLabel.toLowerCase()} bulk booking`,
+      body: totalQuantity ?
+        `${who} — ${totalQuantity} portions. Quotation due in 24h.` :
+        `${who} — quotation due in 24h.`,
+      data: {type: "bulk_enrollment_admin", customer_uid: customerUid},
+    });
+  }
+}
+
 exports.onBulkEnrollmentToSheet = onDocumentWritten(
     {document: "users/{userId}", database: FIRESTORE_DB, region: "asia-south1"},
     async (event) => {
@@ -1810,6 +1935,14 @@ exports.onBulkEnrollmentToSheet = onDocumentWritten(
       const days = Array.isArray(afterBulk.days) ? afterBulk.days.join(", ") : "";
       const dishes = Array.isArray(afterBulk.selectedDishes) ?
         afterBulk.selectedDishes.join(", ") : "";
+      const meals = Array.isArray(afterBulk.mealSlots) ?
+        afterBulk.mealSlots.join(", ") : "";
+      const qtyMap = afterBulk.dishQuantities &&
+        typeof afterBulk.dishQuantities === "object" ?
+        afterBulk.dishQuantities : {};
+      const dishQuantities = Object.entries(qtyMap)
+          .map(([title, qty]) => `${title} x${qty}`)
+          .join(", ");
       const submittedAt = new Date().toLocaleString("en-IN", {
         timeZone: "Asia/Kolkata",
       });
@@ -1827,6 +1960,9 @@ exports.onBulkEnrollmentToSheet = onDocumentWritten(
         days,
         dishes,
         event.params.userId,
+        meals,
+        String(afterBulk.totalQuantity || ""),
+        dishQuantities,
       ];
 
       try {
@@ -1834,6 +1970,26 @@ exports.onBulkEnrollmentToSheet = onDocumentWritten(
         console.log(`Bulk enrollment row added for ${event.params.userId}`);
       } catch (e) {
         console.error("bulk enrollment -> sheet failed:", e);
+      }
+
+      // The sheet is for the kitchen; the customer needs their own record and
+      // a nudge, and the admin needs to know a quotation is due. A failure in
+      // any of these must not mask the others.
+      const typeLabel = orderType === "hospital" ? "Hospital" : "Corporate";
+      const org = String(afterBulk.organizationName || "").trim();
+      try {
+        await notifyBulkEnrollment({
+          customerUid: event.params.userId,
+          typeLabel,
+          org,
+          meals,
+          dishQuantities,
+          totalQuantity: afterBulk.totalQuantity,
+          days,
+          phone: String(afterBulk.phone || "").trim(),
+        });
+      } catch (e) {
+        console.error("bulk enrollment -> notify failed:", e);
       }
     },
 );

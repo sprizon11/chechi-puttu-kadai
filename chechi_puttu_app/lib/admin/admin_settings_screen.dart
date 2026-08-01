@@ -1,4 +1,5 @@
 import 'package:chechi_puttu_app/admin/admin_shop_location_screen.dart';
+import 'package:chechi_puttu_app/services/order_charges_service.dart';
 import 'package:chechi_puttu_app/services/shop_location_service.dart';
 import 'package:chechi_puttu_app/services/app_refresh.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
@@ -27,11 +28,19 @@ class AdminSettingsBody extends StatefulWidget {
 class _AdminSettingsBodyState extends State<AdminSettingsBody> {
   String _language = 'English';
   String _shopLocationSubtitle = 'Set kadai location on map';
+  OrderCharges _charges = OrderChargesService.cached;
 
   @override
   void initState() {
     super.initState();
     _loadShopLocationSubtitle();
+    _loadOrderCharges();
+  }
+
+  Future<void> _loadOrderCharges() async {
+    final charges = await OrderChargesService.load();
+    if (!mounted) return;
+    setState(() => _charges = charges);
   }
 
   Future<void> _loadShopLocationSubtitle() async {
@@ -42,6 +51,137 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
           ? 'Set kadai location on map'
           : shop.address;
     });
+  }
+
+  /// Delivery + packing charges added to every order.
+  Future<void> _openOrderCharges() async {
+    final current = await OrderChargesService.load();
+    if (!mounted) return;
+    setState(() => _charges = current);
+
+    final deliveryCtrl =
+        TextEditingController(text: '${current.deliveryRupees}');
+    final packingCtrl = TextEditingController(text: '${current.packingRupees}');
+    final formKey = GlobalKey<FormState>();
+
+    String? validateRupees(String? v) {
+      final t = (v ?? '').trim();
+      if (t.isEmpty) return 'Enter amount';
+      final n = int.tryParse(t);
+      if (n == null) return 'Numbers only';
+      if (n < 0) return 'Cannot be negative';
+      if (n > 5000) return 'Too high';
+      return null;
+    }
+
+    int parsed(TextEditingController c) => int.tryParse(c.text.trim()) ?? 0;
+
+    final save = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        return StatefulBuilder(
+          builder: (ctx, setDialog) {
+            final extra = parsed(deliveryCtrl) + parsed(packingCtrl);
+            return AlertDialog(
+              title: Text(
+                'Order Charges',
+                style: GoogleFonts.playfairDisplay(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  color: cs.onSurface,
+                ),
+              ),
+              content: Form(
+                key: formKey,
+                child: SizedBox(
+                  width: 360,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Added to every customer order on top of the item total.',
+                        style: GoogleFonts.poppins(fontSize: 12, height: 1.4),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: deliveryCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Delivery charge',
+                          prefixText: '₹ ',
+                        ),
+                        validator: validateRupees,
+                        onChanged: (_) => setDialog(() {}),
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        controller: packingCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Packing charge',
+                          prefixText: '₹ ',
+                        ),
+                        validator: validateRupees,
+                        onChanged: (_) => setDialog(() {}),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Total extra per order: ₹$extra',
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: cs.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    if (formKey.currentState?.validate() != true) return;
+                    Navigator.pop(ctx, true);
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    final nextDelivery = parsed(deliveryCtrl);
+    final nextPacking = parsed(packingCtrl);
+    deliveryCtrl.dispose();
+    packingCtrl.dispose();
+    if (!mounted || save != true) return;
+
+    try {
+      await OrderChargesService.save(
+        deliveryRupees: nextDelivery,
+        packingRupees: nextPacking,
+        updatedByUid: FirebaseAuth.instance.currentUser?.uid,
+      );
+      if (!mounted) return;
+      setState(() {
+        _charges = OrderCharges(
+          deliveryRupees: nextDelivery,
+          packingRupees: nextPacking,
+        );
+      });
+      _snack('Order charges updated.');
+    } catch (e) {
+      if (!mounted) return;
+      _snack('Could not save charges: $e');
+    }
   }
 
   Future<void> _openShopLocation() async {
@@ -397,6 +537,16 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
                 onTap: _openShopLocation,
               ),
               _SettingsTile(
+                icon: Icons.receipt_long_outlined,
+                iconBg: const Color(0xFFFFF8E1),
+                iconColor: const Color(0xFFE65100),
+                title: 'Order Charges',
+                subtitle:
+                    'Delivery ₹${_charges.deliveryRupees} + Packing ₹${_charges.packingRupees} '
+                    '= ₹${_charges.totalRupees} extra per order',
+                onTap: _openOrderCharges,
+              ),
+              _SettingsTile(
                 icon: Icons.menu_book_outlined,
                 iconBg: const Color(0xFFE8F5E9),
                 iconColor: const Color(0xFF2E7D32),
@@ -479,7 +629,7 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
           const SizedBox(height: 8),
           Center(
             child: Text(
-              'App Version 1.2.1',
+              'App Version 1.2.4',
               style: GoogleFonts.poppins(
                 fontSize: 10.5,
                 fontWeight: FontWeight.w500,

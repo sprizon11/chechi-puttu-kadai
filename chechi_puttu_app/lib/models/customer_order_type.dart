@@ -69,8 +69,7 @@ const kBulkOrderWeekdayLabels = <String, String>{
 /// Portions a dish starts at when first added to a bulk plan.
 const int kDefaultDishQuantity = 10;
 
-/// Step size for the +/- controls, and the most a single dish can carry.
-const int kDishQuantityStep = 5;
+/// The most a single dish can carry on a plan.
 const int kMaxDishQuantity = 999;
 
 class BulkOrderEnrollment {
@@ -82,6 +81,8 @@ class BulkOrderEnrollment {
     this.orderPersonName = '',
     this.orderPersonDesignation = '',
     this.preferredTime = '',
+    this.mealSlots = const [],
+    this.totalQuantity = 0,
     this.scheduleMode = BulkScheduleMode.allDays,
     this.days = const [],
     this.selectedDishes = const [],
@@ -98,6 +99,15 @@ class BulkOrderEnrollment {
   /// Job title / designation of the person who places orders (corporate only).
   final String orderPersonDesignation;
   final String preferredTime;
+
+  /// Meal windows this plan is delivered in — `breakfast` / `lunch` / `dinner`
+  /// (ids from [AdvanceOrderSchedule.mealSlots]).
+  final List<String> mealSlots;
+
+  /// Portions the organisation books per delivery. Dish quantities must add up
+  /// to exactly this when set; 0 means "not specified" (older plans).
+  final int totalQuantity;
+
   final BulkScheduleMode scheduleMode;
   final List<String> days;
 
@@ -124,6 +134,8 @@ class BulkOrderEnrollment {
     String? orderPersonName,
     String? orderPersonDesignation,
     String? preferredTime,
+    List<String>? mealSlots,
+    int? totalQuantity,
     BulkScheduleMode? scheduleMode,
     List<String>? days,
     List<String>? selectedDishes,
@@ -139,6 +151,8 @@ class BulkOrderEnrollment {
       orderPersonDesignation:
           orderPersonDesignation ?? this.orderPersonDesignation,
       preferredTime: preferredTime ?? this.preferredTime,
+      mealSlots: mealSlots ?? this.mealSlots,
+      totalQuantity: totalQuantity ?? this.totalQuantity,
       scheduleMode: scheduleMode ?? this.scheduleMode,
       days: days ?? this.days,
       selectedDishes: selectedDishes ?? this.selectedDishes,
@@ -155,6 +169,8 @@ class BulkOrderEnrollment {
         'orderPersonName': orderPersonName.trim(),
         'orderPersonDesignation': orderPersonDesignation.trim(),
         'preferredTime': preferredTime.trim(),
+        'mealSlots': mealSlots,
+        'totalQuantity': totalQuantity,
         'scheduleMode': scheduleMode.firestoreValue,
         'days': days,
         'selectedDishes': selectedDishes,
@@ -184,6 +200,13 @@ class BulkOrderEnrollment {
     for (final title in selectedDishes) {
       dishQuantities.putIfAbsent(title, () => kDefaultDishQuantity);
     }
+    final rawSlots = m['mealSlots'];
+    final mealSlots = rawSlots is List
+        ? rawSlots.map((e) => e.toString()).toList()
+        : <String>[];
+    final rawTotal = m['totalQuantity'];
+    final totalQuantity =
+        rawTotal is num ? rawTotal.toInt() : int.tryParse('${rawTotal ?? ''}') ?? 0;
     return BulkOrderEnrollment(
       contactName: m['contactName'] as String? ?? '',
       phone: m['phone'] as String? ?? '',
@@ -192,6 +215,8 @@ class BulkOrderEnrollment {
       orderPersonName: m['orderPersonName'] as String? ?? '',
       orderPersonDesignation: m['orderPersonDesignation'] as String? ?? '',
       preferredTime: m['preferredTime'] as String? ?? '',
+      mealSlots: mealSlots,
+      totalQuantity: totalQuantity < 0 ? 0 : totalQuantity,
       scheduleMode: BulkScheduleMode.fromFirestore(
         m['scheduleMode'] as String?,
       ),

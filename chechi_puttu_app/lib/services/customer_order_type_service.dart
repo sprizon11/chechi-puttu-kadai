@@ -77,6 +77,10 @@ class CustomerOrderTypeService {
         orderPersonName: j['orderPersonName'] as String? ?? '',
         orderPersonDesignation: j['orderPersonDesignation'] as String? ?? '',
         preferredTime: j['preferredTime'] as String? ?? '',
+        mealSlots: j['mealSlots'] is List
+            ? (j['mealSlots'] as List).map((e) => e.toString()).toList()
+            : const <String>[],
+        totalQuantity: (j['totalQuantity'] as num?)?.toInt() ?? 0,
         scheduleMode: BulkScheduleMode.fromFirestore(
           j['scheduleMode'] as String?,
         ),
@@ -102,6 +106,8 @@ class CustomerOrderTypeService {
         'orderPersonName': state.bulkEnrollment.orderPersonName,
         'orderPersonDesignation': state.bulkEnrollment.orderPersonDesignation,
         'preferredTime': state.bulkEnrollment.preferredTime,
+        'mealSlots': state.bulkEnrollment.mealSlots,
+        'totalQuantity': state.bulkEnrollment.totalQuantity,
         'scheduleMode': state.bulkEnrollment.scheduleMode.firestoreValue,
         'days': state.bulkEnrollment.days,
         'selectedDishes': state.bulkEnrollment.selectedDishes,

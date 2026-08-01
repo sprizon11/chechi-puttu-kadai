@@ -1,15 +1,18 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:chechi_puttu_app/admin/admin_dish_models.dart';
 import 'package:chechi_puttu_app/menu_catalog.dart';
 import 'package:chechi_puttu_app/models/customer_order_type.dart';
+import 'package:chechi_puttu_app/services/advance_order_schedule.dart';
 import 'package:chechi_puttu_app/services/auth_service.dart';
 import 'package:chechi_puttu_app/services/customer_menu_overrides.dart';
+import 'package:chechi_puttu_app/services/customer_menu_section_overrides.dart';
 import 'package:chechi_puttu_app/services/customer_order_type_service.dart';
+import 'package:chechi_puttu_app/services/menu_deleted_dishes.dart';
 import 'package:chechi_puttu_app/theme/chechi_premium.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 /// Hospital / corporate recurring-order enrollment form.
@@ -43,13 +46,26 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
 
   BulkScheduleMode _scheduleMode = BulkScheduleMode.allDays;
   final Set<String> _selectedDays = {};
+
+  /// Meal windows this plan is delivered in (breakfast / lunch / dinner).
+  final Set<String> _selectedMealSlots = {};
+
   /// Dish title -> portions per delivery. Presence in this map *is* selection,
   /// so there is no separate selected-set that could disagree with it.
   final Map<String, int> _dishQuantities = {};
+
+  /// Per-dish text fields, created lazily and kept across rebuilds so typing
+  /// never loses the cursor.
+  final Map<String, TextEditingController> _dishQtyCtrls = {};
+  final _totalQtyCtrl = TextEditingController();
   final _dishSearchCtrl = TextEditingController();
   String _dishQuery = '';
   bool _busy = false;
   TimeOfDay? _pickedTime;
+
+  /// Set once the plan is saved — swaps the form for the confirmation screen
+  /// instead of letting the gate jump straight to the next setup step.
+  bool _submitted = false;
 
   @override
   void initState() {
@@ -66,10 +82,30 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
       _timeCtrl.text = init.preferredTime;
       _scheduleMode = init.scheduleMode;
       _selectedDays.addAll(init.days);
+      _selectedMealSlots.addAll(init.mealSlots);
       _dishQuantities.addAll(init.dishQuantities);
+      if (init.totalQuantity > 0) {
+        _totalQtyCtrl.text = '${init.totalQuantity}';
+      }
+      for (final e in init.dishQuantities.entries) {
+        _dishQtyCtrls[e.key] = TextEditingController(text: '${e.value}');
+      }
     } else {
       _prefillFromAuth(user);
     }
+    // Menu edits/deletes sync in from Firestore while this form is open.
+    MenuDeletedDishes.instance.addListener(_onMenuChanged);
+    CustomerMenuOverrides.instance.addListener(_onMenuChanged);
+    CustomerMenuSectionOverrides.instance.addListener(_onMenuChanged);
+    // Enrollment can be reached before Home has loaded the menu, so make sure
+    // the resolved catalog (and delete list) is populated here too.
+    MenuDeletedDishes.instance.reloadFromPrefs();
+    CustomerMenuOverrides.instance.reloadFromPrefs();
+    CustomerMenuSectionOverrides.instance.reloadFromPrefs();
+  }
+
+  void _onMenuChanged() {
+    if (mounted) setState(() {});
   }
 
   void _prefillFromAuth(User? user) {
@@ -89,6 +125,9 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
 
   @override
   void dispose() {
+    MenuDeletedDishes.instance.removeListener(_onMenuChanged);
+    CustomerMenuOverrides.instance.removeListener(_onMenuChanged);
+    CustomerMenuSectionOverrides.instance.removeListener(_onMenuChanged);
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     _altPhoneCtrl.dispose();
@@ -96,7 +135,11 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
     _personCtrl.dispose();
     _designationCtrl.dispose();
     _timeCtrl.dispose();
+    _totalQtyCtrl.dispose();
     _dishSearchCtrl.dispose();
+    for (final c in _dishQtyCtrls.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -142,8 +185,20 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
       _showSnack('Select at least one delivery day');
       return;
     }
+    if (_selectedMealSlots.isEmpty) {
+      _showSnack('Select at least one meal (breakfast, lunch or dinner)');
+      return;
+    }
     if (_dishQuantities.isEmpty) {
       _showSnack('Add at least one dish to the plan');
+      return;
+    }
+    // A stated plan total must be fully allocated across dishes — the cap
+    // already prevents going over, so this only catches under-allocation.
+    if (_requestedTotal > 0 && _totalPortions != _requestedTotal) {
+      _showSnack(
+        'Assign all $_requestedTotal portions — $_remainingPortions still left.',
+      );
       return;
     }
     final user = authService.currentUser;
@@ -166,6 +221,11 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
             ? _designationCtrl.text.trim()
             : '',
         preferredTime: _timeCtrl.text.trim(),
+        mealSlots: [
+          for (final s in AdvanceOrderSchedule.mealSlots)
+            if (_selectedMealSlots.contains(s.id)) s.id,
+        ],
+        totalQuantity: _requestedTotal > 0 ? _requestedTotal : _totalPortions,
         scheduleMode: _scheduleMode,
         days: days,
         selectedDishes: _dishQuantities.keys.toList(),
@@ -177,7 +237,9 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
         enrollment: enrollment,
       );
       if (!mounted) return;
-      widget.onCompleted();
+      // Confirmation first — `onCompleted` advances the sign-in gate, so
+      // calling it here would replace this screen before anything is read.
+      setState(() => _submitted = true);
     } catch (e) {
       if (mounted) {
         _showSnack('Could not save. Try again.');
@@ -191,6 +253,19 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
   Widget build(BuildContext context) {
     final isHospital = widget.orderType == CustomerOrderType.hospital;
     final dishCount = _dishQuantities.length;
+    if (_submitted) {
+      return _BookingSentScreen(
+        organisation: _orgCtrl.text.trim(),
+        phone: _phoneCtrl.text.trim(),
+        portions: _totalPortions,
+        dishCount: dishCount,
+        meals: [
+          for (final s in AdvanceOrderSchedule.mealSlots)
+            if (_selectedMealSlots.contains(s.id)) s.name,
+        ],
+        onDone: widget.onCompleted,
+      );
+    }
     return Scaffold(
       body: DecoratedBox(
         decoration: BoxDecoration(gradient: ChechiPremium.brandGradient()),
@@ -301,15 +376,23 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
                           icon: Icons.schedule_rounded,
                           title: 'Schedule',
                           children: [
+                            Text(
+                              'Meals',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: ChechiBrand.maroonDeep,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            _mealSlotTiles(),
+                            const SizedBox(height: 14),
                             _field(
                               controller: _timeCtrl,
-                              label: 'Preferred delivery time',
+                              label: 'Preferred delivery time (optional)',
                               icon: Icons.schedule_rounded,
                               readOnly: true,
                               onTap: _pickTime,
-                              validator: (v) => (v == null || v.trim().isEmpty)
-                                  ? 'Pick a time'
-                                  : null,
                               last: true,
                             ),
                             const SizedBox(height: 4),
@@ -343,15 +426,20 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
                           ),
                           children: [
                             Text(
-                              'Set how many portions of each dish this plan '
-                              'needs per delivery. You can update dishes later '
-                              'from support chat.',
+                              'Enter the total portions you need per delivery, '
+                              'then type how many of each dish make up that '
+                              'total. You can update dishes later from support '
+                              'chat.',
                               style: GoogleFonts.poppins(
                                 fontSize: 11.5,
                                 height: 1.35,
                                 color: const Color(0xFF7A6A62),
                               ),
                             ),
+                            const SizedBox(height: 12),
+                            _totalQuantityField(),
+                            const SizedBox(height: 10),
+                            _allocationBar(),
                             const SizedBox(height: 12),
                             _dishSearchField(),
                             const SizedBox(height: 4),
@@ -378,14 +466,277 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
   int get _totalPortions =>
       _dishQuantities.values.fold(0, (sum, qty) => sum + qty);
 
-  void _setDishQuantity(String title, int qty) {
+  /// The plan-wide quantity the customer typed (0 = not set yet).
+  int get _requestedTotal => int.tryParse(_totalQtyCtrl.text.trim()) ?? 0;
+
+  /// Portions still unassigned against [_requestedTotal].
+  int get _remainingPortions => _requestedTotal - _totalPortions;
+
+  /// Largest quantity [title] may take without the plan exceeding the total.
+  int _maxQuantityFor(String title) {
+    final budget = _requestedTotal;
+    if (budget <= 0) return kMaxDishQuantity;
+    final others = _totalPortions - (_dishQuantities[title] ?? 0);
+    final left = budget - others;
+    return left < 0 ? 0 : left.clamp(0, kMaxDishQuantity);
+  }
+
+  TextEditingController _dishQtyController(String title) {
+    return _dishQtyCtrls.putIfAbsent(
+      title,
+      () => TextEditingController(
+        text: _dishQuantities[title] == null ? '' : '${_dishQuantities[title]}',
+      ),
+    );
+  }
+
+  /// Applies a typed quantity, capped to what the plan total still allows.
+  /// Returns the value actually stored so the field can be corrected.
+  int _setDishQuantity(String title, int qty) {
+    final capped = qty <= 0 ? 0 : qty.clamp(1, _maxQuantityFor(title));
     setState(() {
-      if (qty <= 0) {
+      if (capped <= 0) {
         _dishQuantities.remove(title);
       } else {
-        _dishQuantities[title] = qty.clamp(1, kMaxDishQuantity);
+        _dishQuantities[title] = capped;
       }
     });
+    return capped;
+  }
+
+  void _onDishQtyTyped(String title, String raw) {
+    final ctrl = _dishQtyController(title);
+    final typed = int.tryParse(raw.trim());
+    if (raw.trim().isEmpty || typed == null) {
+      _setDishQuantity(title, 0);
+      return;
+    }
+    final applied = _setDishQuantity(title, typed);
+    if (applied != typed) {
+      // Over budget (or above the per-dish ceiling) — snap the field back to
+      // what was actually stored instead of silently disagreeing with it.
+      final text = applied <= 0 ? '' : '$applied';
+      ctrl.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+      _showSnack(
+        _requestedTotal > 0
+            ? 'Plan total is $_requestedTotal — only $applied left for this dish.'
+            : 'Maximum $kMaxDishQuantity portions per dish.',
+      );
+    }
+  }
+
+  /// Lowering the plan total can strand quantities above it; trim the largest
+  /// dishes down until the plan fits again.
+  void _onTotalQuantityChanged() {
+    final budget = _requestedTotal;
+    setState(() {});
+    if (budget <= 0 || _totalPortions <= budget) return;
+    final titles = _dishQuantities.keys.toList()
+      ..sort((a, b) => _dishQuantities[b]!.compareTo(_dishQuantities[a]!));
+    for (final title in titles) {
+      if (_totalPortions <= budget) break;
+      final excess = _totalPortions - budget;
+      final next = _dishQuantities[title]! - excess;
+      setState(() {
+        if (next <= 0) {
+          _dishQuantities.remove(title);
+        } else {
+          _dishQuantities[title] = next;
+        }
+      });
+      final ctrl = _dishQtyCtrls[title];
+      if (ctrl != null) ctrl.text = next <= 0 ? '' : '$next';
+    }
+  }
+
+  /// Breakfast / lunch / dinner, with the same windows and cut-offs the
+  /// normal ordering flow uses.
+  Widget _mealSlotTiles() {
+    return Column(
+      children: [
+        for (final slot in AdvanceOrderSchedule.mealSlots)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: _busy
+                    ? null
+                    : () => setState(() {
+                          if (!_selectedMealSlots.remove(slot.id)) {
+                            _selectedMealSlots.add(slot.id);
+                          }
+                        }),
+                child: AnimatedContainer(
+                  duration: ChechiBrand.fast,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _selectedMealSlots.contains(slot.id)
+                        ? ChechiBrand.maroonDeep.withValues(alpha: 0.07)
+                        : const Color(0xFFFCF7F2),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: _selectedMealSlots.contains(slot.id)
+                          ? ChechiBrand.maroonDeep
+                          : ChechiBrand.border,
+                      width: _selectedMealSlots.contains(slot.id) ? 1.2 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        slot.id == 'breakfast'
+                            ? Icons.wb_sunny_outlined
+                            : slot.id == 'lunch'
+                                ? Icons.lunch_dining_outlined
+                                : Icons.nightlight_round,
+                        size: 20,
+                        color: ChechiBrand.maroonDeep,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${slot.name} · ${slot.windowLabel}',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: ChechiBrand.maroonDeep,
+                              ),
+                            ),
+                            Text(
+                              slot.cutoffLabel,
+                              style: GoogleFonts.poppins(
+                                fontSize: 10.5,
+                                color: const Color(0xFF7A6A62),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Checkbox(
+                        value: _selectedMealSlots.contains(slot.id),
+                        onChanged: _busy
+                            ? null
+                            : (v) => setState(() {
+                                  if (v == true) {
+                                    _selectedMealSlots.add(slot.id);
+                                  } else {
+                                    _selectedMealSlots.remove(slot.id);
+                                  }
+                                }),
+                        activeColor: ChechiBrand.maroonDeep,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _totalQuantityField() {
+    return TextFormField(
+      controller: _totalQtyCtrl,
+      enabled: !_busy,
+      keyboardType: TextInputType.number,
+      inputFormatters: [
+        FilteringTextInputFormatter.digitsOnly,
+        LengthLimitingTextInputFormatter(5),
+      ],
+      onChanged: (_) => _onTotalQuantityChanged(),
+      style: GoogleFonts.poppins(fontSize: 14),
+      validator: (v) {
+        final t = (v ?? '').trim();
+        if (t.isEmpty) return 'Enter total quantity';
+        final n = int.tryParse(t);
+        if (n == null || n <= 0) return 'Enter a valid quantity';
+        return null;
+      },
+      decoration: InputDecoration(
+        labelText: 'Total quantity per delivery',
+        helperText: 'Dish portions must add up to exactly this',
+        helperStyle: GoogleFonts.poppins(
+          fontSize: 10.5,
+          color: const Color(0xFF7A6A62),
+        ),
+        prefixIcon: Icon(
+          Icons.numbers_rounded,
+          color: ChechiBrand.maroon.withValues(alpha: 0.75),
+        ),
+        filled: true,
+        fillColor: const Color(0xFFFCF7F2),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: ChechiBrand.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: ChechiBrand.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: ChechiBrand.maroon, width: 1.4),
+        ),
+      ),
+    );
+  }
+
+  /// Live "80 of 100 assigned · 20 left" readout under the total field.
+  Widget _allocationBar() {
+    final total = _requestedTotal;
+    if (total <= 0) return const SizedBox.shrink();
+    final assigned = _totalPortions;
+    final left = _remainingPortions;
+    final done = left == 0;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: done
+            ? const Color(0xFFE8F5E9)
+            : ChechiBrand.maroonDeep.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: done ? const Color(0xFFA5D6A7) : ChechiBrand.border,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            done ? Icons.check_circle_outline_rounded : Icons.pie_chart_outline,
+            size: 16,
+            color: done ? const Color(0xFF2E7D32) : ChechiBrand.maroonDeep,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              done
+                  ? 'All $total portions assigned'
+                  : '$assigned of $total assigned · $left left',
+              style: GoogleFonts.poppins(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: done ? const Color(0xFF2E7D32) : ChechiBrand.maroonDeep,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _dishSearchField() {
@@ -433,12 +784,23 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
 
   /// Sections with no dish matching the search are dropped entirely, so the
   /// list never shows a header with nothing under it.
+  ///
+  /// Reads the same resolved catalog the customer menu uses — admin-edited
+  /// categories, with deleted dishes and deleted sections filtered out — so a
+  /// dish removed from the menu can never linger on this form.
   List<Widget> _dishSectionBlocks() {
     final blocks = <Widget>[];
-    for (final section in kCustomerMenuSections) {
+    final sections = customerMenuSections;
+    for (var i = 0; i < sections.length; i++) {
+      final section = sections[i];
+      final sectionId = customerMenuSectionIdAt(i);
+      if (MenuDeletedDishes.instance.isSectionDeleted(sectionId)) continue;
+      final live = section.dishes
+          .where((d) => !MenuDeletedDishes.instance.isDeleted(sectionId, d.title))
+          .toList();
       final dishes = _dishQuery.isEmpty
-          ? section.dishes
-          : section.dishes
+          ? live
+          : live
                 .where(
                   (d) =>
                       d.title.toLowerCase().contains(_dishQuery) ||
@@ -446,7 +808,7 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
                 )
                 .toList();
       if (dishes.isEmpty) continue;
-      blocks.add(_dishSectionBlock(section, dishes));
+      blocks.add(_dishSectionBlock(section, sectionId, dishes));
     }
     if (blocks.isEmpty) {
       blocks.add(
@@ -468,6 +830,7 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
 
   Widget _dishSectionBlock(
     MenuCatalogSection section,
+    String sectionId,
     List<MenuCatalogDish> dishes,
   ) {
     final selectedInSection = dishes
@@ -505,11 +868,26 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
           for (final dish in dishes)
             _DishRow(
               dish: dish,
-              sectionId: section.title,
+              sectionId: sectionId,
               quantity: _dishQuantities[dish.title],
+              qtyController: _dishQtyController(dish.title),
               enabled: !_busy,
-              onAdd: () => _setDishQuantity(dish.title, kDefaultDishQuantity),
-              onChanged: (qty) => _setDishQuantity(dish.title, qty),
+              onAdd: () {
+                final seed = _maxQuantityFor(dish.title) < kDefaultDishQuantity
+                    ? _maxQuantityFor(dish.title)
+                    : kDefaultDishQuantity;
+                final applied = _setDishQuantity(dish.title, seed);
+                _dishQtyController(dish.title).text =
+                    applied <= 0 ? '' : '$applied';
+                if (applied <= 0) {
+                  _showSnack('No portions left — increase the plan total.');
+                }
+              },
+              onTyped: (raw) => _onDishQtyTyped(dish.title, raw),
+              onRemove: () {
+                _setDishQuantity(dish.title, 0);
+                _dishQtyController(dish.title).clear();
+              },
             ),
         ],
       ),
@@ -699,6 +1077,237 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
   }
 }
 
+/// Post-submit confirmation: animated tick, what happens next, and where the
+/// customer can find the request again.
+class _BookingSentScreen extends StatefulWidget {
+  const _BookingSentScreen({
+    required this.organisation,
+    required this.phone,
+    required this.portions,
+    required this.dishCount,
+    required this.meals,
+    required this.onDone,
+  });
+
+  final String organisation;
+  final String phone;
+  final int portions;
+  final int dishCount;
+  final List<String> meals;
+  final VoidCallback onDone;
+
+  @override
+  State<_BookingSentScreen> createState() => _BookingSentScreenState();
+}
+
+class _BookingSentScreenState extends State<_BookingSentScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _ring;
+  late final Animation<double> _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..forward();
+    _ring = CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0, 0.55, curve: Curves.easeOutBack),
+    );
+    _tick = CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0.35, 1, curve: Curves.easeOutCubic),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = <String>[
+      if (widget.meals.isNotEmpty) widget.meals.join(' · '),
+      if (widget.dishCount > 0)
+        '${widget.dishCount} dish${widget.dishCount == 1 ? '' : 'es'}',
+      if (widget.portions > 0) '${widget.portions} portions per delivery',
+    ].join('  •  ');
+
+    return Scaffold(
+      body: DecoratedBox(
+        decoration: BoxDecoration(gradient: ChechiPremium.brandGradient()),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+            child: Column(
+              children: [
+                const Spacer(),
+                ScaleTransition(
+                  scale: _ring,
+                  child: Container(
+                    width: 112,
+                    height: 112,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: ChechiBrand.maroonDeep.withValues(alpha: 0.08),
+                      border: Border.all(
+                        color: ChechiBrand.maroonDeep,
+                        width: 2,
+                      ),
+                    ),
+                    child: Center(
+                      child: ScaleTransition(
+                        scale: _tick,
+                        child: const Icon(
+                          Icons.check_rounded,
+                          size: 62,
+                          color: ChechiBrand.maroonDeep,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Text(
+                  'Your booking is sent',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w700,
+                    color: ChechiBrand.maroonDeep,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'We will send you a quotation within 24 hours.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 13.5,
+                    height: 1.45,
+                    color: const Color(0xFF5D4037),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.94),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: ChechiBrand.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (widget.organisation.isNotEmpty) ...[
+                        Text(
+                          widget.organisation,
+                          style: GoogleFonts.poppins(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                            color: ChechiBrand.maroonDeep,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                      ],
+                      if (summary.isNotEmpty)
+                        Text(
+                          summary,
+                          style: GoogleFonts.poppins(
+                            fontSize: 11.5,
+                            height: 1.4,
+                            color: const Color(0xFF7A6A62),
+                          ),
+                        ),
+                      const SizedBox(height: 12),
+                      const Divider(height: 1, color: ChechiBrand.border),
+                      const SizedBox(height: 12),
+                      _NextStep(
+                        icon: Icons.chat_bubble_outline_rounded,
+                        text: 'A copy of this plan is in your Support chat — '
+                            'open Profile → Support to see it and reply there.',
+                      ),
+                      const SizedBox(height: 10),
+                      _NextStep(
+                        icon: Icons.notifications_active_outlined,
+                        text: 'You will get a notification as soon as the '
+                            'quotation is ready.',
+                      ),
+                      const SizedBox(height: 10),
+                      _NextStep(
+                        icon: Icons.call_outlined,
+                        text: widget.phone.isEmpty
+                            ? 'Our team will call you to confirm the plan.'
+                            : 'Our team will call you on ${widget.phone} to '
+                                'confirm the plan.',
+                      ),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: widget.onDone,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: ChechiBrand.maroonDeep,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(52),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: Text(
+                      'Continue',
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NextStep extends StatelessWidget {
+  const _NextStep({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: ChechiBrand.maroonDeep),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            style: GoogleFonts.poppins(
+              fontSize: 11.5,
+              height: 1.45,
+              color: const Color(0xFF5D4037),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _Header extends StatelessWidget {
   const _Header({
     required this.isHospital,
@@ -808,25 +1417,29 @@ class _DishCountBadge extends StatelessWidget {
   }
 }
 
-/// One selectable dish: thumbnail, name, and either an Add button or a
-/// quantity stepper. Prices are intentionally not shown — bulk plans are
-/// quoted separately, so a per-plate figure here would be misleading.
+/// One selectable dish: thumbnail, name, and either an Add button or a typed
+/// quantity box. Prices are intentionally not shown — bulk plans are quoted
+/// separately, so a per-plate figure here would be misleading.
 class _DishRow extends StatelessWidget {
   const _DishRow({
     required this.dish,
     required this.sectionId,
     required this.quantity,
+    required this.qtyController,
     required this.enabled,
     required this.onAdd,
-    required this.onChanged,
+    required this.onTyped,
+    required this.onRemove,
   });
 
   final MenuCatalogDish dish;
   final String sectionId;
   final int? quantity;
+  final TextEditingController qtyController;
   final bool enabled;
   final VoidCallback onAdd;
-  final ValueChanged<int> onChanged;
+  final ValueChanged<String> onTyped;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -906,10 +1519,11 @@ class _DishRow extends StatelessWidget {
               ),
             )
           else
-            _QuantityStepper(
-              quantity: qty,
+            _QuantityField(
+              controller: qtyController,
               enabled: enabled,
-              onChanged: onChanged,
+              onTyped: onTyped,
+              onRemove: onRemove,
             ),
         ],
       ),
@@ -961,85 +1575,78 @@ class _DishThumb extends StatelessWidget {
   }
 }
 
-class _QuantityStepper extends StatelessWidget {
-  const _QuantityStepper({
-    required this.quantity,
+/// Typed portions for one dish, with a clear button that drops it from the plan.
+class _QuantityField extends StatelessWidget {
+  const _QuantityField({
+    required this.controller,
     required this.enabled,
-    required this.onChanged,
+    required this.onTyped,
+    required this.onRemove,
   });
 
-  final int quantity;
+  final TextEditingController controller;
   final bool enabled;
-  final ValueChanged<int> onChanged;
+  final ValueChanged<String> onTyped;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _StepperButton(
-          icon: quantity <= kDishQuantityStep
-              ? Icons.delete_outline_rounded
-              : Icons.remove_rounded,
-          filled: false,
-          // Stepping below one portion removes the dish from the plan.
-          onTap: enabled ? () => onChanged(quantity - kDishQuantityStep) : null,
-        ),
         SizedBox(
-          width: 38,
-          child: Text(
-            '$quantity',
+          width: 68,
+          child: TextField(
+            controller: controller,
+            enabled: enabled,
+            keyboardType: TextInputType.number,
             textAlign: TextAlign.center,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(4),
+            ],
+            onChanged: onTyped,
             style: GoogleFonts.poppins(
-              fontSize: 13,
+              fontSize: 13.5,
               fontWeight: FontWeight.w700,
               color: ChechiBrand.maroonDeep,
             ),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Qty',
+              hintStyle: GoogleFonts.poppins(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: const Color(0xFF9C8A80),
+              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: ChechiBrand.maroonDeep),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: ChechiBrand.maroonDeep),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide:
+                    const BorderSide(color: ChechiBrand.maroon, width: 1.4),
+              ),
+            ),
           ),
         ),
-        _StepperButton(
-          icon: Icons.add_rounded,
-          filled: true,
-          onTap: enabled && quantity < kMaxDishQuantity
-              ? () => onChanged(quantity + kDishQuantityStep)
-              : null,
+        IconButton(
+          onPressed: enabled ? onRemove : null,
+          icon: const Icon(Icons.delete_outline_rounded, size: 18),
+          color: ChechiBrand.maroonDeep,
+          visualDensity: VisualDensity.compact,
+          tooltip: 'Remove from plan',
         ),
       ],
-    );
-  }
-}
-
-class _StepperButton extends StatelessWidget {
-  const _StepperButton({
-    required this.icon,
-    required this.filled,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final bool filled;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: filled ? ChechiBrand.maroonDeep : Colors.transparent,
-      shape: const CircleBorder(
-        side: BorderSide(color: ChechiBrand.maroonDeep),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          width: 30,
-          height: 30,
-          child: Icon(
-            icon,
-            size: 16,
-            color: filled ? Colors.white : ChechiBrand.maroonDeep,
-          ),
-        ),
-      ),
     );
   }
 }

@@ -30,6 +30,7 @@ import 'package:chechi_puttu_app/widgets/birthday_home_banner.dart';
 import 'package:chechi_puttu_app/services/razorpay_checkout_service.dart';
 import 'package:chechi_puttu_app/services/notifications_service.dart';
 import 'package:chechi_puttu_app/services/orders_service.dart';
+import 'package:chechi_puttu_app/services/order_charges_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -5235,29 +5236,20 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                 ),
                 const SizedBox(height: 14),
-                _preOrderSlotRow(
-                  ctx,
-                  icon: Icons.wb_sunny_outlined,
-                  meal: 'Breakfast',
-                  time: '8:00 – 10:00 AM',
-                  rule: 'Order before 12 PM',
-                ),
-                const SizedBox(height: 8),
-                _preOrderSlotRow(
-                  ctx,
-                  icon: Icons.lunch_dining_outlined,
-                  meal: 'Lunch',
-                  time: '12:00 – 2:00 PM',
-                  rule: 'Order before 6 PM',
-                ),
-                const SizedBox(height: 8),
-                _preOrderSlotRow(
-                  ctx,
-                  icon: Icons.nightlight_round,
-                  meal: 'Dinner',
-                  time: '6:00 – 9:00 PM',
-                  rule: 'Order anytime',
-                ),
+                for (final slot in AdvanceOrderSchedule.mealSlots) ...[
+                  _preOrderSlotRow(
+                    ctx,
+                    icon: slot.id == 'breakfast'
+                        ? Icons.wb_sunny_outlined
+                        : slot.id == 'lunch'
+                            ? Icons.lunch_dining_outlined
+                            : Icons.nightlight_round,
+                    meal: slot.name,
+                    time: slot.windowLabel,
+                    rule: slot.cutoffLabel,
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 const SizedBox(height: 18),
                 SizedBox(
                   width: double.infinity,
@@ -7952,6 +7944,11 @@ class _OrderUiModel {
     required this.canRate,
     required this.deliveryLine,
     required this.paymentMode,
+    required this.totalRupees,
+    this.itemTotalRupees,
+    this.deliveryChargeRupees,
+    this.packingChargeRupees,
+    this.scheduleLine = '',
   });
 
   final String sourceId;
@@ -7967,6 +7964,18 @@ class _OrderUiModel {
   final bool canRate;
   final String deliveryLine;
   final String paymentMode;
+
+  /// Amount charged for the order (items + delivery + packing).
+  final int totalRupees;
+
+  /// Breakdown as stored on the order. Null on orders placed before charges
+  /// were itemised — the invoice then shows a combined charges line.
+  final int? itemTotalRupees;
+  final int? deliveryChargeRupees;
+  final int? packingChargeRupees;
+
+  /// e.g. `Booked for 2/8/2026 · Breakfast · 8:30 – 9:30 AM`
+  final String scheduleLine;
 
   /// Customer may cancel while the order is still early in the flow. Once it is
   /// out for delivery, delivered, completed, cancelled or rejected, it can't.
@@ -8033,12 +8042,16 @@ class _CartTabState extends State<_CartTab> {
   late final RazorpayCheckoutService _rzpCheckout;
   final Razorpay _razorpay = Razorpay();
   Completer<PaymentSuccessResponse?>? _rzpResult;
+  StreamSubscription<OrderCharges>? _chargesSub;
 
   @override
   void initState() {
     super.initState();
     _orders = OrdersService();
     _rzpCheckout = RazorpayCheckoutService();
+    _chargesSub = OrderChargesService.watch().listen((c) {
+      if (mounted) setState(() => _charges = c);
+    });
     _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onRzpSuccess);
     _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _onRzpError);
     _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _onRzpExternalWallet);
@@ -8046,6 +8059,7 @@ class _CartTabState extends State<_CartTab> {
 
   @override
   void dispose() {
+    _chargesSub?.cancel();
     _razorpay.clear();
     super.dispose();
   }
@@ -8071,9 +8085,14 @@ class _CartTabState extends State<_CartTab> {
     // selection continues in the wallet app; no completer action needed.
   }
 
-  int _deliveryFeeFor(List<CartLineItem> items) => items.isEmpty ? 0 : 30;
+  /// Admin-configured charges (Settings → Business Settings → Order Charges).
+  OrderCharges _charges = OrderChargesService.cached;
 
-  int _packagingFeeFor(List<CartLineItem> items) => items.isEmpty ? 0 : 10;
+  int _deliveryFeeFor(List<CartLineItem> items) =>
+      items.isEmpty ? 0 : _charges.deliveryRupees;
+
+  int _packagingFeeFor(List<CartLineItem> items) =>
+      items.isEmpty ? 0 : _charges.packingRupees;
 
   int _lineSum(List<CartLineItem> items) =>
       items.fold<int>(0, (s, e) => s + e.price * e.qty);
@@ -8496,6 +8515,9 @@ class _CartTabState extends State<_CartTab> {
             },
         ],
         totalRupees: total,
+        itemTotalRupees: _lineSum(lines),
+        deliveryChargeRupees: _deliveryFeeFor(lines),
+        packingChargeRupees: _packagingFeeFor(lines),
         deliveryLine: deliveryLine,
         paymentMode: 'cash_on_delivery',
         scheduleLine: scheduleLine,
@@ -8624,8 +8646,8 @@ class _CartTabState extends State<_CartTab> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Pre-book only — no same-day orders. '
-                        'Example: order at 9 PM today → tomorrow dinner.',
+                        'Order cut-offs\n'
+                        '${AdvanceOrderSchedule.ruleLines().join('\n')}',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -9255,13 +9277,13 @@ class _CartSummaryCard extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           _SummaryRow(
-            label: 'Delivery Fee',
+            label: 'Delivery Charge',
             value: '₹$deliveryFee',
             color: muted,
           ),
           const SizedBox(height: 5),
           _SummaryRow(
-            label: 'Packaging Fee',
+            label: 'Packing Charge',
             value: '₹$packagingFee',
             color: muted,
           ),
@@ -9758,6 +9780,14 @@ class _OrdersTabState extends State<_OrdersTab> {
     return 0;
   }
 
+  /// Null when the field is absent — used to tell "₹0 charge" apart from
+  /// "order predates itemised charges".
+  int? _asOptionalInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.round();
+    return null;
+  }
+
   List<CartLineItem> _reorderLinesFromOrder(Map<String, dynamic> m) {
     final lines = <CartLineItem>[];
     final rawItems = m['items'];
@@ -9791,6 +9821,10 @@ class _OrdersTabState extends State<_OrdersTab> {
     final reorderLines = _reorderLinesFromOrder(m);
     final deliveryLine = (m['delivery_line'] as String?)?.trim() ?? '';
     final paymentMode = (m['payment_mode'] as String?)?.trim() ?? 'cash_on_delivery';
+    final scheduleLine = (m['schedule_line'] as String?)?.trim() ?? '';
+    final itemTotal = _asOptionalInt(m['item_total_rupees']);
+    final deliveryCharge = _asOptionalInt(m['delivery_charge_rupees']);
+    final packingCharge = _asOptionalInt(m['packing_charge_rupees']);
     final itemCount = reorderLines.fold<int>(0, (s, e) => s + e.qty);
     final tail = d.id.length > 6 ? d.id.substring(d.id.length - 6) : d.id;
     return _OrderUiModel(
@@ -9807,6 +9841,11 @@ class _OrdersTabState extends State<_OrdersTab> {
       canRate: status == _OrderUiStatus.delivered,
       deliveryLine: deliveryLine,
       paymentMode: paymentMode,
+      totalRupees: total,
+      itemTotalRupees: itemTotal,
+      deliveryChargeRupees: deliveryCharge,
+      packingChargeRupees: packingCharge,
+      scheduleLine: scheduleLine,
     );
   }
 
@@ -9955,10 +9994,23 @@ class _OrdersTabState extends State<_OrdersTab> {
     final now = DateTime.now();
     final issued =
         '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
-    final itemTotal = order.reorderLines.fold<int>(
+    final lineSum = order.reorderLines.fold<int>(
       0,
       (acc, line) => acc + line.price * line.qty,
     );
+    // Prefer what was stored on the order; fall back to the summed lines so
+    // older orders still show an item total.
+    final itemTotal = order.itemTotalRupees ?? lineSum;
+    final deliveryCharge = order.deliveryChargeRupees;
+    final packingCharge = order.packingChargeRupees;
+    final grandTotal = order.totalRupees > 0
+        ? order.totalRupees
+        : itemTotal + (deliveryCharge ?? 0) + (packingCharge ?? 0);
+    // Orders placed before charges were itemised: show whatever the total
+    // carries above the items as one combined charges line.
+    final legacyCharges = (deliveryCharge == null && packingCharge == null)
+        ? grandTotal - itemTotal
+        : 0;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -10089,11 +10141,74 @@ class _OrdersTabState extends State<_OrdersTab> {
                     );
                   }),
                   const SizedBox(height: 8),
+                  Text(
+                    'Charges',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: titleColor,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _OrdersPalette.pageBgOf(ctx),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: border),
+                    ),
+                    child: Column(
+                      children: [
+                        _SummaryRow(
+                          label: 'Item Total',
+                          value: '₹$itemTotal',
+                          color: muted,
+                        ),
+                        const SizedBox(height: 5),
+                        if (deliveryCharge != null || packingCharge != null) ...[
+                          _SummaryRow(
+                            label: 'Delivery Charge',
+                            value: '₹${deliveryCharge ?? 0}',
+                            color: muted,
+                          ),
+                          const SizedBox(height: 5),
+                          _SummaryRow(
+                            label: 'Packing Charge',
+                            value: '₹${packingCharge ?? 0}',
+                            color: muted,
+                          ),
+                        ] else if (legacyCharges > 0)
+                          _SummaryRow(
+                            label: 'Delivery & Packing Charges',
+                            value: '₹$legacyCharges',
+                            color: muted,
+                          ),
+                        const SizedBox(height: 8),
+                        Divider(color: border.withValues(alpha: 0.8), height: 1),
+                        const SizedBox(height: 8),
+                        _SummaryRow(
+                          label: 'Grand Total',
+                          value: '₹$grandTotal',
+                          color: titleColor,
+                          valueColor: const Color(0xFFE65100),
+                          labelWeight: FontWeight.w700,
+                          valueWeight: FontWeight.w800,
+                          isTotal: true,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   _orderInvoiceRow(
                     ctx,
                     'Delivery',
                     order.deliveryLine.isEmpty ? '—' : order.deliveryLine,
                   ),
+                  if (order.scheduleLine.isNotEmpty)
+                    _orderInvoiceRow(ctx, 'Slot', order.scheduleLine),
                   _orderInvoiceRow(
                     ctx,
                     'Payment',
@@ -10122,7 +10237,7 @@ class _OrdersTabState extends State<_OrdersTab> {
                         ),
                         const Spacer(),
                         Text(
-                          itemTotal > 0 ? '₹$itemTotal' : order.price,
+                          grandTotal > 0 ? '₹$grandTotal' : order.price,
                           style: GoogleFonts.poppins(
                             fontSize: 22,
                             fontWeight: FontWeight.w800,

@@ -17,6 +17,9 @@ class OrdersService {
     required String paymentMode,
     required String scheduleLine,
     DateTime? scheduledAt,
+    int itemTotalRupees = 0,
+    int deliveryChargeRupees = 0,
+    int packingChargeRupees = 0,
   }) async {
     final user = _auth.currentUser;
     if (user == null) {
@@ -48,6 +51,9 @@ class OrdersService {
       'customer_mobile': customerMobile,
       'status': 'placed',
       'total_rupees': totalRupees,
+      'item_total_rupees': itemTotalRupees,
+      'delivery_charge_rupees': deliveryChargeRupees,
+      'packing_charge_rupees': packingChargeRupees,
       'delivery_line': deliveryLine,
       'payment_mode': paymentMode,
       'schedule_line': scheduleLine,
