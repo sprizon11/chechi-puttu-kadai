@@ -11993,7 +11993,7 @@ class _HeroCarousel extends StatefulWidget {
 
 class _HeroCarouselState extends State<_HeroCarousel> {
   static const List<String> _bannerAssets = <String>[
-    'assets/images/home_banner_festive_2.png',
+    'assets/images/home_banner_slb.png',
   ];
 
   late final PageController _controller;
@@ -12044,7 +12044,10 @@ class _HeroCarouselState extends State<_HeroCarousel> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: AspectRatio(
-            aspectRatio: 1536 / 691,
+            // Matches the banner artwork (1774x887) so BoxFit.cover has
+            // nothing to crop — the logo and the delivery pill sit close to
+            // the edges and get cut at any other ratio.
+            aspectRatio: 1774 / 887,
             child: PageView.builder(
               controller: _controller,
               itemCount: _bannerAssets.length,

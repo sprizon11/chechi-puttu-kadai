@@ -170,26 +170,32 @@ class CustomerOrderTypeService {
   }) async {
     final uid = user.uid;
     final complete = enrollment.copyWith(enrollmentComplete: true);
-    final state = CustomerOrderTypeState(
-      orderType: type,
-      typeSelected: true,
-      bulkEnrollment: complete,
-    );
-    await _cacheState(uid, state);
-    try {
-      await _db.collection(_usersCol).doc(uid).set(
-        {
-          'uid': uid,
-          'orderType': type.firestoreValue,
-          'orderTypeSelected': true,
-          'bulkOrder': {
-            ...complete.toFirestore(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
-          'orderTypeUpdatedAt': FieldValue.serverTimestamp(),
+
+    // Firestore first, and let failures propagate. The submitted plan only
+    // reaches the kitchen (sheet + support chat + push) via the Firestore
+    // write, so caching "complete" before it lands would show the customer a
+    // confirmation for a booking nobody ever received.
+    await _db.collection(_usersCol).doc(uid).set(
+      {
+        'uid': uid,
+        'orderType': type.firestoreValue,
+        'orderTypeSelected': true,
+        'bulkOrder': {
+          ...complete.toFirestore(),
+          'updatedAt': FieldValue.serverTimestamp(),
         },
-        SetOptions(merge: true),
-      );
-    } catch (_) {}
+        'orderTypeUpdatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await _cacheState(
+      uid,
+      CustomerOrderTypeState(
+        orderType: type,
+        typeSelected: true,
+        bulkEnrollment: complete,
+      ),
+    );
   }
 }

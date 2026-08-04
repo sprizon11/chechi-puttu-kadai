@@ -242,7 +242,9 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
       setState(() => _submitted = true);
     } catch (e) {
       if (mounted) {
-        _showSnack('Could not save. Try again.');
+        _showSnack(
+          'Could not send your booking. Please check your internet and try again.',
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
