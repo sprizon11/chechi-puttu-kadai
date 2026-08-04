@@ -11993,7 +11993,7 @@ class _HeroCarousel extends StatefulWidget {
 
 class _HeroCarouselState extends State<_HeroCarousel> {
   static const List<String> _bannerAssets = <String>[
-    'assets/images/home_banner_slb.png',
+    'assets/images/home_banner_slb.jpg',
   ];
 
   late final PageController _controller;
