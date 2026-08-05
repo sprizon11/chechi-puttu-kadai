@@ -629,7 +629,7 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
           const SizedBox(height: 8),
           Center(
             child: Text(
-              'App Version 1.2.5',
+              'App Version 1.2.6',
               style: GoogleFonts.poppins(
                 fontSize: 10.5,
                 fontWeight: FontWeight.w500,
