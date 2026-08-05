@@ -217,9 +217,7 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
         alternatePhone: _altPhoneCtrl.text.trim(),
         organizationName: _orgCtrl.text.trim(),
         orderPersonName: _personCtrl.text.trim(),
-        orderPersonDesignation: widget.orderType == CustomerOrderType.corporate
-            ? _designationCtrl.text.trim()
-            : '',
+        orderPersonDesignation: _designationCtrl.text.trim(),
         preferredTime: _timeCtrl.text.trim(),
         mealSlots: [
           for (final s in AdvanceOrderSchedule.mealSlots)
@@ -321,9 +319,29 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
                             ),
                             _field(
                               controller: _altPhoneCtrl,
-                              label: 'Alternate phone (optional)',
+                              label: 'Alternate phone',
                               icon: Icons.phone_callback_outlined,
                               keyboard: TextInputType.phone,
+                              validator: (v) {
+                                final d = (v ?? '').replaceAll(
+                                  RegExp(r'\D'),
+                                  '',
+                                );
+                                if (d.length != 10) {
+                                  return 'Enter valid 10-digit number';
+                                }
+                                if (!RegExp(r'^[6-9]').hasMatch(d)) {
+                                  return 'Enter a valid Indian mobile number';
+                                }
+                                final primary = _phoneCtrl.text.replaceAll(
+                                  RegExp(r'\D'),
+                                  '',
+                                );
+                                if (d == primary) {
+                                  return 'Must differ from the primary number';
+                                }
+                                return null;
+                              },
                               last: true,
                             ),
                           ],
@@ -355,19 +373,18 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
                               validator: (v) => (v == null || v.trim().isEmpty)
                                   ? 'Required'
                                   : null,
-                              last: isHospital,
                             ),
-                            if (!isHospital)
-                              _field(
-                                controller: _designationCtrl,
-                                label: 'Order person job position',
-                                icon: Icons.work_outline_rounded,
-                                validator: (v) =>
-                                    (v == null || v.trim().isEmpty)
-                                        ? 'Required'
-                                        : null,
-                                last: true,
-                              ),
+                            _field(
+                              controller: _designationCtrl,
+                              label: isHospital
+                                  ? 'Order person designation'
+                                  : 'Order person job position',
+                              icon: Icons.work_outline_rounded,
+                              validator: (v) => (v == null || v.trim().isEmpty)
+                                  ? 'Required'
+                                  : null,
+                              last: true,
+                            ),
                           ],
                         ),
                       ),
@@ -391,10 +408,13 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
                             const SizedBox(height: 14),
                             _field(
                               controller: _timeCtrl,
-                              label: 'Preferred delivery time (optional)',
+                              label: 'Preferred delivery time',
                               icon: Icons.schedule_rounded,
                               readOnly: true,
                               onTap: _pickTime,
+                              validator: (v) => (v == null || v.trim().isEmpty)
+                                  ? 'Pick a time'
+                                  : null,
                               last: true,
                             ),
                             const SizedBox(height: 4),
