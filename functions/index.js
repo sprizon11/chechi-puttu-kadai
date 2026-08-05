@@ -2,7 +2,6 @@ const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {onRequest} = require("firebase-functions/v2/https");
 const {onDocumentCreated, onDocumentUpdated, onDocumentWritten} = require("firebase-functions/v2/firestore");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
-const functionsV1 = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const {initializeFirestore} = require("firebase-admin/firestore");
 const Razorpay = require("razorpay");
@@ -792,9 +791,10 @@ exports.cancelOrder = onCall(async (request) => {
   });
 });
 
-// Chat push notifications. The Firestore trigger (onSupportMessagePush) can't
-// deploy on this named DB in asia-south1, so the client calls this right after
-// sending a message to notify the other party.
+// Chat push notifications. A Firestore trigger can't do this job on a named
+// database in asia-south1 (v1 triggers require (default); v2 hits an Eventarc
+// internal error), so the client calls this right after sending a message to
+// notify the other party. The thread summary doc is maintained client-side.
 exports.notifyChatMessage = onCall(async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Sign in required");
@@ -913,66 +913,6 @@ exports.onOrderStatusChangedChatMessage = onDocumentUpdated(
     });
   }
 });
-
-// NOTE: onSupportMessagePush cannot be deployed as a Firestore trigger because
-// this project uses a named Firestore database ('default') in asia-south1.
-// Firebase v1 triggers require (default) database; v2 triggers hit an Eventarc
-// internal error for named databases in asia-south1. Chat messages still save
-// correctly — only push notifications for new chat messages are affected.
-// To fix: migrate support_inbox writes to the (default) database, or use an
-// HTTP callable triggered from the client after sending a message.
-exports.onSupportMessagePush = functionsV1
-    .region("asia-south1")
-    .firestore.document("support_inbox/{customerUid}/messages/{messageId}")
-    .onCreate(async (snap, context) => {
-      const customerUid = String(context.params.customerUid || "").trim();
-      const msg = snap.data();
-      if (!customerUid || !msg) return;
-
-      const sender = String(msg.sender || "").trim().toLowerCase();
-      const text = String(msg.text || "").trim();
-      if (!text) return;
-      const createdAt = msg.created_at || admin.firestore.FieldValue.serverTimestamp();
-      const inc = sender === "customer" ? 1 : 0;
-      const profile = await userProfileLite(customerUid);
-      await db.collection("support_inbox").doc(customerUid).set({
-        customer_uid: customerUid,
-        customer_name: profile.name,
-        customer_mobile: profile.mobile,
-        last_message: text,
-        last_sender: sender || "customer",
-        last_at: createdAt,
-        updated_at: admin.firestore.FieldValue.serverTimestamp(),
-        unread_customer_to_admin: admin.firestore.FieldValue.increment(inc),
-      }, {merge: true});
-
-      if (sender === "customer") {
-        const aUid = await adminUid();
-        if (!aUid) return;
-        const name = await userDisplayName(customerUid);
-        await sendPush({
-          uid: aUid,
-          title: name ? `New message from ${name}` : "New customer message",
-          body: text,
-          data: {
-            type: "chat_message",
-            customer_uid: customerUid,
-          },
-        });
-        return;
-      }
-
-      // admin/system message -> notify customer
-      await sendPush({
-        uid: customerUid,
-        title: sender === "system" ? "Order update" : "New message from support",
-        body: text,
-        data: {
-          type: sender === "system" ? "order_chat_update" : "chat_message",
-          customer_uid: customerUid,
-        },
-      });
-    });
 
 const IST_TIMEZONE = "Asia/Kolkata";
 
