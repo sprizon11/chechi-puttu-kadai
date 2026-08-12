@@ -10,6 +10,7 @@ import 'package:chechi_puttu_app/services/customer_menu_section_overrides.dart';
 import 'package:chechi_puttu_app/services/customer_order_type_service.dart';
 import 'package:chechi_puttu_app/services/menu_deleted_dishes.dart';
 import 'package:chechi_puttu_app/theme/chechi_premium.dart';
+import 'package:chechi_puttu_app/widgets/fssai_license_footer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -469,6 +470,7 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
                           ],
                         ),
                       ),
+                      const FssaiLicenseFooter(padding: EdgeInsets.only(top: 20)),
                     ],
                   ),
                 ),
@@ -574,8 +576,9 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
     }
   }
 
-  /// Breakfast / lunch / dinner, with the same windows and cut-offs the
-  /// normal ordering flow uses.
+  /// Breakfast / lunch / dinner. Bulk plans are delivered at the time agreed
+  /// in the quotation, so the standard windows and cut-offs are not shown —
+  /// only the meal itself is picked here.
   Widget _mealSlotTiles() {
     return Column(
       children: [
@@ -624,26 +627,13 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '${slot.name} · ${slot.windowLabel}',
-                              style: GoogleFonts.poppins(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w600,
-                                color: ChechiBrand.maroonDeep,
-                              ),
-                            ),
-                            Text(
-                              slot.cutoffLabel,
-                              style: GoogleFonts.poppins(
-                                fontSize: 10.5,
-                                color: const Color(0xFF7A6A62),
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          slot.name,
+                          style: GoogleFonts.poppins(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: ChechiBrand.maroonDeep,
+                          ),
                         ),
                       ),
                       Checkbox(

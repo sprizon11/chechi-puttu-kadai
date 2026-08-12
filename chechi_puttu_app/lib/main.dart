@@ -27,6 +27,7 @@ import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
 import 'package:chechi_puttu_app/theme/chechi_motion.dart';
 import 'package:chechi_puttu_app/theme/chechi_premium.dart';
 import 'package:chechi_puttu_app/widgets/birthday_home_banner.dart';
+import 'package:chechi_puttu_app/widgets/fssai_license_footer.dart';
 import 'package:chechi_puttu_app/services/razorpay_checkout_service.dart';
 import 'package:chechi_puttu_app/services/notifications_service.dart';
 import 'package:chechi_puttu_app/services/orders_service.dart';
@@ -6361,9 +6362,12 @@ class _HomeScreenState extends State<HomeScreen>
                       0, 0, 0, 90 + MediaQuery.of(context).padding.bottom),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: searching
-                        ? _buildHomeSearchBody(context, tokens)
-                        : _buildHomeBrowseBody(context),
+                    children: [
+                      ...searching
+                          ? _buildHomeSearchBody(context, tokens)
+                          : _buildHomeBrowseBody(context),
+                      const FssaiLicenseFooter(),
+                    ],
                   ),
                 ),
               );
@@ -7079,15 +7083,25 @@ void _showChechiAboutDialog(BuildContext context) {
         ),
       ),
       content: SingleChildScrollView(
-        child: Text(
-          'Sai Logabala OPC Pvt. Ltd. proudly presents Chechi Puttu Kadai, a brand dedicated to bringing authentic Kerala traditional flavors to your plate. We specialize in a wide variety of puttu, homemade snacks, catering services, live counters, party orders, and doorstep delivery with quality, hygiene, and taste at heart.\n\n'
-          'We also extend our services to hospital in-patients, ensuring fresh, hygienic, and homely food delivered with care and comfort.\n\n'
-          'Our mission is to serve fresh, delicious food with a touch of tradition and homemade love.',
-          style: GoogleFonts.poppins(
-            height: 1.45,
-            fontSize: 13,
-            color: _ProfilePalette.mutedOf(c),
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Sai Logabala OPC Pvt. Ltd. proudly presents Chechi Puttu Kadai, a brand dedicated to bringing authentic Kerala traditional flavors to your plate. We specialize in a wide variety of puttu, homemade snacks, catering services, live counters, party orders, and doorstep delivery with quality, hygiene, and taste at heart.\n\n'
+              'We also extend our services to hospital in-patients, ensuring fresh, hygienic, and homely food delivered with care and comfort.\n\n'
+              'Our mission is to serve fresh, delicious food with a touch of tradition and homemade love.',
+              style: GoogleFonts.poppins(
+                height: 1.45,
+                fontSize: 13,
+                color: _ProfilePalette.mutedOf(c),
+              ),
+            ),
+            const FssaiLicenseFooter(
+              showHolder: false,
+              padding: EdgeInsets.only(top: 16),
+            ),
+          ],
         ),
       ),
       actions: [
@@ -7346,6 +7360,7 @@ class _ProfileTab extends StatelessWidget {
                   ),
                 ),
               ),
+              const FssaiLicenseFooter(),
               const SizedBox(height: 100), // space for floating nav bar
             ],
           ),
@@ -8816,6 +8831,7 @@ class _CartTabState extends State<_CartTab> {
                   ),
                 ),
               ),
+              const FssaiLicenseFooter(padding: EdgeInsets.only(top: 22)),
             ],
           ),
         ),
@@ -10257,6 +10273,8 @@ class _OrdersTabState extends State<_OrdersTab> {
                       color: muted,
                     ),
                   ),
+                  const SizedBox(height: 6),
+                  Center(child: FssaiLicenseLine(color: muted)),
                   const SizedBox(height: 14),
                   SizedBox(
                     width: double.infinity,
@@ -10512,25 +10530,34 @@ class _OrdersTabState extends State<_OrdersTab> {
                                 ),
                               ),
                             ),
+                            const FssaiLicenseFooter(),
                           ],
                         );
                       }
                       return ListView.separated(
                         physics: AppPullToRefresh.scrollPhysics,
                         padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-                        itemCount: visible.length,
+                        // One extra row for the FSSAI footer at the end.
+                        itemCount: visible.length + 1,
                         separatorBuilder: (_, _) => const SizedBox(height: 12),
-                        itemBuilder: (context, i) => _OrderListCard(
-                          order: visible[i],
-                          onReorder: () => _reorder(visible[i]),
-                          onRate: visible[i].canRate
-                              ? () => _rateOrder(visible[i])
-                              : null,
-                          onInvoice: () => _showInvoice(visible[i]),
-                          onCancel: visible[i].canCancel
-                              ? () => _cancelOrder(visible[i])
-                              : null,
-                        ),
+                        itemBuilder: (context, i) {
+                          if (i == visible.length) {
+                            return const FssaiLicenseFooter(
+                              padding: EdgeInsets.fromLTRB(0, 10, 0, 0),
+                            );
+                          }
+                          return _OrderListCard(
+                            order: visible[i],
+                            onReorder: () => _reorder(visible[i]),
+                            onRate: visible[i].canRate
+                                ? () => _rateOrder(visible[i])
+                                : null,
+                            onInvoice: () => _showInvoice(visible[i]),
+                            onCancel: visible[i].canCancel
+                                ? () => _cancelOrder(visible[i])
+                                : null,
+                          );
+                        },
                       );
                       },
                     );
@@ -11116,6 +11143,7 @@ class _MenuVarietyDetailScreen extends StatelessWidget {
                     }, childCount: visible.length),
                   ),
                 ),
+              const SliverToBoxAdapter(child: FssaiLicenseFooter()),
               ],
             ),
           );
@@ -11993,7 +12021,7 @@ class _HeroCarousel extends StatefulWidget {
 
 class _HeroCarouselState extends State<_HeroCarousel> {
   static const List<String> _bannerAssets = <String>[
-    'assets/images/home_banner_slb.jpg',
+    'assets/images/home_banner_slb_v2.png',
   ];
 
   late final PageController _controller;
