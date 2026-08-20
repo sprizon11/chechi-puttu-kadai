@@ -1235,8 +1235,23 @@ exports.onBulkEnrollmentToSheet = onDocumentWritten(
       const days = Array.isArray(afterBulk.days) ? afterBulk.days.join(", ") : "";
       const dishes = Array.isArray(afterBulk.selectedDishes) ?
         afterBulk.selectedDishes.join(", ") : "";
+      // Each meal carries its own delivery time. Older plans have no
+      // mealTimes map — those fall back to the bare meal name.
+      const MEAL_LABELS = {
+        breakfast: "Breakfast",
+        lunch: "Lunch",
+        dinner: "Dinner",
+      };
+      const mealTimeMap = afterBulk.mealTimes &&
+        typeof afterBulk.mealTimes === "object" ? afterBulk.mealTimes : {};
       const meals = Array.isArray(afterBulk.mealSlots) ?
-        afterBulk.mealSlots.join(", ") : "";
+        afterBulk.mealSlots
+            .map((id) => {
+              const label = MEAL_LABELS[id] || id;
+              const at = String(mealTimeMap[id] || "").trim();
+              return at ? `${label} ${at}` : label;
+            })
+            .join(", ") : "";
       const qtyMap = afterBulk.dishQuantities &&
         typeof afterBulk.dishQuantities === "object" ?
         afterBulk.dishQuantities : {};

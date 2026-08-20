@@ -43,13 +43,18 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
   final _orgCtrl = TextEditingController();
   final _personCtrl = TextEditingController();
   final _designationCtrl = TextEditingController();
-  final _timeCtrl = TextEditingController();
 
   BulkScheduleMode _scheduleMode = BulkScheduleMode.allDays;
   final Set<String> _selectedDays = {};
 
   /// Meal windows this plan is delivered in (breakfast / lunch / dinner).
   final Set<String> _selectedMealSlots = {};
+
+  /// Delivery time picked for each selected meal, e.g. `breakfast -> 8:30 AM`.
+  /// Kept in step with [_selectedMealSlots]: deselecting a meal drops its time
+  /// so a stale time can never be submitted.
+  final Map<String, String> _mealTimes = {};
+  final Map<String, TimeOfDay> _mealTimeOfDay = {};
 
   /// Dish title -> portions per delivery. Presence in this map *is* selection,
   /// so there is no separate selected-set that could disagree with it.
@@ -62,7 +67,6 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
   final _dishSearchCtrl = TextEditingController();
   String _dishQuery = '';
   bool _busy = false;
-  TimeOfDay? _pickedTime;
 
   /// Set once the plan is saved — swaps the form for the confirmation screen
   /// instead of letting the gate jump straight to the next setup step.
@@ -80,10 +84,17 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
       _orgCtrl.text = init.organizationName;
       _personCtrl.text = init.orderPersonName;
       _designationCtrl.text = init.orderPersonDesignation;
-      _timeCtrl.text = init.preferredTime;
       _scheduleMode = init.scheduleMode;
       _selectedDays.addAll(init.days);
       _selectedMealSlots.addAll(init.mealSlots);
+      _mealTimes.addAll(init.mealTimes);
+      // Plans saved before per-meal times carry one time for the whole plan —
+      // seed every selected meal with it so nothing looks blank on reopen.
+      if (_mealTimes.isEmpty && init.preferredTime.trim().isNotEmpty) {
+        for (final id in init.mealSlots) {
+          _mealTimes[id] = init.preferredTime.trim();
+        }
+      }
       _dishQuantities.addAll(init.dishQuantities);
       if (init.totalQuantity > 0) {
         _totalQtyCtrl.text = '${init.totalQuantity}';
@@ -135,7 +146,6 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
     _orgCtrl.dispose();
     _personCtrl.dispose();
     _designationCtrl.dispose();
-    _timeCtrl.dispose();
     _totalQtyCtrl.dispose();
     _dishSearchCtrl.dispose();
     for (final c in _dishQtyCtrls.values) {
@@ -148,10 +158,27 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
       ? 'Hospital name'
       : 'Company / organisation name';
 
-  Future<void> _pickTime() async {
+  /// Sensible starting point for each meal's picker, so the customer is
+  /// nudging a plausible time rather than scrolling from midnight.
+  static const Map<String, TimeOfDay> _defaultMealTime = {
+    'breakfast': TimeOfDay(hour: 8, minute: 0),
+    'lunch': TimeOfDay(hour: 13, minute: 0),
+    'dinner': TimeOfDay(hour: 20, minute: 0),
+  };
+
+  static String _formatTime(TimeOfDay t) {
+    final h = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
+    final m = t.minute.toString().padLeft(2, '0');
+    final ampm = t.period == DayPeriod.am ? 'AM' : 'PM';
+    return '$h:$m $ampm';
+  }
+
+  Future<void> _pickMealTime(String slotId) async {
     final picked = await showTimePicker(
       context: context,
-      initialTime: _pickedTime ?? const TimeOfDay(hour: 8, minute: 0),
+      initialTime: _mealTimeOfDay[slotId] ??
+          _defaultMealTime[slotId] ??
+          const TimeOfDay(hour: 8, minute: 0),
       builder: (ctx, child) {
         return Theme(
           data: Theme.of(ctx).copyWith(
@@ -165,13 +192,36 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
     );
     if (picked == null) return;
     setState(() {
-      _pickedTime = picked;
-      final h = picked.hourOfPeriod == 0 ? 12 : picked.hourOfPeriod;
-      final m = picked.minute.toString().padLeft(2, '0');
-      final ampm = picked.period == DayPeriod.am ? 'AM' : 'PM';
-      _timeCtrl.text = '$h:$m $ampm';
+      _mealTimeOfDay[slotId] = picked;
+      _mealTimes[slotId] = _formatTime(picked);
     });
   }
+
+  /// Selecting a meal opens its time picker straight away; deselecting drops
+  /// the time so [_mealTimes] never outlives its meal.
+  void _toggleMealSlot(String slotId) {
+    final wasSelected = _selectedMealSlots.contains(slotId);
+    setState(() {
+      if (wasSelected) {
+        _selectedMealSlots.remove(slotId);
+        _mealTimes.remove(slotId);
+        _mealTimeOfDay.remove(slotId);
+      } else {
+        _selectedMealSlots.add(slotId);
+      }
+    });
+    if (!wasSelected && !_mealTimes.containsKey(slotId)) {
+      _pickMealTime(slotId);
+    }
+  }
+
+  /// e.g. `Breakfast 8:00 AM · Dinner 8:00 PM` — one line for the kitchen
+  /// sheet and the chat summary, in meal order.
+  String get _mealTimeSummary => [
+        for (final s in AdvanceOrderSchedule.mealSlots)
+          if (_selectedMealSlots.contains(s.id))
+            '${s.name} ${_mealTimes[s.id] ?? ''}'.trim(),
+      ].join(' · ');
 
   void _showSnack(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -189,6 +239,15 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
     if (_selectedMealSlots.isEmpty) {
       _showSnack('Select at least one meal (breakfast, lunch or dinner)');
       return;
+    }
+    // Every chosen meal needs its own delivery time — the kitchen schedules
+    // each one separately, so one missing time makes the plan unusable.
+    for (final slot in AdvanceOrderSchedule.mealSlots) {
+      if (_selectedMealSlots.contains(slot.id) &&
+          (_mealTimes[slot.id] ?? '').trim().isEmpty) {
+        _showSnack('Pick a delivery time for ${slot.name}');
+        return;
+      }
     }
     if (_dishQuantities.isEmpty) {
       _showSnack('Add at least one dish to the plan');
@@ -219,11 +278,18 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
         organizationName: _orgCtrl.text.trim(),
         orderPersonName: _personCtrl.text.trim(),
         orderPersonDesignation: _designationCtrl.text.trim(),
-        preferredTime: _timeCtrl.text.trim(),
+        // Kept as a readable one-liner so the kitchen sheet column and any
+        // reader predating per-meal times still shows every time.
+        preferredTime: _mealTimeSummary,
         mealSlots: [
           for (final s in AdvanceOrderSchedule.mealSlots)
             if (_selectedMealSlots.contains(s.id)) s.id,
         ],
+        mealTimes: {
+          for (final s in AdvanceOrderSchedule.mealSlots)
+            if (_selectedMealSlots.contains(s.id))
+              s.id: (_mealTimes[s.id] ?? '').trim(),
+        },
         totalQuantity: _requestedTotal > 0 ? _requestedTotal : _totalPortions,
         scheduleMode: _scheduleMode,
         days: days,
@@ -262,7 +328,8 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
         dishCount: dishCount,
         meals: [
           for (final s in AdvanceOrderSchedule.mealSlots)
-            if (_selectedMealSlots.contains(s.id)) s.name,
+            if (_selectedMealSlots.contains(s.id))
+              '${s.name} ${(_mealTimes[s.id] ?? '').trim()}'.trim(),
         ],
         onDone: widget.onCompleted,
       );
@@ -404,21 +471,19 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
                                 color: ChechiBrand.maroonDeep,
                               ),
                             ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Pick a meal, then set the time you want it '
+                              'delivered.',
+                              style: GoogleFonts.poppins(
+                                fontSize: 11.5,
+                                height: 1.35,
+                                color: const Color(0xFF7A6A62),
+                              ),
+                            ),
                             const SizedBox(height: 8),
                             _mealSlotTiles(),
-                            const SizedBox(height: 14),
-                            _field(
-                              controller: _timeCtrl,
-                              label: 'Preferred delivery time',
-                              icon: Icons.schedule_rounded,
-                              readOnly: true,
-                              onTap: _pickTime,
-                              validator: (v) => (v == null || v.trim().isEmpty)
-                                  ? 'Pick a time'
-                                  : null,
-                              last: true,
-                            ),
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 10),
                             Text(
                               'Delivery days',
                               style: GoogleFonts.poppins(
@@ -585,78 +650,155 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
         for (final slot in AdvanceOrderSchedule.mealSlots)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: _busy
-                    ? null
-                    : () => setState(() {
-                          if (!_selectedMealSlots.remove(slot.id)) {
-                            _selectedMealSlots.add(slot.id);
-                          }
-                        }),
-                child: AnimatedContainer(
-                  duration: ChechiBrand.fast,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _selectedMealSlots.contains(slot.id)
-                        ? ChechiBrand.maroonDeep.withValues(alpha: 0.07)
-                        : const Color(0xFFFCF7F2),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: _selectedMealSlots.contains(slot.id)
-                          ? ChechiBrand.maroonDeep
-                          : ChechiBrand.border,
-                      width: _selectedMealSlots.contains(slot.id) ? 1.2 : 1,
+            child: _mealSlotTile(slot),
+          ),
+      ],
+    );
+  }
+
+  /// One meal row. Selected meals grow a time row underneath, inside the same
+  /// bordered block, so the time visibly belongs to that meal.
+  Widget _mealSlotTile(AdvanceMealSlot slot) {
+    final selected = _selectedMealSlots.contains(slot.id);
+    final time = (_mealTimes[slot.id] ?? '').trim();
+    return AnimatedContainer(
+      duration: ChechiBrand.fast,
+      decoration: BoxDecoration(
+        color: selected
+            ? ChechiBrand.maroonDeep.withValues(alpha: 0.07)
+            : const Color(0xFFFCF7F2),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: selected ? ChechiBrand.maroonDeep : ChechiBrand.border,
+          width: selected ? 1.2 : 1,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: _busy ? null : () => _toggleMealSlot(slot.id),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      slot.id == 'breakfast'
+                          ? Icons.wb_sunny_outlined
+                          : slot.id == 'lunch'
+                              ? Icons.lunch_dining_outlined
+                              : Icons.nightlight_round,
+                      size: 20,
+                      color: ChechiBrand.maroonDeep,
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        slot.id == 'breakfast'
-                            ? Icons.wb_sunny_outlined
-                            : slot.id == 'lunch'
-                                ? Icons.lunch_dining_outlined
-                                : Icons.nightlight_round,
-                        size: 20,
-                        color: ChechiBrand.maroonDeep,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          slot.name,
-                          style: GoogleFonts.poppins(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                            color: ChechiBrand.maroonDeep,
-                          ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        slot.name,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: ChechiBrand.maroonDeep,
                         ),
                       ),
-                      Checkbox(
-                        value: _selectedMealSlots.contains(slot.id),
-                        onChanged: _busy
-                            ? null
-                            : (v) => setState(() {
-                                  if (v == true) {
-                                    _selectedMealSlots.add(slot.id);
-                                  } else {
-                                    _selectedMealSlots.remove(slot.id);
-                                  }
-                                }),
-                        activeColor: ChechiBrand.maroonDeep,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ],
-                  ),
+                    ),
+                    Checkbox(
+                      value: selected,
+                      onChanged:
+                          _busy ? null : (_) => _toggleMealSlot(slot.id),
+                      activeColor: ChechiBrand.maroonDeep,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-      ],
+          if (selected) _mealTimeRow(slot, time),
+        ],
+      ),
+    );
+  }
+
+  /// Time row for a selected meal — tap anywhere on it to (re)pick.
+  Widget _mealTimeRow(AdvanceMealSlot slot, String time) {
+    final hasTime = time.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: _busy ? null : () => _pickMealTime(slot.id),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: hasTime
+                    ? ChechiBrand.border
+                    : ChechiBrand.accent.withValues(alpha: 0.9),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.schedule_rounded,
+                  size: 18,
+                  color: ChechiBrand.maroon.withValues(alpha: 0.75),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${slot.name} delivery time',
+                        style: GoogleFonts.poppins(
+                          fontSize: 10.5,
+                          color: const Color(0xFF7A6A62),
+                        ),
+                      ),
+                      Text(
+                        hasTime ? time : 'Tap to set time',
+                        style: GoogleFonts.poppins(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: hasTime
+                              ? ChechiBrand.maroonDeep
+                              : ChechiBrand.accent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  hasTime ? 'Change' : 'Set',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: ChechiBrand.maroonDeep,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: ChechiBrand.maroonDeep,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 

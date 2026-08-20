@@ -125,7 +125,7 @@ Start with **Internal testing** (up to 100 testers) before Production.
 | 2 | **Closed testing** (optional) | 5–20 customers | Real orders, COD, notifications |
 | 3 | **Production** | Everyone | Public listing live |
 
-Do **not** skip internal testing on **1.1.0+7** — this build includes Firestore database fix, admin dashboard rules, menu category delete sync, and menu image cloud sync.
+Do **not** skip internal testing on **1.2.7+46** — this build changes the home banner, adds the FSSAI licence footer to every customer page, and reworks the bulk order meal picker.
 
 ---
 

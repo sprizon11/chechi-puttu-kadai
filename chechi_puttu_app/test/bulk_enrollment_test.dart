@@ -40,4 +40,44 @@ void main() {
       expect(restored.dishQuantities, {'Rice Puttu': 25});
     });
   });
+
+  group('BulkOrderEnrollment meal times', () {
+    test('reads a per-meal time map', () {
+      final e = BulkOrderEnrollment.fromMap({
+        'mealSlots': ['breakfast', 'dinner'],
+        'mealTimes': {'breakfast': '8:00 AM', 'dinner': '8:00 PM'},
+      });
+      expect(e.mealSlots, ['breakfast', 'dinner']);
+      expect(e.mealTimes, {'breakfast': '8:00 AM', 'dinner': '8:00 PM'});
+    });
+
+    test('drops blank times so a meal never looks scheduled when it is not',
+        () {
+      final e = BulkOrderEnrollment.fromMap({
+        'mealSlots': ['breakfast', 'lunch'],
+        'mealTimes': {'breakfast': '8:00 AM', 'lunch': '   '},
+      });
+      expect(e.mealTimes, {'breakfast': '8:00 AM'});
+    });
+
+    test('plans saved before per-meal times keep their single time', () {
+      final e = BulkOrderEnrollment.fromMap({
+        'mealSlots': ['lunch'],
+        'preferredTime': '1:00 PM',
+      });
+      expect(e.mealTimes, isEmpty);
+      expect(e.preferredTime, '1:00 PM');
+    });
+
+    test('round-trips meal times through toFirestore', () {
+      const original = BulkOrderEnrollment(
+        mealSlots: ['breakfast'],
+        mealTimes: {'breakfast': '7:30 AM'},
+        preferredTime: 'Breakfast 7:30 AM',
+      );
+      final restored = BulkOrderEnrollment.fromMap(original.toFirestore());
+      expect(restored.mealTimes, {'breakfast': '7:30 AM'});
+      expect(restored.preferredTime, 'Breakfast 7:30 AM');
+    });
+  });
 }
