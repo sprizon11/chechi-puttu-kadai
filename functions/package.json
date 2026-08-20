@@ -2,7 +2,7 @@
   "name": "chechi-puttu-functions",
   "description": "Firebase Cloud Functions — Razorpay checkout + webhook",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "index.js",
   "scripts": {
