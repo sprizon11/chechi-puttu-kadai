@@ -8498,6 +8498,23 @@ class _CartTabState extends State<_CartTab> {
     );
     if (!context.mounted || pay == null) return;
 
+    // The cut-off was checked when the slot was picked, but choosing a payment
+    // method can sit open across it. Re-check before money is taken or the
+    // order is written — neither path checks again after this point.
+    if (!AdvanceOrderSchedule.isBookingOpen(booking)) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Ordering for ${booking.slot.name.toLowerCase()} on '
+            '${booking.deliveryDate.day}/${booking.deliveryDate.month} just '
+            'closed. Please book again and pick another slot.',
+            style: GoogleFonts.poppins(),
+          ),
+        ),
+      );
+      return;
+    }
+
     final scheduleLine = booking.displayLine;
     final scheduledAt = booking.when;
 

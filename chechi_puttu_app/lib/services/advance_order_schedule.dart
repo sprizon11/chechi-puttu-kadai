@@ -156,6 +156,15 @@ class AdvanceOrderSchedule {
         .add(const Duration(days: 1));
   }
 
+  /// True while [booking] can still be placed.
+  ///
+  /// The picker checks the cut-off when the slot is chosen, but choosing a
+  /// payment method and completing it can take minutes. Call this again
+  /// immediately before money is taken or the order is written — a slot that
+  /// closed in between is one the kitchen cannot cook.
+  static bool isBookingOpen(AdvanceMealBooking booking, [DateTime? now]) =>
+      booking.slot.isOpenFor(booking.deliveryDate, now);
+
   /// The three fixed rules, for info panels.
   static List<String> ruleLines() => [
         for (final s in mealSlots) '${s.name} ${s.windowLabel} — ${s.cutoffLabel}',
