@@ -88,11 +88,20 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
       _selectedDays.addAll(init.days);
       _selectedMealSlots.addAll(init.mealSlots);
       _mealTimes.addAll(init.mealTimes);
+      // Seed the picker's starting value too, so reopening a saved plan and
+      // tapping Change lands on the time already chosen, not the default.
+      for (final e in init.mealTimes.entries) {
+        final t = _parseTime(e.value);
+        if (t != null) _mealTimeOfDay[e.key] = t;
+      }
       // Plans saved before per-meal times carry one time for the whole plan —
       // seed every selected meal with it so nothing looks blank on reopen.
       if (_mealTimes.isEmpty && init.preferredTime.trim().isNotEmpty) {
+        final legacy = init.preferredTime.trim();
+        final legacyTime = _parseTime(legacy);
         for (final id in init.mealSlots) {
-          _mealTimes[id] = init.preferredTime.trim();
+          _mealTimes[id] = legacy;
+          if (legacyTime != null) _mealTimeOfDay[id] = legacyTime;
         }
       }
       _dishQuantities.addAll(init.dishQuantities);
@@ -165,6 +174,21 @@ class _BulkOrderSetupScreenState extends State<BulkOrderSetupScreen> {
     'lunch': TimeOfDay(hour: 13, minute: 0),
     'dinner': TimeOfDay(hour: 20, minute: 0),
   };
+
+  /// Reads back a time this form wrote, e.g. `8:30 AM`. Returns null for
+  /// anything else so a stray value just falls back to the meal default.
+  static TimeOfDay? _parseTime(String raw) {
+    final m = RegExp(r'^(\d{1,2}):(\d{2})\s*([AaPp])[Mm]$').firstMatch(
+      raw.trim(),
+    );
+    if (m == null) return null;
+    var hour = int.parse(m.group(1)!);
+    final minute = int.parse(m.group(2)!);
+    if (hour < 1 || hour > 12 || minute > 59) return null;
+    final isPm = m.group(3)!.toUpperCase() == 'P';
+    if (hour == 12) hour = 0;
+    return TimeOfDay(hour: isPm ? hour + 12 : hour, minute: minute);
+  }
 
   static String _formatTime(TimeOfDay t) {
     final h = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
