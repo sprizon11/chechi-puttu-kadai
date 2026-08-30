@@ -32,6 +32,7 @@ import 'package:chechi_puttu_app/services/razorpay_checkout_service.dart';
 import 'package:chechi_puttu_app/services/notifications_service.dart';
 import 'package:chechi_puttu_app/services/orders_service.dart';
 import 'package:chechi_puttu_app/services/order_charges_service.dart';
+import 'package:chechi_puttu_app/services/order_hold_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -6346,6 +6347,7 @@ class _HomeScreenState extends State<HomeScreen>
               onOpenChat: _openCustomerChat,
             ),
           ),
+        const _OrderHoldBanner(),
         Expanded(
           child: ListenableBuilder(
             listenable: Listenable.merge([
@@ -7069,6 +7071,179 @@ void _showChechiContactUsDialog(BuildContext context) {
       ],
     ),
   );
+}
+
+String _orderHoldDayLabel(DateTime d) {
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  return '${days[d.weekday - 1]}, ${d.day} ${months[d.month - 1]}';
+}
+
+/// Shown when the customer tries to check out while the kitchen is on hold.
+Future<void> _showOrderHoldDialog(BuildContext context, OrderHold hold) {
+  final resume = hold.resumeOn;
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) {
+      final cs = Theme.of(ctx).colorScheme;
+      return AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0xFFFFF3E0),
+              ),
+              child: const Icon(
+                Icons.no_meals_outlined,
+                size: 28,
+                color: Color(0xFFE65100),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Not accepting orders',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.playfairDisplay(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: cs.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              hold.customerMessage,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                height: 1.5,
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+            if (resume != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.calendar_today_outlined,
+                      size: 14,
+                      color: cs.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Opens ${_orderHoldDayLabel(resume)}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: FilledButton.styleFrom(
+              backgroundColor: _AppColors.primary,
+              minimumSize: const Size.fromHeight(46),
+            ),
+            child: Text(
+              'OK',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+/// Home banner telling customers the kitchen is not taking orders, so they
+/// find out before filling a cart rather than at checkout.
+class _OrderHoldBanner extends StatelessWidget {
+  const _OrderHoldBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<OrderHold>(
+      stream: OrderHoldService.watch(),
+      initialData: OrderHoldService.cached,
+      builder: (context, snap) {
+        final hold = snap.data ?? OrderHold.off;
+        if (!hold.isHoldingAt()) return const SizedBox.shrink();
+        final resume = hold.resumeOn;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF3E0),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFFFCC80)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.info_outline_rounded,
+                  size: 18,
+                  color: Color(0xFFE65100),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        hold.customerMessage,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          height: 1.45,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF8C4A00),
+                        ),
+                      ),
+                      if (resume != null)
+                        Text(
+                          'Orders open again ${_orderHoldDayLabel(resume)}',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: const Color(0xFFA1673B),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 void _showChechiAboutDialog(BuildContext context) {
@@ -8432,10 +8607,33 @@ class _CartTabState extends State<_CartTab> {
     }
   }
 
+  /// Current hold, read from the server so a customer is never turned away on
+  /// a stale cache — nor let through on one. Falls back to the last value seen
+  /// if the read is slow or the phone is offline, which is what the home
+  /// banner is already showing.
+  Future<OrderHold> _resolveOrderHold() async {
+    try {
+      return await OrderHoldService.loadFresh()
+          .timeout(const Duration(seconds: 4));
+    } catch (_) {
+      return OrderHoldService.cached;
+    }
+  }
+
   Future<void> _runCheckout(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     final lines = List<CartLineItem>.from(widget.cartLinesNotifier.value);
     if (lines.isEmpty) return;
+
+    // Kitchen closed or full: stop before the customer picks an address, a
+    // slot or a payment method, so nothing is half-filled when they are told.
+    final hold = await _resolveOrderHold();
+    if (!context.mounted) return;
+    if (hold.isHoldingAt()) {
+      await _showOrderHoldDialog(context, hold);
+      return;
+    }
+
     final deliveryLine = await _ensureDeliveryLineForCheckout(context);
     if (!context.mounted || deliveryLine == null) return;
 

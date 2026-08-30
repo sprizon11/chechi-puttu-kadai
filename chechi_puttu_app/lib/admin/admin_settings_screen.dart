@@ -1,5 +1,6 @@
 import 'package:chechi_puttu_app/admin/admin_shop_location_screen.dart';
 import 'package:chechi_puttu_app/services/order_charges_service.dart';
+import 'package:chechi_puttu_app/services/order_hold_service.dart';
 import 'package:chechi_puttu_app/services/shop_location_service.dart';
 import 'package:chechi_puttu_app/services/app_refresh.dart';
 import 'package:chechi_puttu_app/widgets/app_pull_to_refresh.dart';
@@ -29,12 +30,42 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
   String _language = 'English';
   String _shopLocationSubtitle = 'Set kadai location on map';
   OrderCharges _charges = OrderChargesService.cached;
+  OrderHold _hold = OrderHoldService.cached;
 
   @override
   void initState() {
     super.initState();
     _loadShopLocationSubtitle();
     _loadOrderCharges();
+    _loadOrderHold();
+  }
+
+  Future<void> _loadOrderHold() async {
+    final hold = await OrderHoldService.load();
+    if (!mounted) return;
+    setState(() => _hold = hold);
+  }
+
+  /// Subtitle on the settings tile — says what customers are experiencing
+  /// right now, not just what the switch is set to.
+  String get _holdSubtitle {
+    if (!_hold.isHoldingAt()) {
+      return _hold.active
+          ? 'Resumed — orders are being accepted again'
+          : 'Accepting orders normally';
+    }
+    final resume = _hold.resumeOn;
+    if (resume == null) return 'On — orders are paused until you turn this off';
+    return 'On - accepting again ${_shortDate(resume)}';
+  }
+
+  static String _shortDate(DateTime d) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return '${days[d.weekday - 1]} ${d.day} ${months[d.month - 1]}';
   }
 
   Future<void> _loadOrderCharges() async {
@@ -51,6 +82,189 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
           ? 'Set kadai location on map'
           : shop.address;
     });
+  }
+
+  /// Kitchen closed or already full. Customers keep browsing but checkout is
+  /// refused with the message admin types here.
+  Future<void> _openOrderHold() async {
+    final current = await OrderHoldService.load();
+    if (!mounted) return;
+    setState(() => _hold = current);
+
+    final messageCtrl = TextEditingController(text: current.message);
+    var active = current.active;
+    DateTime? resumeOn = current.resumeOn;
+
+    final save = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        return StatefulBuilder(
+          builder: (ctx, setDialog) {
+            final picked = resumeOn;
+            return AlertDialog(
+              title: Text(
+                'Order hold',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w700,
+                  color: cs.onSurface,
+                ),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: active,
+                      onChanged: (v) => setDialog(() => active = v),
+                      title: Text(
+                        'Hold new orders',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: cs.onSurface,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Customers can browse but cannot check out',
+                        style: GoogleFonts.poppins(
+                          fontSize: 11.5,
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: messageCtrl,
+                      enabled: active,
+                      maxLines: 3,
+                      maxLength: OrderHold.maxMessageLength,
+                      style: GoogleFonts.poppins(fontSize: 13),
+                      decoration: InputDecoration(
+                        labelText: 'Message shown to customers',
+                        hintText: 'Orders are full for the next 2 days. We '
+                            'will accept new orders from Thursday.',
+                        hintStyle: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: cs.onSurfaceVariant,
+                        ),
+                        border: const OutlineInputBorder(),
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: !active
+                          ? null
+                          : () async {
+                              final now = DateTime.now();
+                              final chosen = await showDatePicker(
+                                context: ctx,
+                                initialDate: resumeOn ??
+                                    now.add(const Duration(days: 1)),
+                                firstDate: now,
+                                lastDate: now.add(const Duration(days: 365)),
+                                helpText: 'Accepting orders again from',
+                              );
+                              if (chosen == null) return;
+                              setDialog(() => resumeOn = chosen);
+                            },
+                      icon: const Icon(Icons.calendar_today_outlined, size: 16),
+                      label: Text(
+                        picked == null
+                            ? 'Set a date to resume (optional)'
+                            : 'Accepting again ${_shortDate(picked)}',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (picked != null)
+                      TextButton(
+                        onPressed: !active
+                            ? null
+                            : () => setDialog(() => resumeOn = null),
+                        child: Text(
+                          'Clear date, hold until I turn it off',
+                          style: GoogleFonts.poppins(fontSize: 11.5),
+                        ),
+                      ),
+                    Text(
+                      picked == null
+                          ? 'Without a date the hold stays on until you switch '
+                              'it off.'
+                          : 'The hold lifts by itself that morning.',
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        height: 1.4,
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(
+                    'Save',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (save != true) {
+      messageCtrl.dispose();
+      return;
+    }
+    final next = OrderHold(
+      active: active,
+      message: messageCtrl.text.trim(),
+      resumeOn: active ? resumeOn : null,
+    );
+    messageCtrl.dispose();
+    try {
+      await OrderHoldService.save(
+        next,
+        updatedByUid: FirebaseAuth.instance.currentUser?.uid,
+      );
+      if (!mounted) return;
+      setState(() => _hold = next);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            next.isHoldingAt()
+                ? 'Orders are on hold. Customers will see your message.'
+                : 'Orders are being accepted again.',
+            style: GoogleFonts.poppins(),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not save. Check your internet and try again.',
+            style: GoogleFonts.poppins(),
+          ),
+        ),
+      );
+    }
   }
 
   /// Delivery + packing charges added to every order.
@@ -545,6 +759,20 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
                     'Delivery ₹${_charges.deliveryRupees} + Packing ₹${_charges.packingRupees} '
                     '= ₹${_charges.totalRupees} extra per order',
                 onTap: _openOrderCharges,
+              ),
+              _SettingsTile(
+                icon: _hold.isHoldingAt()
+                    ? Icons.pause_circle_outline_rounded
+                    : Icons.play_circle_outline_rounded,
+                iconBg: _hold.isHoldingAt()
+                    ? const Color(0xFFFFF3E0)
+                    : const Color(0xFFE8F5E9),
+                iconColor: _hold.isHoldingAt()
+                    ? const Color(0xFFE65100)
+                    : const Color(0xFF2E7D32),
+                title: 'Order hold',
+                subtitle: _holdSubtitle,
+                onTap: _openOrderHold,
               ),
               _SettingsTile(
                 icon: Icons.menu_book_outlined,
