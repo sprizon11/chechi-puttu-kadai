@@ -1116,7 +1116,10 @@ exports.onSupportAbuseGuard = onDocumentCreated(
 // row to the shop's Google Sheet. The sheet must be shared (Editor) with this
 // function's service account: 316102307451-compute@developer.gserviceaccount.com
 const BULK_ORDERS_SHEET_ID = "169gBdQ9r0hrIshrkWMVni-a8KCKZ6qwPCas9rqGHHDE";
-const BULK_ORDERS_SHEET_TAB = "Sheet1";
+const BULK_ORDERS_SHEET_TAB = "Bulk orders";
+// The tab was called Sheet1 before regular orders got their own tab. Rename it
+// in place rather than starting an empty one, so the existing rows come along.
+const BULK_ORDERS_LEGACY_TAB = "Sheet1";
 const BULK_ORDERS_HEADER = [
   "Submitted At", "Type", "Organisation", "Your Name", "Order Person",
   "Job Position", "Phone", "Alt Phone", "Preferred Time", "Delivery Days",
@@ -1135,20 +1138,89 @@ const REGULAR_ORDERS_HEADER = [
   "Slot", "Status", "Customer UID",
 ];
 
-/** Creates [tab] if the spreadsheet does not have it yet. */
-async function ensureSheetTab(sheets, tab) {
+/**
+ * Makes sure [tab] exists and returns its sheetId. When [legacyTab] is given
+ * and only that one exists, it is renamed rather than left behind with the
+ * rows in it.
+ */
+async function ensureSheetTab(sheets, tab, legacyTab) {
   const meta = await sheets.spreadsheets.get({
     spreadsheetId: BULK_ORDERS_SHEET_ID,
-    fields: "sheets.properties.title",
+    fields: "sheets.properties(sheetId,title)",
   });
-  const exists = (meta.data.sheets || []).some(
-      (s) => s.properties && s.properties.title === tab,
-  );
-  if (exists) return;
+  const all = (meta.data.sheets || []).map((s) => s.properties);
+  const found = all.find((p) => p && p.title === tab);
+  if (found) return {sheetId: found.sheetId, created: false};
+
+  const legacy = legacyTab ?
+    all.find((p) => p && p.title === legacyTab) : undefined;
+  if (legacy) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: BULK_ORDERS_SHEET_ID,
+      requestBody: {
+        requests: [{
+          updateSheetProperties: {
+            properties: {sheetId: legacy.sheetId, title: tab},
+            fields: "title",
+          },
+        }],
+      },
+    });
+    return {sheetId: legacy.sheetId, created: false};
+  }
+
+  const res = await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: BULK_ORDERS_SHEET_ID,
+    requestBody: {requests: [{addSheet: {properties: {title: tab}}}]},
+  });
+  const props = res.data.replies[0].addSheet.properties;
+  return {sheetId: props.sheetId, created: true};
+}
+
+/**
+ * Bold green header, frozen and filterable, with columns sized to content —
+ * so a tab this code creates reads like the one the shop set up by hand.
+ */
+async function styleHeaderRow(sheets, sheetId, columnCount) {
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: BULK_ORDERS_SHEET_ID,
     requestBody: {
-      requests: [{addSheet: {properties: {title: tab}}}],
+      requests: [
+        {
+          repeatCell: {
+            range: {sheetId, startRowIndex: 0, endRowIndex: 1},
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: {red: 0.71, green: 0.84, blue: 0.66},
+                textFormat: {bold: true},
+                verticalAlignment: "MIDDLE",
+              },
+            },
+            fields: "userEnteredFormat(backgroundColor,textFormat,"
+              + "verticalAlignment)",
+          },
+        },
+        {
+          updateSheetProperties: {
+            properties: {sheetId, gridProperties: {frozenRowCount: 1}},
+            fields: "gridProperties.frozenRowCount",
+          },
+        },
+        {
+          setBasicFilter: {
+            filter: {
+              range: {sheetId, startRowIndex: 0, startColumnIndex: 0,
+                endColumnIndex: columnCount},
+            },
+          },
+        },
+        {
+          autoResizeDimensions: {
+            dimensions: {sheetId, dimension: "COLUMNS",
+              startIndex: 0, endIndex: columnCount},
+          },
+        },
+      ],
     },
   });
 }
@@ -1157,15 +1229,16 @@ async function ensureSheetTab(sheets, tab) {
  * Appends one row to [tab], creating the tab and writing [header] the first
  * time. Used by both the bulk enrollment and the regular order triggers.
  */
-async function appendSheetRow(tab, header, row) {
+async function appendSheetRow(tab, header, row, legacyTab) {
   const auth = new google.auth.GoogleAuth({
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
   const sheets = google.sheets({version: "v4", auth});
 
-  await ensureSheetTab(sheets, tab);
+  const {sheetId} = await ensureSheetTab(sheets, tab, legacyTab);
 
-  // Write the header row once, only if the tab is currently empty.
+  // Write the header row once, only if the tab is currently empty, and style
+  // it in the same pass so a generated tab is not left looking unfinished.
   const first = await sheets.spreadsheets.values.get({
     spreadsheetId: BULK_ORDERS_SHEET_ID,
     range: `${tab}!A1:A1`,
@@ -1177,6 +1250,12 @@ async function appendSheetRow(tab, header, row) {
       valueInputOption: "RAW",
       requestBody: {values: [header]},
     });
+    try {
+      await styleHeaderRow(sheets, sheetId, header.length);
+    } catch (e) {
+      // Cosmetic only — never lose the row over formatting.
+      console.error("sheet header styling failed:", e);
+    }
   }
 
   await sheets.spreadsheets.values.append({
@@ -1189,7 +1268,9 @@ async function appendSheetRow(tab, header, row) {
 }
 
 async function appendBulkOrderRow(row) {
-  await appendSheetRow(BULK_ORDERS_SHEET_TAB, BULK_ORDERS_HEADER, row);
+  await appendSheetRow(
+      BULK_ORDERS_SHEET_TAB, BULK_ORDERS_HEADER, row, BULK_ORDERS_LEGACY_TAB,
+  );
 }
 
 /** One row per placed order, on the Regular orders tab. */
