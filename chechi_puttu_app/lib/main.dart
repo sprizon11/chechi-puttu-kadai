@@ -4617,12 +4617,14 @@ class _HomeScreenState extends State<HomeScreen>
       _deliveryLng = persistedLng;
     });
 
-    // Web cannot reliably capture exact GPS coordinates; skip the forced
-    // first-login map prompt there so the user is never stuck in a loop.
-    if (!kIsWeb && !_hasExactDeliveryLocation) {
-      await _promptFirstLoginLocation();
-      if (!mounted || !_hasExactDeliveryLocation) return;
+    // Web cannot reliably capture exact GPS coordinates, so skip the map
+    // prompt there. Elsewhere it is offered once: asking again every launch
+    // would be nagging, and skipping is a legitimate answer.
+    if (!kIsWeb &&
+        !_hasExactDeliveryLocation &&
+        p.getBool(firstHomePopupDoneKey) != true) {
       await p.setBool(firstHomePopupDoneKey, true);
+      await _promptFirstLoginLocation();
       return;
     }
 
@@ -4631,21 +4633,69 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  /// Offered once after the first login, and skippable.
+  ///
+  /// This used to loop until an in-area location was set, which meant anyone
+  /// outside Coimbatore could never get past it — they never saw a dish, so
+  /// they could not be tempted, could not share the app, and could not order
+  /// when delivery reaches them. Browsing is now open to everyone; checkout
+  /// still asks for the address and still refuses an out-of-area one.
   Future<void> _promptFirstLoginLocation() async {
     if (!mounted || _forcingLocationPrompt) return;
     _forcingLocationPrompt = true;
     try {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Location is required before you continue.'),
-        ),
+      final setNow = await showDialog<bool>(
+        context: context,
+        builder: (ctx) {
+          final cs = Theme.of(ctx).colorScheme;
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            title: Text(
+              'Set your delivery location',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w700,
+                fontSize: 17,
+                color: cs.onSurface,
+              ),
+            ),
+            content: Text(
+              'We deliver across Coimbatore. Setting your location now means '
+              'a faster checkout later — you can also do it any time from the '
+              'top of the home screen.',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                height: 1.5,
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(
+                  'Skip for now',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                ),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _AppColors.primary,
+                ),
+                child: Text(
+                  'Set location',
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       );
-      while (mounted && !_hasExactDeliveryLocation) {
-        final picked = await _openDeliveryLocationSheet(required: true);
-        if (!mounted) return;
-        if (picked && _hasExactDeliveryLocation) break;
-        await Future<void>.delayed(const Duration(milliseconds: 120));
-      }
+      if (!mounted || setNow != true) return;
+      await _openDeliveryLocationSheet(required: true);
     } finally {
       _forcingLocationPrompt = false;
     }
@@ -12034,7 +12084,11 @@ class _TopLocationRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Delivery address',
+                    // Skipping the first-login prompt leaves the placeholder
+                    // here, so the label doubles as the nudge to set it.
+                    deliveryLine.trim() == 'Choose delivery address'
+                        ? 'Tap to set delivery address'
+                        : 'Delivery address',
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: _Theme.muted(context),
                       fontWeight: FontWeight.w600,
