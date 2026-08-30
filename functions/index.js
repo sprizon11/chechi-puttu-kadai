@@ -876,6 +876,14 @@ exports.onOrderCreatedChatMessage = onDocumentCreated(
   } catch (e) {
     console.error("admin new-order push failed:", e);
   }
+
+  // Kitchen sheet. Failing here must not cost the customer their chat message
+  // or the admin their notification, so it is last and swallowed.
+  try {
+    await appendRegularOrderRow(event.params.orderId, data);
+  } catch (e) {
+    console.error("order -> sheet failed:", e);
+  }
 });
 
 exports.onOrderStatusChangedChatMessage = onDocumentUpdated(
@@ -1118,33 +1126,111 @@ const BULK_ORDERS_HEADER = [
   "Meals", "Total Qty", "Dish Quantities",
 ];
 
-async function appendBulkOrderRow(row) {
+// Every normal (non-bulk) order lands on its own tab of the same spreadsheet,
+// so the kitchen has one file for both kinds of order.
+const REGULAR_ORDERS_SHEET_TAB = "Regular orders";
+const REGULAR_ORDERS_HEADER = [
+  "Order At", "Order Ref", "Customer", "Phone", "Items", "Item Total",
+  "Delivery", "Packing", "Total", "Payment", "Delivery Address",
+  "Slot", "Status", "Customer UID",
+];
+
+/** Creates [tab] if the spreadsheet does not have it yet. */
+async function ensureSheetTab(sheets, tab) {
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: BULK_ORDERS_SHEET_ID,
+    fields: "sheets.properties.title",
+  });
+  const exists = (meta.data.sheets || []).some(
+      (s) => s.properties && s.properties.title === tab,
+  );
+  if (exists) return;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: BULK_ORDERS_SHEET_ID,
+    requestBody: {
+      requests: [{addSheet: {properties: {title: tab}}}],
+    },
+  });
+}
+
+/**
+ * Appends one row to [tab], creating the tab and writing [header] the first
+ * time. Used by both the bulk enrollment and the regular order triggers.
+ */
+async function appendSheetRow(tab, header, row) {
   const auth = new google.auth.GoogleAuth({
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
   const sheets = google.sheets({version: "v4", auth});
 
-  // Write the header row once, only if the sheet is currently empty.
+  await ensureSheetTab(sheets, tab);
+
+  // Write the header row once, only if the tab is currently empty.
   const first = await sheets.spreadsheets.values.get({
     spreadsheetId: BULK_ORDERS_SHEET_ID,
-    range: `${BULK_ORDERS_SHEET_TAB}!A1:A1`,
+    range: `${tab}!A1:A1`,
   });
   if (!first.data.values || first.data.values.length === 0) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: BULK_ORDERS_SHEET_ID,
-      range: `${BULK_ORDERS_SHEET_TAB}!A1`,
+      range: `${tab}!A1`,
       valueInputOption: "RAW",
-      requestBody: {values: [BULK_ORDERS_HEADER]},
+      requestBody: {values: [header]},
     });
   }
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: BULK_ORDERS_SHEET_ID,
-    range: `${BULK_ORDERS_SHEET_TAB}!A1`,
+    range: `${tab}!A1`,
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
     requestBody: {values: [row]},
   });
+}
+
+async function appendBulkOrderRow(row) {
+  await appendSheetRow(BULK_ORDERS_SHEET_TAB, BULK_ORDERS_HEADER, row);
+}
+
+/** One row per placed order, on the Regular orders tab. */
+async function appendRegularOrderRow(orderId, data) {
+  const items = Array.isArray(data.items) ? data.items : [];
+  const itemsText = items
+      .map((it) => {
+        const name = String(it.name || "").trim();
+        const qty = Number(it.qty || 0);
+        return qty > 1 ? `${name} x${qty}` : name;
+      })
+      .filter((t) => t.length > 0)
+      .join(", ");
+
+  const placedAt = data.created_at && typeof data.created_at.toDate ===
+    "function" ? data.created_at.toDate() : new Date();
+
+  const rupees = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : "";
+  };
+
+  const row = [
+    placedAt.toLocaleString("en-IN", {timeZone: "Asia/Kolkata"}),
+    orderRef(orderId),
+    String(data.customer_name || ""),
+    String(data.customer_mobile || ""),
+    itemsText,
+    rupees(data.item_total_rupees),
+    rupees(data.delivery_charge_rupees),
+    rupees(data.packing_charge_rupees),
+    rupees(data.total_rupees),
+    String(data.payment_mode || "").replace(/_/g, " "),
+    String(data.delivery_line || ""),
+    String(data.schedule_line || ""),
+    String(data.status || "placed"),
+    String(data.uid || ""),
+  ];
+  await appendSheetRow(
+      REGULAR_ORDERS_SHEET_TAB, REGULAR_ORDERS_HEADER, row,
+  );
 }
 
 /**

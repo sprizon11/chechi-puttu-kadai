@@ -2741,17 +2741,61 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     );
   }
 
+  /// WhatsApp consent, shown on the last step only — finishing sign-up is the
+  /// agreement, so it has to be visible at the moment the account is created
+  /// rather than buried in terms. Not shown when editing an existing profile,
+  /// where no account is being created.
+  Widget _whatsAppConsentLine(Color bodyMuted) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE0D5C1)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.chat_outlined, size: 15, color: bodyMuted),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              'By tapping FINISH you agree to receive order updates and '
+              'offers on WhatsApp. You can stop these any time.',
+              style: GoogleFonts.poppins(
+                fontSize: 11,
+                height: 1.45,
+                color: bodyMuted,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _profileSimplifiedSignupActions(
     Color titleMaroon,
     Color fieldBr,
     Color btnBg,
   ) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    final showConsent =
+        !widget.forProfileEdit && _step == _kStepCount - 1;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_step > 0) _profileSimplifiedSignupBackField(titleMaroon, fieldBr),
-        const Spacer(),
-        _profileSimplifiedSignupPrimary(btnBg),
+        if (showConsent) _whatsAppConsentLine(const Color(0xFF5C4A42)),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            if (_step > 0)
+              _profileSimplifiedSignupBackField(titleMaroon, fieldBr),
+            const Spacer(),
+            _profileSimplifiedSignupPrimary(btnBg),
+          ],
+        ),
       ],
     );
   }
