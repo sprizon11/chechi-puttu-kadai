@@ -982,7 +982,19 @@ List<_CustomerAgg> _mergeCustomers(
     }
   }
 
-  final list = map.values.toList();
+  // An account that never finished sign-up has no name, no number, no address
+  // and no order. Its card can only show the word "Customer" beside a masked
+  // number invented from the account id, which reads like a real contact and
+  // is not one — and it pushes real customers down the list. Anything with
+  // even one genuine detail is kept.
+  final list = map.values.where((c) {
+    final name = c.displayName.trim();
+    final hasName = name.isNotEmpty && name != 'Customer';
+    final hasMobile = (c.mobile ?? '').trim().isNotEmpty;
+    final location = c.locationLine.trim();
+    final hasLocation = location.isNotEmpty && location != '—';
+    return hasName || hasMobile || hasLocation || c.orderCount > 0;
+  }).toList();
   list.sort((a, b) => b._newestActivity.compareTo(a._newestActivity));
   return list;
 }
