@@ -1212,11 +1212,22 @@ async function appendRegularOrderRow(orderId, data) {
     return Number.isFinite(n) && n > 0 ? n : "";
   };
 
+  // The app stamps name and mobile onto a cash order, but a Razorpay order is
+  // built server-side from the checkout session and carries neither. Fall back
+  // to the profile so online orders are not nameless rows in the sheet.
+  let name = String(data.customer_name || "").trim();
+  let mobile = String(data.customer_mobile || "").trim();
+  if (!name || !mobile) {
+    const lite = await userProfileLite(String(data.uid || ""));
+    if (!name) name = lite.name || "";
+    if (!mobile) mobile = lite.mobile || "";
+  }
+
   const row = [
     placedAt.toLocaleString("en-IN", {timeZone: "Asia/Kolkata"}),
     orderRef(orderId),
-    String(data.customer_name || ""),
-    String(data.customer_mobile || ""),
+    name,
+    mobile,
     itemsText,
     rupees(data.item_total_rupees),
     rupees(data.delivery_charge_rupees),
