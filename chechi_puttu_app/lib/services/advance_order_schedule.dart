@@ -156,6 +156,17 @@ class AdvanceOrderSchedule {
         .add(const Duration(days: 1));
   }
 
+  /// `Breakfast`, `Breakfast and lunch`, `Breakfast, lunch and dinner`.
+  static String _joinNames(List<AdvanceMealSlot> list) {
+    final names = [
+      for (var i = 0; i < list.length; i++)
+        i == 0 ? list[i].name : list[i].name.toLowerCase(),
+    ];
+    if (names.length == 1) return '${names.first} is';
+    final last = names.removeLast();
+    return '${names.join(', ')} and $last are';
+  }
+
   /// True while [booking] can still be placed.
   ///
   /// The picker checks the cut-off when the slot is chosen, but choosing a
@@ -219,6 +230,10 @@ class AdvanceOrderSchedule {
 
     final deliveryDay = DateTime(date.year, date.month, date.day);
     final slots = availableSlotsFor(deliveryDay, now);
+    // Every meal is listed, closed ones included. Omitting them reads as
+    // "we don't serve breakfast" rather than "breakfast for this day has
+    // closed", and the customer never learns that a later date would work.
+    final closed = mealSlots.where((s) => !slots.contains(s)).toList();
 
     final slot = await showModalBottomSheet<AdvanceMealSlot>(
       context: context,
@@ -251,32 +266,53 @@ class AdvanceOrderSchedule {
                   ),
                 ),
                 const SizedBox(height: 12),
-                for (final s in slots) ...[
-                  ListTile(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: cs.outlineVariant),
-                    ),
-                    leading: Icon(
-                      s.id == 'breakfast'
-                          ? Icons.wb_sunny_outlined
-                          : s.id == 'lunch'
-                              ? Icons.lunch_dining_outlined
-                              : Icons.nightlight_round,
-                      color: const Color(0xFF7C1D1B),
-                    ),
-                    title: Text(
-                      s.label,
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(
-                      s.cutoffLabel,
-                      style: GoogleFonts.poppins(
-                        fontSize: 11.5,
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
-                    onTap: () => Navigator.pop(ctx, s),
+                for (final s in mealSlots) ...[
+                  Builder(
+                    builder: (_) {
+                      final isOpen = slots.contains(s);
+                      final tint = isOpen
+                          ? const Color(0xFF7C1D1B)
+                          : cs.onSurfaceVariant.withValues(alpha: 0.55);
+                      return ListTile(
+                        enabled: isOpen,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(
+                            color: isOpen
+                                ? cs.outlineVariant
+                                : cs.outlineVariant.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        leading: Icon(
+                          s.id == 'breakfast'
+                              ? Icons.wb_sunny_outlined
+                              : s.id == 'lunch'
+                                  ? Icons.lunch_dining_outlined
+                                  : Icons.nightlight_round,
+                          color: tint,
+                        ),
+                        title: Text(
+                          s.label,
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600,
+                            color: isOpen ? null : tint,
+                          ),
+                        ),
+                        subtitle: Text(
+                          isOpen
+                              ? s.cutoffLabel
+                              : 'Closed for this day — ${s.cutoffLabel.toLowerCase()}',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11.5,
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                        trailing: isOpen
+                            ? null
+                            : Icon(Icons.lock_clock, size: 18, color: tint),
+                        onTap: isOpen ? () => Navigator.pop(ctx, s) : null,
+                      );
+                    },
                   ),
                   const SizedBox(height: 8),
                 ],
@@ -285,6 +321,16 @@ class AdvanceOrderSchedule {
                     'Ordering has closed for this day. Please pick a later date.',
                     style: GoogleFonts.poppins(
                       fontSize: 12.5,
+                      color: cs.onSurfaceVariant,
+                    ),
+                  )
+                else if (closed.isNotEmpty)
+                  Text(
+                    '${_joinNames(closed)} closed for this day. Pick a later '
+                    'date to book ${closed.length == 1 ? 'it' : 'them'}.',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      height: 1.35,
                       color: cs.onSurfaceVariant,
                     ),
                   ),
