@@ -110,6 +110,17 @@ export default function Customers() {
     return { ...u, orderCount: userOrders.length, totalSpent, lastOrder, userOrders,
       coords: readCoords(u), addressLine }
   })
+  // Only accounts that finished sign-up, matching the Flutter admin app.
+  // Sign-up asks for a name and a mobile number together, so an account
+  // missing either never completed it and can only render as a nameless
+  // "Customer" row. Anyone who has ordered is kept regardless — the kitchen
+  // has to be able to find whoever placed that order.
+  .filter(u => {
+    if (u.orderCount > 0) return true
+    const name = (u.displayName || '').trim()
+    const mobile = (u.mobile || u.authPhone || '').trim()
+    return name.length > 0 && mobile.length > 0
+  })
 
   const filtered = enriched.filter(u => {
     if (!search) return true
@@ -215,7 +226,7 @@ export default function Customers() {
             </table>
           </div>
           <div className="px-5 py-3 border-t border-cream-border bg-cream/40 text-xs text-gray-400">
-            Showing {filtered.length} of {users.length} customers &nbsp;·&nbsp; Click a row to view details
+            Showing {filtered.length} of {enriched.length} customers &nbsp;·&nbsp; Click a row to view details
           </div>
         </div>
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import { db, auth } from '../firebase'
 import { useNavigate } from 'react-router-dom'
@@ -55,6 +55,121 @@ function Modal({ title, sub, onClose, children }) {
         {children}
       </div>
     </div>
+  )
+}
+
+
+// ── Order hold ────────────────────────────────────────────────────────────────
+// Mirrors the Flutter admin app exactly: admin_public/order_hold with
+// { active, message, resume_on, updatedAt, updatedBy }. A resume date lifts
+// the hold by itself that morning, so a planned pause does not depend on
+// somebody remembering to switch it back on.
+const HOLD_MAX_MESSAGE = 300
+
+/** Date -> "yyyy-mm-dd" in local time, which is what <input type="date"> wants. */
+function toDateInput(d) {
+  const p = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+/** "yyyy-mm-dd" -> local midnight, matching the app's DateTime(y, m, d). */
+function startOfDayLocal(value) {
+  const [y, m, d] = value.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+/** True while orders must be refused — the same rule as OrderHold.isHoldingAt. */
+function isHoldingNow(hold) {
+  if (!hold.active) return false
+  if (!hold.resumeOn) return true
+  return new Date() < startOfDayLocal(hold.resumeOn)
+}
+
+function OrderHoldModal({ hold, setHold, onSave, onClose, saving, saved }) {
+  const { active, message, resumeOn } = hold
+  return (
+    <Modal
+      title="Order hold"
+      sub="Pause new orders when the kitchen cannot cook"
+      onClose={onClose}
+    >
+      <div className="space-y-4">
+        <label className="flex items-start gap-3 cursor-pointer select-none">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={active}
+            onClick={() => setHold(h => ({ ...h, active: !h.active }))}
+            className={`mt-0.5 w-11 h-6 rounded-full shrink-0 transition-colors relative ${
+              active ? 'bg-maroon' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
+              style={{ left: active ? '1.375rem' : '0.125rem' }}
+            />
+          </button>
+          <span>
+            <span className="block text-sm font-bold text-gray-900">Hold new orders</span>
+            <span className="block text-xs text-gray-400 mt-0.5">
+              Customers can browse but cannot check out
+            </span>
+          </span>
+        </label>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+            Message shown to customers
+          </label>
+          <textarea
+            className="input h-24 resize-none disabled:opacity-50"
+            maxLength={HOLD_MAX_MESSAGE}
+            disabled={!active}
+            placeholder="Orders are full for the next 2 days. We will accept new orders from Thursday."
+            value={message}
+            onChange={e => setHold(h => ({ ...h, message: e.target.value }))}
+          />
+          <p className="text-[11px] text-gray-400 mt-1">
+            {message.length} / {HOLD_MAX_MESSAGE}
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+            Accepting orders again from (optional)
+          </label>
+          <input
+            type="date"
+            className="input disabled:opacity-50"
+            disabled={!active}
+            value={resumeOn}
+            min={new Date().toISOString().slice(0, 10)}
+            onChange={e => setHold(h => ({ ...h, resumeOn: e.target.value }))}
+          />
+          <p className="text-[11px] text-gray-400 mt-1">
+            {resumeOn
+              ? 'The hold lifts by itself that morning.'
+              : 'Without a date the hold stays on until you switch it off.'}
+          </p>
+          {resumeOn && active && (
+            <button
+              type="button"
+              onClick={() => setHold(h => ({ ...h, resumeOn: '' }))}
+              className="text-[11px] text-maroon font-semibold mt-1.5 hover:underline"
+            >
+              Clear date, hold until I turn it off
+            </button>
+          )}
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button className="btn-ghost flex-1" onClick={onClose}>Cancel</button>
+          <button className="btn-primary flex-1" onClick={onSave} disabled={saving}>
+            {saving ? 'Saving…' : saved ? 'Saved' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
@@ -188,16 +303,30 @@ export default function Settings() {
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved,  setSaved]  = useState(false)
-  const [modal,  setModal]  = useState(null)   // 'business' | 'delivery' | 'hours'
+  const [modal,  setModal]  = useState(null)   // 'business' | 'delivery' | 'hours' | 'hold'
   const [pwMsg,  setPwMsg]  = useState('')
+  // resumeOn is kept as a yyyy-mm-dd string for <input type="date">; it is
+  // converted to a Timestamp only on save, to match what the app writes.
+  const [hold, setHold] = useState({ active: false, message: '', resumeOn: '' })
 
   useEffect(() => {
     Promise.all([
       getDoc(doc(db, 'admin_public', '__settings__')).catch(() => null),
       // Canonical charges doc — what the customer app and Cloud Functions read.
       getDoc(doc(db, 'admin_public', 'order_charges')).catch(() => null),
+      getDoc(doc(db, 'admin_public', 'order_hold')).catch(() => null),
     ])
-      .then(([settingsSnap, chargesSnap]) => {
+      .then(([settingsSnap, chargesSnap, holdSnap]) => {
+        if (holdSnap?.exists()) {
+          const h = holdSnap.data()
+          const raw = h.resume_on
+          const date = raw?.toDate ? raw.toDate() : (raw ? new Date(raw) : null)
+          setHold({
+            active: h.active === true,
+            message: typeof h.message === 'string' ? h.message : '',
+            resumeOn: date && !isNaN(date) ? toDateInput(date) : '',
+          })
+        }
         setForm(f => {
           const next = { ...f }
           if (settingsSnap?.exists()) Object.assign(next, settingsSnap.data())
@@ -211,6 +340,28 @@ export default function Settings() {
       })
       .finally(() => setLoaded(true))
   }, [])
+
+  async function saveHold() {
+    setSaving(true); setSaved(false)
+    try {
+      await setDoc(doc(db, 'admin_public', 'order_hold'), {
+        active: hold.active,
+        message: hold.message.trim().slice(0, HOLD_MAX_MESSAGE),
+        // Cleared whenever the hold is off, so a stale date cannot outlive it.
+        resume_on: hold.active && hold.resumeOn
+          ? Timestamp.fromDate(startOfDayLocal(hold.resumeOn))
+          : null,
+        updatedAt: serverTimestamp(),
+        updatedBy: auth.currentUser?.uid || null,
+      }, { merge: true })
+      setSaved(true)
+      setTimeout(() => { setSaved(false); setModal(null) }, 700)
+    } catch (e) {
+      alert('Could not save. Check your connection and try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   async function saveForm() {
     setSaving(true); setSaved(false)
@@ -259,6 +410,15 @@ export default function Settings() {
     </div>
   )
 
+  const holdingNow = isHoldingNow(hold)
+  const holdLabel = holdingNow
+    ? (hold.resumeOn
+        ? `On · accepting again ${startOfDayLocal(hold.resumeOn).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}`
+        : 'On · orders paused until you turn this off')
+    : (hold.active
+        ? 'Resumed — orders are being accepted again'
+        : 'Accepting orders normally')
+
   const hoursLabel = `${form.openTime || '06:00'} – ${form.closeTime || '21:00'}`
   const deliveryLabel = `Delivery ₹${form.deliveryFeeRupees || 0} + Packing ₹${form.packagingFeeRupees || 0} per order · Delivery ${form.deliveryEnabled ? 'on' : 'off'}`
 
@@ -293,6 +453,12 @@ export default function Settings() {
         <Tile icon="🛵" iconBg="#E8F5E9" title="Delivery Settings"
           sub={deliveryLabel}
           onClick={() => setModal('delivery')} />
+        <Tile
+          icon={holdingNow ? '⏸️' : '▶️'}
+          iconBg={holdingNow ? '#FFF3E0' : '#E8F5E9'}
+          title="Order hold"
+          sub={holdLabel}
+          onClick={() => setModal('hold')} />
         <Tile icon="🍽️" iconBg="#E3F2FD" title="Menu Management"
           sub="Manage dishes, categories and pricing"
           onClick={() => navigate('/menu')} />
@@ -332,6 +498,7 @@ export default function Settings() {
       {modal === 'business'  && <BusinessModal  form={form} setForm={setForm} onSave={saveForm} onClose={() => setModal(null)} saving={saving} saved={saved} />}
       {modal === 'delivery'  && <DeliveryModal  form={form} setForm={setForm} onSave={saveForm} onClose={() => setModal(null)} saving={saving} saved={saved} />}
       {modal === 'hours'     && <HoursModal     form={form} setForm={setForm} onSave={saveForm} onClose={() => setModal(null)} saving={saving} saved={saved} />}
+      {modal === 'hold'      && <OrderHoldModal hold={hold}  setHold={setHold} onSave={saveHold} onClose={() => setModal(null)} saving={saving} saved={saved} />}
     </div>
   )
 }
