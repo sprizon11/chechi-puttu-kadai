@@ -982,18 +982,20 @@ List<_CustomerAgg> _mergeCustomers(
     }
   }
 
-  // An account that never finished sign-up has no name, no number, no address
-  // and no order. Its card can only show the word "Customer" beside a masked
+  // Only customers who finished sign-up belong on this list. Sign-up asks for
+  // a name and a mobile number together, so an account missing either never
+  // completed it — its card can only show the word "Customer" beside a masked
   // number invented from the account id, which reads like a real contact and
-  // is not one — and it pushes real customers down the list. Anything with
-  // even one genuine detail is kept.
+  // is not one, while pushing real customers down the list.
+  //
+  // The one exception is an account that has ordered: however incomplete the
+  // profile, the kitchen has to be able to find whoever placed that order.
   final list = map.values.where((c) {
+    if (c.orderCount > 0) return true;
     final name = c.displayName.trim();
     final hasName = name.isNotEmpty && name != 'Customer';
     final hasMobile = (c.mobile ?? '').trim().isNotEmpty;
-    final location = c.locationLine.trim();
-    final hasLocation = location.isNotEmpty && location != '—';
-    return hasName || hasMobile || hasLocation || c.orderCount > 0;
+    return hasName && hasMobile;
   }).toList();
   list.sort((a, b) => b._newestActivity.compareTo(a._newestActivity));
   return list;
