@@ -5,6 +5,7 @@ import { auth } from '../firebase'
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -77,15 +78,44 @@ export default function Login() {
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Password</label>
-                <input
-                  type="password"
-                  className="input"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                  autoComplete="current-password"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    className="input pr-11"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(v => !v)}
+                    className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-maroon-deep transition-colors"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? (
+                      /* eye with a slash — password is visible, click to hide */
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" strokeWidth="1.8"
+                        strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M10.6 10.6a2 2 0 002.8 2.8" />
+                        <path d="M16.7 16.7A9.9 9.9 0 0112 18c-5 0-9.3-3.6-10-6 .4-1.3 1.7-3 3.6-4.3" />
+                        <path d="M9.9 5.2A10.6 10.6 0 0112 5c5 0 9.3 3.6 10 6-.4 1.2-1.5 2.7-3.1 4" />
+                        <path d="M3 3l18 18" />
+                      </svg>
+                    ) : (
+                      /* plain eye — password is hidden, click to show */
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" strokeWidth="1.8"
+                        strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z" />
+                        <circle cx="12" cy="12" r="2.6" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
 
               {error && (
