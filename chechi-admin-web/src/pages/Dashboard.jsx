@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { motion } from 'framer-motion'
+import { pageStagger, popItem } from '../motion'
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
@@ -225,17 +227,19 @@ export default function Dashboard() {
       </div>
 
       {/* ── Stat cards ────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {STATS.map((s, i) => (
-          <div
+      <motion.div
+        variants={pageStagger}
+        initial="hidden"
+        animate="show"
+        className="grid grid-cols-2 lg:grid-cols-4 gap-4"
+      >
+        {STATS.map((s) => (
+          <motion.div
             key={s.key}
-            className="animate-fade-in-up card-hover rounded-2xl px-4 py-3.5"
-            style={{
-              animationDelay: `${80 + i * 80}ms`,
-              background: '#fff',
-              border: '1px solid #EDE5DA',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-            }}
+            variants={popItem}
+            whileHover={{ y: -4 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="stat-card px-4 py-3.5"
           >
             {/* Label + icon row */}
             <div className="flex items-center justify-between mb-2.5">
@@ -267,9 +271,9 @@ export default function Dashboard() {
               </span>
               <span className="text-[10px] text-gray-400">vs last week</span>
             </div>
-          </div>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
 
       {/* ── Chart + Peak Dishes ───────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 animate-fade-in-up" style={{ animationDelay: '400ms' }}>

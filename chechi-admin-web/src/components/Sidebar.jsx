@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { collection, query, onSnapshot, limit } from 'firebase/firestore'
 import { signOut } from 'firebase/auth'
@@ -81,26 +82,37 @@ export default function Sidebar({ open, onClose }) {
 
         {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+          {/* The active pill is one shared element that slides between items,
+              rather than one fading in as another fades out. */}
           {NAV.map(({ to, icon, label, end, badge }) => (
             <NavLink
               key={to}
               to={to}
               end={end}
               onClick={onClose}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                  isActive
-                    ? 'bg-white text-maroon-deep shadow-sm'
-                    : 'text-white/70 hover:text-white hover:bg-white/10'
-                }`
-              }
+              className="relative flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-white/[0.07] transition-colors"
             >
               {({ isActive }) => (
                 <>
-                  <span className={isActive ? 'text-maroon-deep' : 'text-white/70'}>{icon}</span>
-                  <span className="flex-1">{label}</span>
+                  {isActive && (
+                    <motion.span
+                      layoutId="sidebar-active-pill"
+                      className="absolute inset-0 rounded-xl"
+                      style={{
+                        background: 'rgba(255,255,255,0.96)',
+                        boxShadow: '0 6px 20px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.9)',
+                      }}
+                      transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                    />
+                  )}
+                  <span className={`relative z-10 ${isActive ? 'text-maroon-deep' : 'text-white/70'}`}>
+                    {icon}
+                  </span>
+                  <span className={`relative z-10 flex-1 ${isActive ? 'text-maroon-deep' : 'text-white/70'}`}>
+                    {label}
+                  </span>
                   {badge && unread > 0 && (
-                    <span className="bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                    <span className="relative z-10 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 shadow-md">
                       {unread > 99 ? '99+' : unread}
                     </span>
                   )}
