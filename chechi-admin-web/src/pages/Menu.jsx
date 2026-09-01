@@ -285,7 +285,14 @@ export default function Menu() {
         </div>
         <div className="flex gap-3">
           <input className="input max-w-xs" placeholder="Search dishes..." value={search} onChange={e => setSearch(e.target.value)} />
-          <button onClick={() => setAddCatOpen(true)} className="btn-primary whitespace-nowrap">+ Add Category</button>
+          <button
+            onClick={() => setAddDishSec(tab === 'All' ? (allTabs[1] || null) : tab)}
+            disabled={allTabs.length < 2}
+            className="btn-primary whitespace-nowrap disabled:opacity-50"
+          >
+            + Add Dish
+          </button>
+          <button onClick={() => setAddCatOpen(true)} className="btn-ghost whitespace-nowrap">+ Add Category</button>
         </div>
       </div>
 
@@ -304,17 +311,6 @@ export default function Menu() {
       {tab !== 'All' && (
         <div className="section-card overflow-hidden">
           <div className="flex flex-col sm:flex-row">
-            <div className="sm:w-56 h-36 sm:h-auto shrink-0 bg-cream flex items-center justify-center overflow-hidden">
-              {getCatImage(tab)
-                ? <img src={getCatImage(tab)} alt={getCatTitle(tab)} className="w-full h-full object-cover" />
-                : <div className="flex flex-col items-center gap-2 text-gray-300">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <span className="text-xs font-medium">No cover image</span>
-                  </div>
-              }
-            </div>
             <div className="flex-1 p-5 flex flex-col justify-between">
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -328,11 +324,9 @@ export default function Menu() {
                 <button onClick={() => openEditCat(tab)} className="btn-primary text-xs py-2 px-4">
                   Edit Category
                 </button>
+                <button onClick={() => setAddDishSec(tab)} className="btn-ghost text-xs py-2 px-4">+ Add Dish</button>
                 {isCustomTab && (
-                  <>
-                    <button onClick={() => setAddDishSec(tab)} className="btn-ghost text-xs py-2 px-4">+ Add Dish</button>
-                    <button onClick={() => deleteSection(tab)} className="text-xs px-4 py-2 rounded-xl bg-red-50 text-red-700 border border-red-100 font-semibold hover:bg-red-100 transition-colors">Delete Category</button>
-                  </>
+                  <button onClick={() => deleteSection(tab)} className="text-xs px-4 py-2 rounded-xl bg-red-50 text-red-700 border border-red-100 font-semibold hover:bg-red-100 transition-colors">Delete Category</button>
                 )}
               </div>
             </div>
@@ -444,32 +438,6 @@ export default function Menu() {
       {editCat && (
         <Modal title="Edit Category" onClose={() => setEditCat(null)}>
           <form onSubmit={handleEditCatSave} className="space-y-4">
-            <div>
-              <p className="text-sm font-semibold text-gray-700 mb-2">Category Cover Image</p>
-              <div className="w-full aspect-video rounded-xl border-2 border-dashed border-cream-border bg-cream flex items-center justify-center overflow-hidden cursor-pointer hover:border-maroon transition-colors mb-2"
-                onClick={() => catImgRef.current?.click()}>
-                {catImgPrev
-                  ? <img src={catImgPrev} alt="" className="w-full h-full object-cover" />
-                  : <div className="flex flex-col items-center gap-2 text-gray-300">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-14 h-14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      <span className="text-sm font-medium">Click to upload cover photo</span>
-                      <span className="text-xs">Recommended 16:9 (e.g. 1200x675)</span>
-                    </div>}
-              </div>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => catImgRef.current?.click()} className="btn-ghost text-xs py-2 px-4">
-                  {catImgPrev ? 'Change Photo' : 'Upload Photo'}
-                </button>
-                {catImgPrev && (
-                  <button type="button" onClick={() => { setCatImgPrev(null); setCatImgB64(null); setCatRemoveImg(true) }}
-                    className="text-xs px-4 py-2 rounded-xl text-red-600 hover:text-red-700 font-semibold">Remove</button>
-                )}
-              </div>
-              <input ref={catImgRef} type="file" accept="image/*" className="hidden" onChange={onCatImgChange} />
-            </div>
             <Field label="Category Name">
               <input className="input" value={catForm.title} onChange={e => setCatForm({ ...catForm, title: e.target.value })} required placeholder={editCat} />
             </Field>

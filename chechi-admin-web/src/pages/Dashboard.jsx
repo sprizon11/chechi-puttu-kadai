@@ -92,10 +92,28 @@ function ChartTip({ active, payload, label }) {
 }
 
 /* ── Main ─────────────────────────────────────────────────────────────── */
+/** Date -> "yyyy-mm-dd" in local time, which is what <input type="date"> wants. */
+function toInput(d) {
+  const p = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+/** "yyyy-mm-dd" -> local midnight. */
+function fromInput(v) {
+  const [y, m, d] = v.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
 export default function Dashboard() {
   const [orders, setOrders]   = useState([])
   const [loading, setLoading] = useState(true)
   const [chartRange, setChartRange] = useState('This Week')
+  // Explicit from/to, so any span can be charted rather than only two presets.
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [range, setRange] = useState(() => ({
+    from: toInput(subDays(new Date(), 6)),
+    to: toInput(new Date()),
+  }))
+  const [rangeError, setRangeError] = useState('')
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -127,17 +145,25 @@ export default function Dashboard() {
   const activeNow     = orders.filter(o => { const s = (o.status||'').toLowerCase(); return s !== 'delivered' && s !== 'completed' && s !== 'cancelled' })
   const activeLastWk  = lastWeekOrds.filter(o => { const s = (o.status||'').toLowerCase(); return s !== 'delivered' && s !== 'completed' && s !== 'cancelled' })
 
-  /* chart */
-  const chartStart = chartRange === 'This Week' ? thisWeekStart : startOfMonth(now)
-  const chartDays  = eachDayOfInterval({ start: chartStart, end: startOfDay(now) })
+  /* chart — driven by the picked range */
+  const chartStart = startOfDay(fromInput(range.from))
+  const chartEnd   = startOfDay(fromInput(range.to))
+  const chartDays  = eachDayOfInterval({ start: chartStart, end: chartEnd })
+  const spanDays   = chartDays.length
   function dayOrders(day) { return orders.filter(o => { const t = readCreatedAt(o); return t && startOfDay(t).getTime() === day.getTime() }) }
   const chartData  = chartDays.map(d => ({
-    label: chartRange === 'This Week' ? format(d, 'd MMM') : format(d, 'd'),
+    // Long spans get a bare day number; short ones can afford the month.
+    label: spanDays > 31 ? format(d, 'd/M') : spanDays > 10 ? format(d, 'd') : format(d, 'd MMM'),
     revenue: dayOrders(d).reduce((s, o) => s + readTotal(o), 0),
   }))
 
-  /* period stats for chart footer */
-  const periodOrds   = chartRange === 'This Week' ? thisWeekOrds : orders.filter(o => inRange(o, startOfMonth(now)))
+  /* period stats for chart footer — the end date is inclusive */
+  const periodOrds   = orders.filter(o => {
+    const t = readCreatedAt(o)
+    if (!t) return false
+    const day = startOfDay(t).getTime()
+    return day >= chartStart.getTime() && day <= chartEnd.getTime()
+  })
   const periodRev    = periodOrds.reduce((s, o) => s + readTotal(o), 0)
   const periodAvg    = periodOrds.length > 0 ? Math.round(periodRev / periodOrds.length) : 0
   const cancelRate   = periodOrds.length > 0 ? Math.round((periodOrds.filter(o => (o.status||'').toLowerCase() === 'cancelled').length / periodOrds.length) * 100) : 0
@@ -208,22 +234,92 @@ export default function Dashboard() {
           </div>
           <p className="text-sm text-gray-500">{format(now, 'EEEE, d MMMM yyyy')}</p>
         </div>
-        <button
-          onClick={() => setChartRange(r => r === 'This Week' ? 'This Month' : 'This Week')}
-          className="bg-white border border-cream-border rounded-xl px-3.5 py-2 flex items-center gap-2 shrink-0 shadow-sm hover:shadow-md hover:border-gray-300 transition-all"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-          <span className="text-xs font-semibold text-gray-700">
-            {chartRange === 'This Week'
-              ? `${format(thisWeekStart, 'd MMM')} – ${format(now, 'd MMM yyyy')}`
-              : `${format(startOfMonth(now), 'd MMM')} – ${format(now, 'd MMM yyyy')}`}
-          </span>
-          <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
+        <div className="relative shrink-0">
+          <button
+            onClick={() => setPickerOpen(v => !v)}
+            className="bg-white/70 backdrop-blur-md border border-white/80 rounded-xl px-3.5 py-2 flex items-center gap-2 shadow-sm hover:bg-white transition-all"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span className="text-xs font-semibold text-gray-700">
+              {format(chartStart, 'd MMM')} – {format(chartEnd, 'd MMM yyyy')}
+            </span>
+            <svg xmlns="http://www.w3.org/2000/svg" className={`w-3 h-3 text-gray-400 shrink-0 transition-transform ${pickerOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {pickerOpen && (
+            <>
+              {/* Click-away, so the panel closes without needing a close button */}
+              <div className="fixed inset-0 z-30" onClick={() => setPickerOpen(false)} />
+              <div className="absolute right-0 mt-2 z-40 w-[19rem] glass-strong rounded-2xl p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="block text-[11px] font-semibold text-gray-500 mb-1">From</span>
+                    <input
+                      type="date" className="input py-2 text-xs" value={range.from}
+                      max={range.to}
+                      onChange={e => { setRange(r => ({ ...r, from: e.target.value })); setRangeError('') }}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] font-semibold text-gray-500 mb-1">To</span>
+                    <input
+                      type="date" className="input py-2 text-xs" value={range.to}
+                      min={range.from} max={toInput(new Date())}
+                      onChange={e => { setRange(r => ({ ...r, to: e.target.value })); setRangeError('') }}
+                    />
+                  </label>
+                </div>
+
+                {rangeError && <p className="text-[11px] text-red-600">{rangeError}</p>}
+
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    ['Last 7 days', 6],
+                    ['Last 30 days', 29],
+                    ['Last 90 days', 89],
+                  ].map(([label, back]) => (
+                    <button
+                      key={label}
+                      onClick={() => {
+                        setRange({ from: toInput(subDays(new Date(), back)), to: toInput(new Date()) })
+                        setRangeError('')
+                      }}
+                      className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-white/70 border border-white/80 text-gray-600 hover:bg-white transition-colors"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => {
+                      setRange({ from: toInput(startOfMonth(new Date())), to: toInput(new Date()) })
+                      setRangeError('')
+                    }}
+                    className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-white/70 border border-white/80 text-gray-600 hover:bg-white transition-colors"
+                  >
+                    This month
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => {
+                    if (fromInput(range.from) > fromInput(range.to)) {
+                      setRangeError('The start date is after the end date.')
+                      return
+                    }
+                    setPickerOpen(false)
+                  }}
+                  className="btn-primary w-full py-2 text-xs"
+                >
+                  Apply
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* ── Stat cards ────────────────────────────────────────────────── */}
@@ -279,8 +375,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 animate-fade-in-up" style={{ animationDelay: '400ms' }}>
 
         {/* Revenue chart */}
-        <div className="lg:col-span-2 rounded-2xl overflow-hidden border border-cream-border card-hover"
-          style={{ background: '#fff', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
+        <div className="lg:col-span-2 section-card card-hover">
           <div className="px-6 pt-5 pb-1">
             <div className="flex items-start justify-between mb-5">
               <div>
@@ -289,7 +384,12 @@ export default function Dashboard() {
               </div>
               <div className="flex items-center gap-1.5">
                 {['This Week', 'This Month'].map(r => (
-                  <button key={r} onClick={() => setChartRange(r)}
+                  <button key={r} onClick={() => {
+                      setChartRange(r)
+                      setRange(r === 'This Week'
+                        ? { from: toInput(subDays(new Date(), 6)), to: toInput(new Date()) }
+                        : { from: toInput(startOfMonth(new Date())), to: toInput(new Date()) })
+                    }}
                     className={`text-xs font-bold px-3.5 py-2 rounded-xl transition-all ${
                       chartRange === r
                         ? 'text-white shadow-sm'
@@ -313,7 +413,7 @@ export default function Dashboard() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F0E8DC" vertical={false} />
                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#9CA3AF' }} axisLine={false} tickLine={false}
-                  interval={chartRange === 'This Month' ? 4 : 0} />
+                  interval={spanDays > 45 ? 9 : spanDays > 14 ? 4 : 0} />
                 <YAxis tick={{ fontSize: 11, fill: '#9CA3AF' }} axisLine={false} tickLine={false}
                   tickFormatter={v => '₹' + v} width={55} />
                 <Tooltip content={<ChartTip />} cursor={{ stroke: '#7C1D1B', strokeWidth: 1, strokeDasharray: '4 4' }} />
