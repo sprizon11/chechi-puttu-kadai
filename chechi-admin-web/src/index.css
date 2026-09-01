@@ -200,7 +200,7 @@
 
   /* Primary button — glossy, with a highlight across the top. */
   .btn-primary {
-    @apply text-white font-semibold px-5 py-2.5 rounded-xl text-sm relative overflow-hidden;
+    @apply text-white font-semibold px-5 py-2.5 rounded-xl text-sm relative;
     background: linear-gradient(135deg, #8E2320 0%, #5D1F1A 100%);
     box-shadow: 0 4px 16px rgba(124, 29, 27, 0.32),
                 inset 0 1px 0 rgba(255, 255, 255, 0.22);

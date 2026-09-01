@@ -284,15 +284,15 @@ export default function Menu() {
           </p>
         </div>
         <div className="flex gap-3">
-          <input className="input max-w-xs" placeholder="Search dishes..." value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="input max-w-xs min-w-0" placeholder="Search dishes..." value={search} onChange={e => setSearch(e.target.value)} />
           <button
             onClick={() => setAddDishSec(tab === 'All' ? (allTabs[1] || null) : tab)}
             disabled={allTabs.length < 2}
-            className="btn-primary whitespace-nowrap disabled:opacity-50"
+            className="btn-primary whitespace-nowrap shrink-0 disabled:opacity-50"
           >
             + Add Dish
           </button>
-          <button onClick={() => setAddCatOpen(true)} className="btn-ghost whitespace-nowrap">+ Add Category</button>
+          <button onClick={() => setAddCatOpen(true)} className="btn-ghost whitespace-nowrap shrink-0">+ Add Category</button>
         </div>
       </div>
 
