@@ -226,7 +226,7 @@ export default function Dashboard() {
     <div className="space-y-7">
 
       {/* ── Greeting ──────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between gap-4 animate-fade-in-up">
+      <div className="relative z-50 flex items-start justify-between gap-4 animate-fade-in-up">
         <div>
           <div className="flex items-center gap-2.5 mb-1">
             <h1 className="font-display font-bold text-3xl text-gray-900">{getGreeting()}, Admin 👋</h1>
@@ -253,8 +253,8 @@ export default function Dashboard() {
           {pickerOpen && (
             <>
               {/* Click-away, so the panel closes without needing a close button */}
-              <div className="fixed inset-0 z-30" onClick={() => setPickerOpen(false)} />
-              <div className="absolute right-0 mt-2 z-40 w-[19rem] glass-strong rounded-2xl p-4 space-y-3">
+              <div className="fixed inset-0 z-40" onClick={() => setPickerOpen(false)} />
+              <div className="absolute right-0 mt-2 z-50 w-[19rem] rounded-2xl p-4 space-y-3 bg-white border border-cream-border shadow-2xl">
                 <div className="grid grid-cols-2 gap-2">
                   <label className="block">
                     <span className="block text-[11px] font-semibold text-gray-500 mb-1">From</span>
