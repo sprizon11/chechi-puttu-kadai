@@ -33,6 +33,7 @@ import 'package:chechi_puttu_app/services/notifications_service.dart';
 import 'package:chechi_puttu_app/services/orders_service.dart';
 import 'package:chechi_puttu_app/services/order_charges_service.dart';
 import 'package:chechi_puttu_app/services/order_hold_service.dart';
+import 'package:chechi_puttu_app/services/meta_events_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -8662,6 +8663,17 @@ class _CartTabState extends State<_CartTab> {
     if (outcome.isPaid) {
       final orderId = outcome.orderId!;
       final ref = orderId.length > 10 ? orderId.substring(0, 10) : orderId;
+      // Ad attribution. Only on a confirmed capture — the unconfirmed branch
+      // below deliberately reports nothing, because the webhook may still
+      // resolve either way and a double-counted sale skews ad optimisation.
+      unawaited(
+        MetaEvents.logPurchase(
+          totalRupees: total,
+          itemCount: lines.fold<int>(0, (qtySoFar, li) => qtySoFar + li.qty),
+          paymentMode: 'online',
+          orderId: orderId,
+        ),
+      );
       await showDialog<void>(
         context: context,
         builder: (ctx) => _OrderSuccessDialog(
@@ -8827,8 +8839,9 @@ class _CartTabState extends State<_CartTab> {
     }
 
     // Persist COD order for notifications + admin status updates.
+    final String codOrderId;
     try {
-      await _orders.createOrder(
+      codOrderId = await _orders.createOrder(
         items: [
           for (final li in lines)
             {
@@ -8861,6 +8874,18 @@ class _CartTabState extends State<_CartTab> {
       );
       return;
     }
+
+    // Ad attribution. Fires only after the order is safely saved, so a failed
+    // booking is never reported to Meta as a sale. Not awaited — the customer
+    // should see their confirmation without waiting on analytics.
+    unawaited(
+      MetaEvents.logPurchase(
+        totalRupees: total,
+        itemCount: lines.fold<int>(0, (qtySoFar, li) => qtySoFar + li.qty),
+        paymentMode: 'cash_on_delivery',
+        orderId: codOrderId,
+      ),
+    );
 
     if (!context.mounted) return;
     await showDialog<void>(

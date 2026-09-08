@@ -45,6 +45,21 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Meta (Facebook) app events, used by the ads team for install and
+             purchase attribution. The App ID and Client Token live in
+             res/values/strings.xml. -->
+        <meta-data
+            android:name="com.facebook.sdk.ApplicationId"
+            android:value="@string/facebook_app_id" />
+        <meta-data
+            android:name="com.facebook.sdk.ClientToken"
+            android:value="@string/facebook_client_token" />
+        <meta-data
+            android:name="com.facebook.sdk.AutoInitEnabled"
+            android:value="true" />
+        <meta-data
+            android:name="com.facebook.sdk.AutoLogAppEventsEnabled"
+            android:value="true" />
         <!-- FCM: when the app is in background/killed, the system displays the
              notification on this channel. Must match a channel the app creates
              at runtime (order_updates in NotificationsService) so background

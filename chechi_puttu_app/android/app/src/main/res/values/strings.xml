@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Meta (Facebook) app events. Both values come from the Meta app
+         dashboard: Settings -> Basic. The App ID is the numeric id at the top;
+         the Client Token is under Advanced -> Security. Supplied by the SLB ads
+         team, September 2026. -->
+    <string name="facebook_app_id" translatable="false">1777958690062898</string>
+    <string name="facebook_client_token" translatable="false">64c361102082e1c7737c60d879fa8a78</string>
+</resources>
