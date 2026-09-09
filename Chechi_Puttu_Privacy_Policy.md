@@ -70,6 +70,7 @@ We use your information only to:
 - send you a birthday greeting in the app
 - send order updates and, if you agreed at sign-up, offers on WhatsApp
 - measure whether our adverts reach the right people and lead to orders
+- understand how the app is used, so we can improve it
 - keep records we are required by law to keep, such as sales records for tax
 
 We do not sell your personal information to anyone.
@@ -97,6 +98,11 @@ essential messages about an order you have placed.
   dispatch orders.
 - **WhatsApp (Meta)** — your mobile number and order details, in order to send
   you the messages described above.
+- **Google Analytics** — how you use the app: the screens you open, dishes you
+  add to your cart, when you start checkout, and the value of orders you place.
+  This is reported to us as counts and totals, so we can see which parts of the
+  app people use and where they run into trouble. We do not send Google
+  Analytics your name, phone number, email address or delivery address.
 - **Meta (Facebook and Instagram advertising)** — your device's advertising
   identifier, the fact that you installed the app, added a dish to your cart,
   started checkout or placed an order, the name of the dish added, and the order
