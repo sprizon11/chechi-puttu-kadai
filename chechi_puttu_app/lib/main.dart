@@ -4535,6 +4535,9 @@ void _cartAddDishLine(
     );
   }
   cart.value = next;
+  // Ad attribution. Every route into the cart goes through here, so this is
+  // the one place the event needs to live.
+  unawaited(MetaEvents.logAddToCart(dishName: title, priceRupees: rupees));
 }
 
 void _cartRemoveDishLine(
@@ -8739,6 +8742,17 @@ class _CartTabState extends State<_CartTab> {
       await _showOrderHoldDialog(context, hold);
       return;
     }
+
+    // Upper-funnel signal for the ad campaigns: the customer has a cart and
+    // the kitchen is open, so checkout has genuinely started. Fires before
+    // payment, which means abandoned checkouts are counted too — that is the
+    // point of the event.
+    unawaited(
+      MetaEvents.logInitiateCheckout(
+        totalRupees: _lineSum(lines),
+        itemCount: lines.fold<int>(0, (qtySoFar, li) => qtySoFar + li.qty),
+      ),
+    );
 
     final deliveryLine = await _ensureDeliveryLineForCheckout(context);
     if (!context.mounted || deliveryLine == null) return;

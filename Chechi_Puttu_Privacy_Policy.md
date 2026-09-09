@@ -48,10 +48,11 @@ about your order.
 
 **Advertising identifiers**
 Your device's Google Advertising ID, together with a record of when you install
-the app, open it, and place an order (the order value and number of items, not
-the dishes themselves). This is used to measure whether our adverts work. You
-can reset or delete this identifier at any time in your Android settings — see
-"Your choices" below.
+the app, open it, add a dish to your cart, start checkout, or place an order.
+This record includes the name of the dish you added and the value of your
+order. It is used to measure whether our adverts work. You can reset or delete
+this identifier at any time in your Android settings — see "Your choices"
+below.
 
 We do **not** collect or store your card, UPI or bank details. Online payments
 are handled entirely by our payment provider.
@@ -97,10 +98,11 @@ essential messages about an order you have placed.
 - **WhatsApp (Meta)** — your mobile number and order details, in order to send
   you the messages described above.
 - **Meta (Facebook and Instagram advertising)** — your device's advertising
-  identifier, and the fact that you installed the app or placed an order, along
-  with the order value. This lets us see which adverts brought people to the app
-  and to reach similar people. We do not send Meta your name, phone number,
-  email address, delivery address, or what you ordered.
+  identifier, the fact that you installed the app, added a dish to your cart,
+  started checkout or placed an order, the name of the dish added, and the order
+  value. This lets us see which adverts brought people to the app and to reach
+  similar people. We do not send Meta your name, phone number, email address or
+  delivery address.
 - **Our delivery staff** — your name, phone number and delivery address, so your
   order can reach you.
 
