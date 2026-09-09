@@ -39,6 +39,19 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Deep links from adverts: chechiputtu://menu opens the dishes,
+                 so a customer who already has the app does not land on
+                 whichever screen they last used. DeepLinkService maps the host
+                 to a tab. A custom scheme rather than an https App Link
+                 because there is no domain to host assetlinks.json on yet;
+                 switching to App Links later needs one, plus the app signing
+                 SHA-256 in that file. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="chechiputtu" />
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

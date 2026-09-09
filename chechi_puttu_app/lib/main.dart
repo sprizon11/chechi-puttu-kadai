@@ -35,6 +35,7 @@ import 'package:chechi_puttu_app/services/order_charges_service.dart';
 import 'package:chechi_puttu_app/services/order_hold_service.dart';
 import 'package:chechi_puttu_app/services/meta_events_service.dart';
 import 'package:chechi_puttu_app/services/app_analytics_service.dart';
+import 'package:chechi_puttu_app/services/deep_link_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -546,6 +547,7 @@ class _AuthGateHomeState extends State<_AuthGateHome> {
   late final ValueNotifier<int> _adminNavIndexNotifier;
   late final ValueNotifier<List<CartLineItem>> _cartLinesNotifier;
   late final NotificationsService _notifications;
+  late final DeepLinkService _deepLinks;
   String? _profileGateUid;
   bool? _needsProfileCompletion;
   Future<void>? _profileGateTask;
@@ -574,6 +576,12 @@ class _AuthGateHomeState extends State<_AuthGateHome> {
     _cartLinesNotifier = ValueNotifier<List<CartLineItem>>([]);
     _notifications = NotificationsService(onDeepLink: _handlePushDeepLink);
     _notifications.init();
+    // Adverts open chechiputtu://menu. Customers arriving from one should see
+    // the dishes, not wherever they happened to leave the app last.
+    _deepLinks = DeepLinkService(
+      onOpenTab: (tabIndex) => _homeNavIndexNotifier.value = tabIndex,
+    );
+    unawaited(_deepLinks.init());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       MenuDeletedDishes.instance.reloadFromPrefs();
       MenuDeletedDishes.instance.addListener(() {
@@ -593,6 +601,7 @@ class _AuthGateHomeState extends State<_AuthGateHome> {
     _adminNavIndexNotifier.dispose();
     _cartLinesNotifier.dispose();
     _notifications.dispose();
+    _deepLinks.dispose();
     super.dispose();
   }
 
