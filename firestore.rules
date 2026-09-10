@@ -47,16 +47,24 @@ service cloud.firestore {
 
     // Public menu overrides (admin edits for dish text/image/availability).
     // Customers read this to see latest menu card content across devices.
+    //
+    // Readable without signing in: the app lets guests browse the menu before
+    // they log in, and without these reads a guest would see the bundled menu
+    // — dishes since removed or marked unavailable still showing. Nothing here
+    // is private: it holds menu_overrides, order_charges, order_hold and
+    // shop_location, all of which any customer is shown anyway. Writes stay
+    // admin-only. Do not store anything customer-specific or secret under
+    // admin_public.
     match /admin_public/{docId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow create, update, delete: if isAdmin();
     }
     match /admin_public/{docId}/snapshots/{snapshotId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow create, update, delete: if isAdmin();
     }
     match /admin_public/{docId}/section_snapshots/{snapshotId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow create, update, delete: if isAdmin();
     }
 

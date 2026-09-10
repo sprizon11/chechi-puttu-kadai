@@ -548,6 +548,10 @@ class _AuthGateHomeState extends State<_AuthGateHome> {
   late final ValueNotifier<List<CartLineItem>> _cartLinesNotifier;
   late final NotificationsService _notifications;
   late final DeepLinkService _deepLinks;
+
+  /// Uid of the customer currently signed in, or null while browsing as a
+  /// guest. Lets the build tell a sign-out apart from an ordinary rebuild.
+  String? _signedInUid;
   String? _profileGateUid;
   bool? _needsProfileCompletion;
   Future<void>? _profileGateTask;
@@ -679,20 +683,41 @@ class _AuthGateHomeState extends State<_AuthGateHome> {
         }
         final user = snapshot.data;
         if (user == null) {
-          _homeNavIndexNotifier.value = 0;
-          _adminNavIndexNotifier.value = 0;
-          _cartLinesNotifier.value = [];
+          // Only on an actual sign-out. The guest home screen below listens to
+          // these notifiers, so resetting them on every rebuild would bounce a
+          // browsing guest back to the menu whenever anything above rebuilt
+          // (a theme toggle, say) — and writing them mid-build would notify
+          // listeners during build. So: once, and after the frame.
+          if (_signedInUid != null) {
+            _signedInUid = null;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              _homeNavIndexNotifier.value = 0;
+              _adminNavIndexNotifier.value = 0;
+              _cartLinesNotifier.value = [];
+            });
+          }
           _profileGateUid = null;
           _needsProfileCompletion = null;
           _profileGateTask = null;
           _orderTypeGateUid = null;
           _orderTypeState = null;
           _orderTypeGateTask = null;
-          return LoginScreen(
+          // Guests browse the menu first and sign in only when they try to
+          // order, the way food apps customers already know work. Sign-in is
+          // offered from the tabs and buttons that need an account; once it
+          // succeeds this builder runs again and takes the signed-in path
+          // below, including the order-type and profile screens.
+          return HomeScreen(
+            key: const ValueKey<String>('home_guest'),
             isDark: widget.isDark,
             onToggleTheme: widget.onToggleTheme,
+            navIndexNotifier: _homeNavIndexNotifier,
+            cartLinesNotifier: _cartLinesNotifier,
+            onStartBulkOrder: _onOrderTypeChosen,
           );
         }
+        _signedInUid = user.uid;
         if (isChechiAdminUser(user)) {
           return AdminDashboardScreen(
             onToggleTheme: widget.onToggleTheme,
@@ -3220,6 +3245,224 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   }
 }
 
+/// True when nobody is signed in. Guests can browse the menu but not order,
+/// so anything that needs a customer account checks this first.
+bool get _isGuest => authService.currentUser == null;
+
+/// Opens the sign-in screen over the app. It closes itself the moment sign-in
+/// succeeds, after which the auth gate takes over exactly as it does for a
+/// normal launch — order type, profile completion, then home.
+Future<void> _openSignIn(BuildContext context) {
+  return Navigator.of(context, rootNavigator: true).push<void>(
+    ChechiPageRoute(builder: (_) => const _SignInRoute()),
+  );
+}
+
+/// Asks a guest to sign in before an action that needs an account.
+///
+/// Callers guard with `if (_isGuest) { showSignInPrompt(...); return; }`. The
+/// original action is not replayed after sign-in: the customer taps it again.
+/// Replaying would mean carrying a half-finished action through the order-type
+/// and profile screens a new customer sees first, which is where it would go
+/// wrong.
+Future<void> showSignInPrompt(
+  BuildContext context, {
+  required String message,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) {
+      final scheme = Theme.of(sheetContext).colorScheme;
+      final bottom = MediaQuery.paddingOf(sheetContext).bottom;
+      return SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(24, 4, 24, 16 + bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Sign in to continue',
+                style: GoogleFonts.playfairDisplay(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                message,
+                style: GoogleFonts.poppins(
+                  fontSize: 13.5,
+                  height: 1.4,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 20),
+              FilledButton(
+                onPressed: () {
+                  Navigator.pop(sheetContext);
+                  _openSignIn(context);
+                },
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: Text(
+                  'Sign in',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(sheetContext),
+                child: Text('Keep browsing', style: GoogleFonts.poppins()),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/// The login screen shown as a page rather than as the app's root, with a way
+/// back out for a guest who changes their mind.
+class _SignInRoute extends StatefulWidget {
+  const _SignInRoute();
+
+  @override
+  State<_SignInRoute> createState() => _SignInRouteState();
+}
+
+class _SignInRouteState extends State<_SignInRoute> {
+  StreamSubscription<User?>? _authSub;
+  bool _closed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _authSub = authService.authStateChanges.listen((user) {
+      if (user == null || _closed || !mounted) return;
+      _closed = true;
+      Navigator.of(context).pop();
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        LoginScreen(
+          isDark: Theme.of(context).brightness == Brightness.dark,
+          // LoginScreen accepts these but does not use them.
+          onToggleTheme: () {},
+        ),
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: IconButton(
+              tooltip: 'Back to menu',
+              onPressed: () => Navigator.of(context).maybePop(),
+              icon: const Icon(Icons.close_rounded),
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.black.withValues(alpha: 0.28),
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Stands in for the cart, orders, profile and chat tabs while browsing as a
+/// guest.
+///
+/// This is not only a nicer screen than an empty one. HomeScreen builds every
+/// tab up front in an IndexedStack, so without this those tabs would start
+/// their Firestore queries for a customer who does not exist.
+class _GuestTabPlaceholder extends StatelessWidget {
+  const _GuestTabPlaceholder({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(32, 24, 32, 120),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 76,
+                  height: 76,
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withValues(alpha: 0.08),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: 34, color: scheme.primary),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 13.5,
+                    height: 1.45,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                FilledButton(
+                  onPressed: () => _openSignIn(context),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 40,
+                      vertical: 14,
+                    ),
+                  ),
+                  child: Text(
+                    'Sign in',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
     super.key,
@@ -5157,6 +5400,13 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _openCustomerChat() async {
     if (!mounted) return;
+    if (_isGuest) {
+      await showSignInPrompt(
+        context,
+        message: 'Sign in to chat with the kitchen about an order.',
+      );
+      return;
+    }
     await Navigator.of(context).push<void>(
       ChechiPageRoute(builder: (_) => const CustomerChatScreen()),
     );
@@ -5214,6 +5464,15 @@ class _HomeScreenState extends State<HomeScreen>
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 12),
                 children: [
+                  if (_isGuest)
+                    _AppMenuTile(
+                      icon: Icons.login_rounded,
+                      title: 'Sign in',
+                      subtitle: 'To order, track and chat',
+                      onTap: () => popDrawerThen(() {
+                        _openSignIn(context);
+                      }),
+                    ),
                   _AppMenuTile(
                     icon: Icons.notifications_outlined,
                     title: 'Notifications',
@@ -5714,6 +5973,14 @@ class _HomeScreenState extends State<HomeScreen>
     String priceStr, {
     String? imageBase64,
   }) {
+    if (_isGuest) {
+      showSignInPrompt(
+        context,
+        message: 'Sign in with your mobile number to add $title to your cart '
+            'and order.',
+      );
+      return;
+    }
     _cartAddDishLine(
       widget.cartLinesNotifier,
       title,
@@ -6524,7 +6791,38 @@ class _HomeScreenState extends State<HomeScreen>
                         child: IndexedStack(
                           index: widget.navIndexNotifier.value.clamp(0, 4),
                           sizing: StackFit.expand,
-                          children: [
+                          // HomeScreen is keyed per user, so a guest's instance
+                          // is replaced wholesale on sign-in — this check holds
+                          // for the whole life of the widget.
+                          children: _isGuest
+                              ? [
+                                  _buildHomeTab(),
+                                  const _GuestTabPlaceholder(
+                                    icon: Icons.shopping_bag_outlined,
+                                    title: 'Your cart',
+                                    message: 'Sign in to add dishes and place '
+                                        'an order.',
+                                  ),
+                                  const _GuestTabPlaceholder(
+                                    icon: Icons.receipt_long_outlined,
+                                    title: 'Your orders',
+                                    message: 'Sign in to see your orders and '
+                                        'track deliveries.',
+                                  ),
+                                  const _GuestTabPlaceholder(
+                                    icon: Icons.person_outline_rounded,
+                                    title: 'Your profile',
+                                    message: 'Sign in to save your addresses '
+                                        'and details.',
+                                  ),
+                                  const _GuestTabPlaceholder(
+                                    icon: Icons.chat_bubble_outline_rounded,
+                                    title: 'Chat with us',
+                                    message: 'Sign in to message the kitchen '
+                                        'about an order.',
+                                  ),
+                                ]
+                              : [
                             _buildHomeTab(),
                             _CartTab(
                               cartLinesNotifier: widget.cartLinesNotifier,
@@ -11506,13 +11804,23 @@ class _MenuVarietyDetailScreen extends StatelessWidget {
                         imageBase64: m.imageBase64,
                         available: m.available,
                         qty: _cartQtyForDish(lines, m.title, m.subtitle),
-                        onAdd: () => _cartAddDishLine(
-                          cartLinesNotifier,
-                          m.title,
-                          m.subtitle,
-                          m.price,
-                          m.imageBase64,
-                        ),
+                        onAdd: () {
+                          if (_isGuest) {
+                            showSignInPrompt(
+                              context,
+                              message: 'Sign in with your mobile number to '
+                                  'add ${m.title} to your cart and order.',
+                            );
+                            return;
+                          }
+                          _cartAddDishLine(
+                            cartLinesNotifier,
+                            m.title,
+                            m.subtitle,
+                            m.price,
+                            m.imageBase64,
+                          );
+                        },
                         onRemove: () => _cartRemoveDishLine(
                           cartLinesNotifier,
                           m.title,
