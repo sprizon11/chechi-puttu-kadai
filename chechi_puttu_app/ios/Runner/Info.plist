@@ -91,6 +91,30 @@
 				<string>com.googleusercontent.apps.316102307451-l09t7egsunl83jmp6nk59blj2atp3oqc</string>
 			</array>
 		</dict>
+		<!-- Deep links from adverts: chechiputtu://menu. Mirrors the Android
+		     intent-filter; DeepLinkService maps the host to a tab. -->
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.chechiputtu.kadai.deeplink</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>chechiputtu</string>
+			</array>
+		</dict>
 	</array>
+	<!-- Meta (Facebook) app events. Same App ID and Client Token as Android's
+	     res/values/strings.xml. The iOS SDK treats a missing App ID as fatal
+	     at launch, so these must be present in any build that includes
+	     facebook_app_events. -->
+	<key>FacebookAppID</key>
+	<string>1777958690062898</string>
+	<key>FacebookClientToken</key>
+	<string>64c361102082e1c7737c60d879fa8a78</string>
+	<key>FacebookDisplayName</key>
+	<string>Chechi Puttu</string>
+	<key>FacebookAutoLogAppEventsEnabled</key>
+	<true/>
 </dict>
 </plist>
