@@ -88,7 +88,15 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
     super.dispose();
   }
 
-  Future<void> _openFilterSheet() async {
+  /// Tapping the tile for the segment already showing clears the filter, so
+  /// the same tap that switched it on switches it off.
+  void _toggleSegment(_CustomerSegment s) {
+    setState(() {
+      _segment = (_segment == s) ? _CustomerSegment.all : s;
+    });
+  }
+
+  Future<void> _openFilterSheet(_CustomerMetrics metrics) async {
     final picked = await showModalBottomSheet<_CustomerSegment>(
       context: context,
       showDragHandle: true,
@@ -114,7 +122,7 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
                 for (final s in _CustomerSegment.values)
                   ListTile(
                     title: Text(
-                      s.label,
+                      s.labelWithCount(metrics.countFor(s)),
                       style: GoogleFonts.poppins(
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
@@ -566,19 +574,45 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
                 Row(
                   children: [
                     Expanded(
+                      // Shows which segment is applied. The old label always
+                      // read "Segment Filter", so a filtered list looked the
+                      // same as an unfiltered one and there was no way to see
+                      // or clear what was on.
                       child: OutlinedButton.icon(
-                        onPressed: _openFilterSheet,
+                        onPressed: () => _openFilterSheet(metrics),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: cs.onSurface,
-                          side: BorderSide(color: cs.outlineVariant),
+                          foregroundColor:
+                              _segment == _CustomerSegment.all
+                                  ? cs.onSurface
+                                  : _maroon,
+                          backgroundColor:
+                              _segment == _CustomerSegment.all
+                                  ? null
+                                  : _maroon.withValues(alpha: 0.08),
+                          side: BorderSide(
+                            color: _segment == _CustomerSegment.all
+                                ? cs.outlineVariant
+                                : _maroon,
+                            width: _segment == _CustomerSegment.all ? 1 : 1.4,
+                          ),
                           padding: const EdgeInsets.symmetric(vertical: 11),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        icon: Icon(Icons.filter_list_rounded, color: muted, size: 18),
+                        icon: Icon(
+                          Icons.filter_list_rounded,
+                          color: _segment == _CustomerSegment.all
+                              ? muted
+                              : _maroon,
+                          size: 18,
+                        ),
                         label: Text(
-                          'Segment Filter',
+                          _segment == _CustomerSegment.all
+                              ? 'Segment Filter'
+                              : _segment.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.poppins(
                             fontWeight: FontWeight.w700,
                             fontSize: 12.2,
@@ -590,6 +624,9 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
                     Expanded(
                       child: PopupMenuButton<String>(
                         onSelected: (v) => setState(() => _sortLabel = v),
+                        // Marks the sort in use, so the menu shows what is
+                        // already applied rather than three equal options.
+                        initialValue: _sortLabel,
                         itemBuilder: (ctx) => const [
                           PopupMenuItem(value: 'Newest', child: Text('Newest')),
                           PopupMenuItem(value: 'Oldest', child: Text('Oldest')),
@@ -645,6 +682,8 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
                       iconColor: const Color(0xFFEA7A2C),
                       label: 'Total Customers',
                       value: '${metrics.total}',
+                      selected: _segment == _CustomerSegment.all,
+                      onTap: () => _toggleSegment(_CustomerSegment.all),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -655,6 +694,9 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
                       iconColor: const Color(0xFF2E7D32),
                       label: 'New This Month',
                       value: '${metrics.newThisMonth}',
+                      selected: _segment == _CustomerSegment.newThisMonth,
+                      onTap: () =>
+                          _toggleSegment(_CustomerSegment.newThisMonth),
                     ),
                   ),
                 ],
@@ -669,25 +711,21 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
                       iconColor: const Color(0xFF1565C0),
                       label: 'Active Customers',
                       value: '${metrics.active}',
+                      selected: _segment == _CustomerSegment.active,
+                      onTap: () => _toggleSegment(_CustomerSegment.active),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () => setState(
-                          () => _segment = _CustomerSegment.birthdayToday,
-                        ),
-                        borderRadius: BorderRadius.circular(18),
-                        child: _CustomerMetricTile(
-                          icon: Icons.cake_outlined,
-                          iconBg: const Color(0xFFFFE8EF),
-                          iconColor: const Color(0xFFE85D3F),
-                          label: 'Birthday Today',
-                          value: '${metrics.birthdaysToday}',
-                        ),
-                      ),
+                    child: _CustomerMetricTile(
+                      icon: Icons.cake_outlined,
+                      iconBg: const Color(0xFFFFE8EF),
+                      iconColor: const Color(0xFFE85D3F),
+                      label: 'Birthday Today',
+                      value: '${metrics.birthdaysToday}',
+                      selected: _segment == _CustomerSegment.birthdayToday,
+                      onTap: () =>
+                          _toggleSegment(_CustomerSegment.birthdayToday),
                     ),
                   ),
                 ],
@@ -789,14 +827,21 @@ enum _CustomerSegment {
   repeat;
 
   String labelWithCount(int count) => switch (this) {
+        all => 'All customers ($count)',
+        birthdayToday => 'Birthday today ($count)',
+        newThisMonth => 'New this month ($count)',
+        active => 'Active (30 days) ($count)',
+        repeat => 'Repeat buyers ($count)',
+      };
+
+  /// Name on its own, for the filter button once a segment is chosen.
+  String get label => switch (this) {
         all => 'All customers',
-        birthdayToday => count > 0 ? "Birthday today ($count)" : 'Birthday today',
+        birthdayToday => 'Birthday today',
         newThisMonth => 'New this month',
         active => 'Active (30 days)',
         repeat => 'Repeat buyers',
       };
-
-  String get label => labelWithCount(0);
 }
 
 class _CustomerMetrics {
@@ -812,6 +857,16 @@ class _CustomerMetrics {
   final int birthdaysToday;
   final int newThisMonth;
   final int active;
+
+  /// How many customers a segment holds, so the filter sheet can say so
+  /// before the admin picks one.
+  int countFor(_CustomerSegment s) => switch (s) {
+        _CustomerSegment.all => total,
+        _CustomerSegment.birthdayToday => birthdaysToday,
+        _CustomerSegment.newThisMonth => newThisMonth,
+        _CustomerSegment.active => active,
+        _CustomerSegment.repeat => repeat,
+      };
   final int repeat;
 
   factory _CustomerMetrics.from(List<_CustomerAgg> list) {
@@ -1143,6 +1198,8 @@ class _CustomerMetricTile extends StatelessWidget {
     required this.iconColor,
     required this.label,
     required this.value,
+    this.onTap,
+    this.selected = false,
   });
 
   final IconData icon;
@@ -1150,6 +1207,14 @@ class _CustomerMetricTile extends StatelessWidget {
   final Color iconColor;
   final String label;
   final String value;
+
+  /// Filters the list below to this tile's segment. Every tile is tappable,
+  /// so the four read as one set of filters rather than one button among
+  /// three decorations.
+  final VoidCallback? onTap;
+
+  /// Whether the list is currently filtered to this tile's segment.
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -1159,12 +1224,15 @@ class _CustomerMetricTile extends StatelessWidget {
         ? cs.onSurface.withValues(alpha: 0.72)
         : const Color(0xFF7A6A62);
 
-    return Container(
+    final tile = Container(
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: cs.outlineVariant),
+          border: Border.all(
+            color: selected ? iconColor : cs.outlineVariant,
+            width: selected ? 1.8 : 1,
+          ),
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -1224,6 +1292,21 @@ class _CustomerMetricTile extends StatelessWidget {
             ),
           ],
         ),
+    );
+
+    if (onTap == null) return tile;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$label, $value',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: tile,
+        ),
+      ),
     );
   }
 }
