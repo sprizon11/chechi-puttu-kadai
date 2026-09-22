@@ -88,14 +88,6 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
     super.dispose();
   }
 
-  /// Tapping the tile for the segment already showing clears the filter, so
-  /// the same tap that switched it on switches it off.
-  void _toggleSegment(_CustomerSegment s) {
-    setState(() {
-      _segment = (_segment == s) ? _CustomerSegment.all : s;
-    });
-  }
-
   Future<void> _openFilterSheet(_CustomerMetrics metrics) async {
     final picked = await showModalBottomSheet<_CustomerSegment>(
       context: context,
@@ -682,8 +674,6 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
                       iconColor: const Color(0xFFEA7A2C),
                       label: 'Total Customers',
                       value: '${metrics.total}',
-                      selected: _segment == _CustomerSegment.all,
-                      onTap: () => _toggleSegment(_CustomerSegment.all),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -694,9 +684,6 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
                       iconColor: const Color(0xFF2E7D32),
                       label: 'New This Month',
                       value: '${metrics.newThisMonth}',
-                      selected: _segment == _CustomerSegment.newThisMonth,
-                      onTap: () =>
-                          _toggleSegment(_CustomerSegment.newThisMonth),
                     ),
                   ),
                 ],
@@ -711,8 +698,6 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
                       iconColor: const Color(0xFF1565C0),
                       label: 'Active Customers',
                       value: '${metrics.active}',
-                      selected: _segment == _CustomerSegment.active,
-                      onTap: () => _toggleSegment(_CustomerSegment.active),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -723,9 +708,6 @@ class _AdminCustomersBodyState extends State<AdminCustomersBody> {
                       iconColor: const Color(0xFFE85D3F),
                       label: 'Birthday Today',
                       value: '${metrics.birthdaysToday}',
-                      selected: _segment == _CustomerSegment.birthdayToday,
-                      onTap: () =>
-                          _toggleSegment(_CustomerSegment.birthdayToday),
                     ),
                   ),
                 ],
@@ -1198,8 +1180,6 @@ class _CustomerMetricTile extends StatelessWidget {
     required this.iconColor,
     required this.label,
     required this.value,
-    this.onTap,
-    this.selected = false,
   });
 
   final IconData icon;
@@ -1207,14 +1187,6 @@ class _CustomerMetricTile extends StatelessWidget {
   final Color iconColor;
   final String label;
   final String value;
-
-  /// Filters the list below to this tile's segment. Every tile is tappable,
-  /// so the four read as one set of filters rather than one button among
-  /// three decorations.
-  final VoidCallback? onTap;
-
-  /// Whether the list is currently filtered to this tile's segment.
-  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -1224,15 +1196,14 @@ class _CustomerMetricTile extends StatelessWidget {
         ? cs.onSurface.withValues(alpha: 0.72)
         : const Color(0xFF7A6A62);
 
-    final tile = Container(
+    // A summary card only, not a button: filtering is done with the
+    // Segment Filter above, so the four tiles never look half-clickable.
+    return Container(
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: selected ? iconColor : cs.outlineVariant,
-            width: selected ? 1.8 : 1,
-          ),
+          border: Border.all(color: cs.outlineVariant),
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -1292,21 +1263,6 @@ class _CustomerMetricTile extends StatelessWidget {
             ),
           ],
         ),
-    );
-
-    if (onTap == null) return tile;
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: '$label, $value',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
-          child: tile,
-        ),
-      ),
     );
   }
 }
