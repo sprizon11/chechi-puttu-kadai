@@ -541,6 +541,156 @@ exports.adminDeleteCustomer = onCall(async (request) => {
   }
 });
 
+// ── Staff accounts ────────────────────────────────────────────────────────────
+// Staff sign in to the admin web with email + password. Each one has an Auth
+// user carrying the custom claim { staff: true } and a staff/{uid} doc (name,
+// email, phone). Firestore rules require both, so removing the doc cuts access
+// at once even while an old ID token is still valid.
+//
+// Only the admin can call these. They run here, not in the browser, because
+// creating a user client-side would sign the admin out.
+
+const STAFF_COLLECTION = "staff";
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function requireAdmin(request) {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  if (!isAdminRequest(request)) {
+    throw new HttpsError("permission-denied", "Admin access required");
+  }
+}
+
+/** "98765 43210" / "+91 98765-43210" -> "+919876543210". Null if unusable. */
+function normalizeIndianPhone(raw) {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
+  return null;
+}
+
+function validStaffPassword(password) {
+  return typeof password === "string" && password.length >= 6 && password.length <= 128;
+}
+
+async function requireStaffDoc(uid) {
+  const ref = db.collection(STAFF_COLLECTION).doc(uid);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    throw new HttpsError("not-found", "That staff account no longer exists");
+  }
+  return ref;
+}
+
+exports.adminCreateStaff = onCall(async (request) => {
+  requireAdmin(request);
+
+  const name = String(request.data?.name || "").trim();
+  const email = String(request.data?.email || "").trim().toLowerCase();
+  const phone = normalizeIndianPhone(request.data?.phone);
+  const password = request.data?.password;
+
+  if (!name || name.length > 80) {
+    throw new HttpsError("invalid-argument", "Enter the staff member's name");
+  }
+  if (!EMAIL_RE.test(email)) {
+    throw new HttpsError("invalid-argument", "Enter a valid email address");
+  }
+  if (email === ADMIN_EMAIL) {
+    throw new HttpsError("invalid-argument", "That is the admin's own email");
+  }
+  if (!phone) {
+    throw new HttpsError("invalid-argument", "Enter a 10-digit mobile number");
+  }
+  if (!validStaffPassword(password)) {
+    throw new HttpsError("invalid-argument", "Password must be at least 6 characters");
+  }
+
+  // The phone is kept on the staff doc only. Putting it on the Auth user would
+  // clash with a customer who signs in to the app with the same number.
+  let user;
+  try {
+    user = await admin.auth().createUser({
+      email,
+      password,
+      displayName: name,
+      emailVerified: true,
+    });
+  } catch (e) {
+    if (e?.code === "auth/email-already-exists") {
+      throw new HttpsError("already-exists", "An account with this email already exists");
+    }
+    console.error("adminCreateStaff: createUser failed", e);
+    throw new HttpsError("internal", "Could not create the staff account");
+  }
+
+  try {
+    await admin.auth().setCustomUserClaims(user.uid, {staff: true});
+    await db.collection(STAFF_COLLECTION).doc(user.uid).set({
+      uid: user.uid,
+      name,
+      email,
+      phone,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      created_by: request.auth.uid,
+    });
+  } catch (e) {
+    // Do not leave a half-made login behind.
+    console.error("adminCreateStaff: setup failed, rolling back", user.uid, e);
+    await admin.auth().deleteUser(user.uid).catch(() => {});
+    await db.collection(STAFF_COLLECTION).doc(user.uid).delete().catch(() => {});
+    throw new HttpsError("internal", "Could not create the staff account");
+  }
+
+  return {ok: true, uid: user.uid};
+});
+
+exports.adminDeleteStaff = onCall(async (request) => {
+  requireAdmin(request);
+
+  const uid = String(request.data?.uid || "").trim();
+  if (!uid) throw new HttpsError("invalid-argument", "uid is required");
+  if (uid === request.auth.uid) {
+    throw new HttpsError("failed-precondition", "You cannot remove your own account");
+  }
+
+  // Only ever deletes accounts that are on the staff list — never a customer.
+  const ref = await requireStaffDoc(uid);
+  await ref.delete();
+  try {
+    await admin.auth().deleteUser(uid);
+  } catch (e) {
+    if (e?.code !== "auth/user-not-found") {
+      console.error("adminDeleteStaff: deleteUser failed", uid, e);
+      throw new HttpsError("internal", "Removed from the list, but the login could not be deleted");
+    }
+  }
+  return {ok: true};
+});
+
+exports.adminSetStaffPassword = onCall(async (request) => {
+  requireAdmin(request);
+
+  const uid = String(request.data?.uid || "").trim();
+  const password = request.data?.password;
+  if (!uid) throw new HttpsError("invalid-argument", "uid is required");
+  if (!validStaffPassword(password)) {
+    throw new HttpsError("invalid-argument", "Password must be at least 6 characters");
+  }
+
+  await requireStaffDoc(uid);
+  try {
+    await admin.auth().updateUser(uid, {password});
+    // Sign the staff member out everywhere so the old password stops working.
+    await admin.auth().revokeRefreshTokens(uid);
+  } catch (e) {
+    console.error("adminSetStaffPassword failed", uid, e);
+    throw new HttpsError("internal", "Could not change the password");
+  }
+  return {ok: true};
+});
+
 function orderRef(orderId) {
   const id = String(orderId || "").trim();
   if (!id) return "#ORD";

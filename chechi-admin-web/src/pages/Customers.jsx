@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { collection, query, limit, onSnapshot, orderBy, deleteDoc, doc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { format } from 'date-fns'
+import { useRole } from '../role'
 
 function fmtInr(v) {
   const s = Math.round(v || 0).toString()
@@ -73,6 +74,7 @@ function MapEmbed({ lat, lng }) {
 }
 
 export default function Customers() {
+  const { isAdmin } = useRole()
   const [users, setUsers]       = useState([])
   const [orders, setOrders]     = useState([])
   const [loading, setLoading]   = useState(true)
@@ -344,7 +346,8 @@ export default function Customers() {
                 </div>
               </div>
 
-              {/* Delete */}
+              {/* Delete (admin only) */}
+              {isAdmin && (
               <div className="pt-4 border-t border-cream-border">
                 <button
                   onClick={() => handleDelete(selectedUser)}
@@ -358,6 +361,7 @@ export default function Customers() {
                 </button>
                 <p className="text-xs text-gray-400 mt-1.5 text-center">Orders are kept. Only the profile is removed.</p>
               </div>
+              )}
             </div>
           </div>
         )}

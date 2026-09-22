@@ -3,6 +3,8 @@ import { doc, getDoc, setDoc, serverTimestamp, Timestamp } from 'firebase/firest
 import { sendPasswordResetEmail } from 'firebase/auth'
 import { db, auth } from '../firebase'
 import { useNavigate } from 'react-router-dom'
+import { useRole } from '../role'
+import StaffManager from '../components/StaffManager'
 
 // ── Tile component (matches Flutter's _SettingsTile) ─────────────────────────
 function Tile({ icon, iconBg, title, sub, trailing, onClick, danger }) {
@@ -292,6 +294,7 @@ function HoursModal({ form, setForm, onSave, onClose, saving, saved }) {
 // ── Main Settings page ────────────────────────────────────────────────────────
 export default function Settings() {
   const navigate = useNavigate()
+  const { isAdmin, staff } = useRole()
   const [form, setForm] = useState({
     shopName: 'Chechi Puttu Kadai',
     phone: '', email: '', address: '', announcement: '',
@@ -303,7 +306,7 @@ export default function Settings() {
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved,  setSaved]  = useState(false)
-  const [modal,  setModal]  = useState(null)   // 'business' | 'delivery' | 'hours' | 'hold'
+  const [modal,  setModal]  = useState(null)   // 'business' | 'delivery' | 'hours' | 'hold' | 'staff'
   const [pwMsg,  setPwMsg]  = useState('')
   // resumeOn is kept as a yyyy-mm-dd string for <input type="date">; it is
   // converted to a Timestamp only on save, to match what the app writes.
@@ -404,6 +407,12 @@ export default function Settings() {
     alert(`${title}\n\n${body}`)
   }
 
+  // Business settings are the admin's to change; staff can see them only.
+  function openAdminModal(name, title) {
+    if (isAdmin) setModal(name)
+    else infoAlert(title, 'Only the admin can change this. Ask the admin if it needs updating.')
+  }
+
   if (!loaded) return (
     <div className="flex items-center justify-center h-64">
       <div className="w-8 h-8 border-4 border-maroon border-t-transparent rounded-full animate-spin" />
@@ -432,33 +441,39 @@ export default function Settings() {
       {/* ── Account ──────────────────────────────────────── */}
       <Section title="Account">
         <Tile icon="👤" iconBg="#FFF0E6" title="Profile Information"
-          sub={auth.currentUser?.email || auth.currentUser?.phoneNumber || 'Admin account'}
-          onClick={() => infoAlert('Profile Information', `Signed in as: ${auth.currentUser?.email || auth.currentUser?.phoneNumber}\nUID: ${auth.currentUser?.uid}`)} />
+          sub={staff
+            ? `${staff.name} · Staff · ${staff.email}`
+            : (auth.currentUser?.email || auth.currentUser?.phoneNumber || 'Admin account')}
+          onClick={() => infoAlert('Profile Information', staff
+            ? `Name: ${staff.name}\nRole: Staff\nEmail: ${staff.email}\nMobile: ${staff.phone}`
+            : `Signed in as: ${auth.currentUser?.email || auth.currentUser?.phoneNumber}\nRole: Admin\nUID: ${auth.currentUser?.uid}`)} />
         <Tile icon="🔒" iconBg="#E8F5E9" title="Change Password"
           sub={pwMsg || 'Send a password reset link to your email'}
           onClick={sendPasswordReset} />
-        <Tile icon="👥" iconBg="#F3E5F5" title="Manage Staff"
-          sub="Add or remove staff accounts"
-          onClick={() => infoAlert('Manage Staff', 'Staff management is handled via Firebase Authentication.\nAdd staff emails in Firebase Console → Authentication.')} />
+        {isAdmin && (
+          <Tile icon="👥" iconBg="#F3E5F5" title="Manage Staff"
+            sub="Add or remove staff logins"
+            onClick={() => setModal('staff')} />
+        )}
       </Section>
 
       {/* ── Business Settings ────────────────────────────── */}
       <Section title="Business Settings">
         <Tile icon="🏪" iconBg="#FFF0E6" title="Business Profile"
           sub={form.shopName || 'Chechi Puttu Kadai'}
-          onClick={() => setModal('business')} />
+          onClick={() => openAdminModal('business', 'Business Profile')} />
         <Tile icon="⏰" iconBg="#FFF0E6" title="Operating Hours"
           sub={hoursLabel}
-          onClick={() => setModal('hours')} />
+          onClick={() => openAdminModal('hours', 'Operating Hours')} />
         <Tile icon="🛵" iconBg="#E8F5E9" title="Delivery Settings"
           sub={deliveryLabel}
-          onClick={() => setModal('delivery')} />
+          onClick={() => openAdminModal('delivery', 'Delivery Settings')} />
         <Tile
           icon={holdingNow ? '⏸️' : '▶️'}
           iconBg={holdingNow ? '#FFF3E0' : '#E8F5E9'}
           title="Order hold"
           sub={holdLabel}
-          onClick={() => setModal('hold')} />
+          onClick={() => openAdminModal('hold', 'Order hold')} />
         <Tile icon="🍽️" iconBg="#E3F2FD" title="Menu Management"
           sub="Manage dishes, categories and pricing"
           onClick={() => navigate('/menu')} />
@@ -498,6 +513,11 @@ export default function Settings() {
       {modal === 'business'  && <BusinessModal  form={form} setForm={setForm} onSave={saveForm} onClose={() => setModal(null)} saving={saving} saved={saved} />}
       {modal === 'delivery'  && <DeliveryModal  form={form} setForm={setForm} onSave={saveForm} onClose={() => setModal(null)} saving={saving} saved={saved} />}
       {modal === 'hours'     && <HoursModal     form={form} setForm={setForm} onSave={saveForm} onClose={() => setModal(null)} saving={saving} saved={saved} />}
+      {modal === 'staff'     && isAdmin && (
+        <Modal title="Manage Staff" sub="Staff sign in here with their own email and password" onClose={() => setModal(null)}>
+          <StaffManager />
+        </Modal>
+      )}
       {modal === 'hold'      && <OrderHoldModal hold={hold}  setHold={setHold} onSave={saveHold} onClose={() => setModal(null)} saving={saving} saved={saved} />}
     </div>
   )

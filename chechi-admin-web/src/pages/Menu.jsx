@@ -5,6 +5,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { CATALOG, allCatalogDishes } from '../catalog'
+import { useRole } from '../role'
 
 // U+001F unit separator — same as Flutter catalogDishStorageKey separator
 const SEP = ''
@@ -42,6 +43,8 @@ function imgSrc(b64) {
 }
 
 export default function Menu() {
+  // Staff can add and edit dishes and categories; deleting is admin-only.
+  const { isAdmin } = useRole()
   const [meta, setMeta]         = useState({ deletedDishKeys: [], deletedSectionIds: [], customCategoryIds: [] })
   const [snaps, setSnaps]       = useState({})
   const [secSnaps, setSecSnaps] = useState({})
@@ -325,7 +328,7 @@ export default function Menu() {
                   Edit Category
                 </button>
                 <button onClick={() => setAddDishSec(tab)} className="btn-ghost text-xs py-2 px-4">+ Add Dish</button>
-                {isCustomTab && (
+                {isAdmin && isCustomTab && (
                   <button onClick={() => deleteSection(tab)} className="text-xs px-4 py-2 rounded-xl bg-red-50 text-red-700 border border-red-100 font-semibold hover:bg-red-100 transition-colors">Delete Category</button>
                 )}
               </div>
@@ -383,8 +386,10 @@ export default function Menu() {
                   <td className="px-5 py-3.5">
                     <div className="flex gap-2">
                       <button onClick={() => openEditDish(dish)} className="text-xs px-3 py-1.5 rounded-lg bg-cream border border-cream-border text-gray-700 hover:bg-cream-border transition-colors font-semibold">Edit</button>
-                      <button onClick={() => deleteDish(dish)} disabled={busy === dish.key}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-red-50 border border-red-100 text-red-600 hover:bg-red-100 transition-colors font-semibold">Delete</button>
+                      {isAdmin && (
+                        <button onClick={() => deleteDish(dish)} disabled={busy === dish.key}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-red-50 border border-red-100 text-red-600 hover:bg-red-100 transition-colors font-semibold">Delete</button>
+                      )}
                     </div>
                   </td>
                 </tr>

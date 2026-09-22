@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import Sidebar from './Sidebar'
 import { format } from 'date-fns'
 import { pageTransition } from '../motion'
+import { useRole } from '../role'
 
 const titles = {
   '/': 'Dashboard',
@@ -52,10 +53,11 @@ function Aurora() {
 }
 
 export default function Layout({ user }) {
+  const { isAdmin, staff } = useRole()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
   const title = titles[location.pathname] ?? 'Admin'
-  const initial = (user?.email || 'A').charAt(0).toUpperCase()
+  const initial = (staff?.name || user?.email || 'A').charAt(0).toUpperCase()
 
   return (
     <div className="relative flex h-screen overflow-hidden">
@@ -115,10 +117,10 @@ export default function Layout({ user }) {
           <div className="flex items-center gap-2.5 shrink-0 ml-auto">
             <div className="text-right hidden sm:block">
               <p className="text-xs font-semibold text-gray-700 truncate max-w-[160px]">
-                {user?.email || user?.phoneNumber || 'Admin'}
+                {staff?.name || user?.email || user?.phoneNumber || 'Admin'}
               </p>
               <p className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold">
-                Administrator
+                {isAdmin ? 'Administrator' : 'Staff'}
               </p>
             </div>
             <motion.div

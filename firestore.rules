@@ -17,14 +17,50 @@ service cloud.firestore {
         );
     }
 
+    // Staff: created by the admin through the adminCreateStaff function. Needs
+    // the { staff: true } claim AND a staff/{uid} doc, so removing someone
+    // takes effect at once rather than when their ID token expires. The claim
+    // is checked first, so customers never pay for the exists() read.
+    function isStaff() {
+      return isSignedIn()
+        && request.auth.token.staff == true
+        && exists(/databases/$(database)/documents/staff/$(request.auth.uid));
+    }
+
+    function isAdminOrStaff() {
+      return isAdmin() || isStaff();
+    }
+
+    // Staff may move an order forward but not cancel it, and may touch
+    // nothing on the order except its status.
+    function isStaffOrderStatusUpdate() {
+      return isStaff()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status in ['preparing', 'ready', 'delivered'];
+    }
+
+    // Staff may add categories to the menu doc, but not hide dishes or
+    // categories (deletedDishKeys / deletedSectionIds are admin-only).
+    function isStaffMenuDocWrite(docId) {
+      return isStaff()
+        && docId == 'menu_overrides'
+        && request.resource.data.diff(resource == null ? {} : resource.data).affectedKeys()
+             .hasOnly(['customCategoryIds', 'customCategoryIdsUpdatedAt']);
+    }
+
+    match /staff/{staffUid} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == staffUid);
+      allow write: if false; // Cloud Functions only
+    }
+
     match /orders/{orderId} {
-      allow read: if isAdmin();
+      allow read: if isAdminOrStaff();
       allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
       allow create: if isSignedIn()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.payment_mode == 'cash_on_delivery'
         && request.resource.data.status == 'placed';
-      allow update: if isAdmin();
+      allow update: if isAdmin() || isStaffOrderStatusUpdate();
       allow delete: if false;
     }
 
@@ -57,19 +93,23 @@ service cloud.firestore {
     // admin_public.
     match /admin_public/{docId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin() || isStaffMenuDocWrite(docId);
+      allow delete: if isAdmin();
     }
+    // Dish and category edits: staff can add and edit, only the admin deletes.
     match /admin_public/{docId}/snapshots/{snapshotId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin() || (isStaff() && docId == 'menu_overrides');
+      allow delete: if isAdmin();
     }
     match /admin_public/{docId}/section_snapshots/{snapshotId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin() || (isStaff() && docId == 'menu_overrides');
+      allow delete: if isAdmin();
     }
 
     match /order_reviews/{reviewId} {
-      allow read: if isAdmin();
+      allow read: if isAdminOrStaff();
       allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
       allow create: if isSignedIn()
         && request.resource.data.uid == request.auth.uid;
@@ -81,7 +121,7 @@ service cloud.firestore {
     // Do not require request.resource.data.uid here: merge updates can make that
     // check fail in some clients even though the app always sends uid correctly.
     match /users/{userId} {
-      allow read: if isAdmin();
+      allow read: if isAdminOrStaff();
       allow read: if isSignedIn() && request.auth.uid == userId;
       allow create, update: if isSignedIn() && request.auth.uid == userId;
       allow delete: if isAdmin();
@@ -89,12 +129,12 @@ service cloud.firestore {
 
     // Chat thread summary doc used by admin/customer chat list.
     match /support_inbox/{customerUid} {
-      allow read: if isAdmin()
+      allow read: if isAdminOrStaff()
         || (isSignedIn() && request.auth.uid == customerUid);
 
       allow create, update: if
         isSignedIn()
-        && (isAdmin() || request.auth.uid == customerUid)
+        && (isAdminOrStaff() || request.auth.uid == customerUid)
         && request.resource.data.customer_uid == customerUid;
 
       allow delete: if isAdmin();
@@ -103,11 +143,11 @@ service cloud.firestore {
     // Customer support chat threads (per customer uid). Admin can read/write all;
     // the signed-in customer can read/write only their own thread messages.
     match /support_inbox/{customerUid}/messages/{msgId} {
-      allow read: if isAdmin()
+      allow read: if isAdminOrStaff()
         || (isSignedIn() && request.auth.uid == customerUid);
 
       allow create: if
-        (isAdmin()
+        (isAdminOrStaff()
           && request.resource.data.sender == 'admin'
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0

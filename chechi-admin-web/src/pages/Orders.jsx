@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { collection, query, orderBy, limit, onSnapshot, doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { formatDistanceToNow, format } from 'date-fns'
+import { useRole } from '../role'
 
 function fmtInr(v) {
   const n = Math.round(v || 0)
@@ -72,13 +73,15 @@ const NEXT_ACTIONS = {
   cancelled: [],
 }
 
-function OrderCard({ order, users, onUpdate, updating }) {
+function OrderCard({ order, users, onUpdate, updating, canCancel }) {
   const tabKey = getTabKey(order.status)
   const chip   = STATUS_CHIP[tabKey] || STATUS_CHIP.new
   const t      = readCreatedAt(order)
   const total  = readTotal(order)
   const items  = Array.isArray(order.items) ? order.items : []
-  const actions = NEXT_ACTIONS[tabKey] || []
+  // Staff can move an order forward but only the admin can reject or cancel it
+  // (the Firestore rules enforce the same).
+  const actions = (NEXT_ACTIONS[tabKey] || []).filter(a => canCancel || a.status !== 'cancelled')
 
   // Resolve customer name/phone from users collection
   const userProfile = users.find(u => u.id === order.uid)
@@ -215,6 +218,7 @@ function OrderCard({ order, users, onUpdate, updating }) {
 }
 
 export default function Orders() {
+  const { isAdmin } = useRole()
   const [orders, setOrders]   = useState([])
   const [users, setUsers]     = useState([])
   const [loading, setLoading] = useState(true)
@@ -265,7 +269,9 @@ export default function Orders() {
   }
 
   const hintText = {
-    new:       'Accept an order to start preparing it. Reject only if you cannot fulfil it.',
+    new:       isAdmin
+                 ? 'Accept an order to start preparing it. Reject only if you cannot fulfil it.'
+                 : 'Accept an order to start preparing it. Ask the admin if an order needs to be rejected.',
     preparing: 'Tap Mark Ready when the food is packed and ready for pickup or delivery.',
     ready:     'Tap Mark Delivered once the customer has received the order.',
     completed: 'These orders are completed.',
@@ -356,6 +362,7 @@ export default function Orders() {
                 users={users}
                 onUpdate={handleUpdate}
                 updating={updating}
+                canCancel={isAdmin}
               />
             ))}
           </div>

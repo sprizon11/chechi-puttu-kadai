@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
+import { getFunctions } from 'firebase/functions'
 
 const firebaseConfig = {
   apiKey: 'AIzaSyBjWBkl5uWzv32ktRGe4cRjGOPCqq-yY2k',
@@ -14,3 +15,5 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const db = getFirestore(app, 'default')
+// Callable functions live in the default region (us-central1).
+export const functions = getFunctions(app)

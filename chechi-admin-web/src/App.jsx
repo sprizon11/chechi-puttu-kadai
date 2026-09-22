@@ -1,7 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { onAuthStateChanged } from 'firebase/auth'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { auth } from './firebase'
+import { resolveRole, RoleContext } from './role'
 import Layout from './components/Layout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -12,43 +13,50 @@ import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import Chats from './pages/Chats'
 
-const ADMIN_EMAIL = 'chechiputtukadai@gmail.com'
-const ADMIN_PHONE = '+917358888437'
-
-function isAdmin(user) {
-  if (!user) return false
-  if (user.email === ADMIN_EMAIL) return true
-  if (user.phoneNumber === ADMIN_PHONE) return true
-  return false
-}
-
-function ProtectedRoute({ user, children }) {
-  if (user === undefined) {
+function ProtectedRoute({ session, children }) {
+  if (session === undefined) {
     return (
       <div className="min-h-screen bg-cream flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-maroon border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
-  if (!user || !isAdmin(user)) return <Navigate to="/login" replace />
+  if (!session?.role) return <Navigate to="/login" replace />
   return children
 }
 
 export default function App() {
-  const [user, setUser] = useState(undefined)
+  // undefined while loading; then { user, role, staff } — role is null when
+  // nobody is signed in or the account has no access.
+  const [session, setSession] = useState(undefined)
+  const [noAccess, setNoAccess] = useState(false)
 
   useEffect(() => {
-    return onAuthStateChanged(auth, (u) => setUser(u))
+    return onAuthStateChanged(auth, async (u) => {
+      if (!u) { setSession({ user: null, role: null, staff: null }); return }
+      const { role, staff } = await resolveRole(u).catch(() => ({ role: null, staff: null }))
+      if (!role) {
+        // A customer or removed staff account: do not leave it signed in here.
+        setNoAccess(true)
+        await signOut(auth)
+        return
+      }
+      setNoAccess(false)
+      setSession({ user: u, role, staff })
+    })
   }, [])
 
+  const user = session?.user
+
   return (
+    <RoleContext.Provider value={{ role: session?.role ?? null, staff: session?.staff ?? null }}>
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={
-          user && isAdmin(user) ? <Navigate to="/" replace /> : <Login />
+          session?.role ? <Navigate to="/" replace /> : <Login noAccess={noAccess} />
         } />
         <Route path="/" element={
-          <ProtectedRoute user={user}>
+          <ProtectedRoute session={session}>
             <Layout user={user} />
           </ProtectedRoute>
         }>
@@ -63,5 +71,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
+    </RoleContext.Provider>
   )
 }

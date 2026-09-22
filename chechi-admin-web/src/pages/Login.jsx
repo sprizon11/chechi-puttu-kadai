@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { signInWithEmailAndPassword } from 'firebase/auth'
 import { auth } from '../firebase'
 
-export default function Login() {
+export default function Login({ noAccess }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -61,7 +61,7 @@ export default function Login() {
 
           <div className="bg-white rounded-2xl border border-cream-border shadow-sm p-8">
             <h2 className="font-display text-2xl font-bold text-maroon-deep mb-1">Welcome back</h2>
-            <p className="text-sm text-gray-500 mb-7">Sign in to your admin account</p>
+            <p className="text-sm text-gray-500 mb-7">Sign in with your admin or staff account</p>
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
@@ -69,7 +69,7 @@ export default function Login() {
                 <input
                   type="email"
                   className="input"
-                  placeholder="chechiputtukadai@gmail.com"
+                  placeholder="you@example.com"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   required
@@ -117,6 +117,12 @@ export default function Login() {
                   </button>
                 </div>
               </div>
+
+              {!error && noAccess && (
+                <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+                  This account does not have access to the admin panel. Ask the admin to add you as staff.
+                </div>
+              )}
 
               {error && (
                 <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
