@@ -32,6 +32,8 @@ export default function Chats() {
   const [broadcasting, setBroadcasting]     = useState(false)
   const [broadcastDone, setBroadcastDone]   = useState(false)
   const [search, setSearch]           = useState('')
+  const [showNewChat, setShowNewChat] = useState(false)
+  const [newChatSearch, setNewChatSearch] = useState('')
   const scrollRef  = useRef(null)
   const inputRef   = useRef(null)
 
@@ -66,13 +68,17 @@ export default function Chats() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [messages])
 
-  // Mark thread read when opened
+  // Mark thread read when opened. Only for a chat that already has a thread:
+  // a brand-new one has nothing unread, and this write carries no
+  // customer_uid, which the rules require to create the thread doc.
   useEffect(() => {
-    if (!selected) return
+    if (!selected || !threads.some(t => t.id === selected)) return
     setDoc(doc(db, 'support_inbox', selected), {
       unread_customer_to_admin: 0,
       updated_at: serverTimestamp(),
     }, { merge: true }).catch(() => {})
+    // Deliberately not keyed on `threads`: this write bumps updated_at, which
+    // fires the thread snapshot, which would run this again, forever.
   }, [selected])
 
   const getUserName = uid => {
@@ -93,25 +99,74 @@ export default function Chats() {
 
   const totalUnread = threads.reduce((s, t) => s + (t.unread_customer_to_admin || 0), 0)
 
+  const getUserMobile = uid => {
+    const u = users.find(u => u.id === uid)
+    return u?.mobile || u?.authPhone || ''
+  }
+
+  // Customers the admin can start a chat with. Drops incomplete sign-ins that
+  // have neither a name nor a usable phone number — they would show up as a
+  // bare "Customer" with no way to tell who they are. Same rule as the app.
+  const newChatCandidates = users
+    .filter(u => {
+      const name   = (u.displayName || '').trim()
+      const digits = (u.mobile || u.authPhone || '').replace(/\D/g, '')
+      return name.length > 0 || digits.length >= 10
+    })
+    .filter(u => {
+      if (!newChatSearch) return true
+      const q = newChatSearch.toLowerCase()
+      return (u.displayName || '').toLowerCase().includes(q) ||
+        (u.mobile || u.authPhone || '').toLowerCase().includes(q)
+    })
+    .sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''))
+
+  function startChatWith(uid) {
+    setSelected(uid)
+    setShowNewChat(false)
+    setNewChatSearch('')
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }
+
   async function sendMessage(e) {
     e?.preventDefault()
     const msg = text.trim()
     if (!selected || !msg || sending) return
     setSending(true)
     setText('')
+    let delivered = false
     try {
       await addDoc(collection(db, 'support_inbox', selected, 'messages'), {
         text: msg,
         sender: 'admin',
         created_at: serverTimestamp(),
       })
+      delivered = true
+      // customer_uid (and name/mobile) must be on this write, not only on the
+      // thread's first creation: the rules check customer_uid on every create
+      // and update. A reply to an existing thread got away without it because
+      // the stored doc already had one; the first message of a new chat has no
+      // stored doc, so without it the thread was never created and the
+      // conversation never appeared in the list.
       await setDoc(doc(db, 'support_inbox', selected), {
+        customer_uid: selected,
+        customer_name: getUserName(selected),
+        customer_mobile: selectedThread?.customer_mobile || getUserMobile(selected),
         last_message: msg,
         last_sender: 'admin',
         last_at: serverTimestamp(),
         updated_at: serverTimestamp(),
       }, { merge: true })
       inputRef.current?.focus()
+    } catch (err) {
+      if (delivered) {
+        // The customer has the message; only the chat-list summary failed.
+        // Putting the text back would invite sending it twice.
+        alert(`Message sent, but the chat list could not be updated: ${err.message}`)
+      } else {
+        setText(msg)
+        alert(`Message not sent: ${err.message}`)
+      }
     } finally {
       setSending(false)
     }
@@ -181,6 +236,17 @@ export default function Chats() {
                 </span>
               )}
             </div>
+            <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowNewChat(true)}
+              className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border border-maroon text-maroon hover:bg-maroon/5 transition-colors"
+              title="Start a chat with any customer"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New chat
+            </button>
             <button
               onClick={() => setShowBroadcast(true)}
               className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-maroon text-white hover:bg-maroon-deep transition-colors"
@@ -191,6 +257,7 @@ export default function Chats() {
               </svg>
               Broadcast
             </button>
+            </div>
           </div>
           <input
             className="input text-sm"
@@ -293,8 +360,10 @@ export default function Chats() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-gray-900 text-sm">{selectedName}</p>
-                {selectedThread?.customer_mobile && (
-                  <p className="text-xs text-gray-400 font-mono">{selectedThread.customer_mobile}</p>
+                {(selectedThread?.customer_mobile || getUserMobile(selected)) && (
+                  <p className="text-xs text-gray-400 font-mono">
+                    {selectedThread?.customer_mobile || getUserMobile(selected)}
+                  </p>
                 )}
               </div>
             </div>
@@ -303,7 +372,7 @@ export default function Chats() {
             <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
               {messages.length === 0 ? (
                 <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                  No messages yet
+                  {selectedThread ? 'No messages yet' : `Start the conversation with ${selectedName}`}
                 </div>
               ) : (
                 messages.map(m => {
@@ -364,6 +433,80 @@ export default function Chats() {
           </>
         )}
       </div>
+
+      {/* ── New chat picker ─────────────────────────────────────── */}
+      {showNewChat && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => { setShowNewChat(false); setNewChatSearch('') }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md flex flex-col max-h-[80vh]"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="p-6 pb-3">
+              <h3 className="font-display font-bold text-xl text-maroon-deep mb-1">Start a new chat</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Pick any customer — they don't need to have messaged you first.
+              </p>
+              <input
+                className="input w-full text-sm"
+                placeholder="Search by name or mobile..."
+                value={newChatSearch}
+                onChange={e => setNewChatSearch(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Escape') { setShowNewChat(false); setNewChatSearch('') }
+                  if (e.key === 'Enter' && newChatCandidates.length === 1) {
+                    startChatWith(newChatCandidates[0].id)
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto border-t border-cream-border">
+              {newChatCandidates.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-10">
+                  {users.length === 0 ? 'No customers yet' : 'No customers match your search'}
+                </p>
+              ) : (
+                newChatCandidates.map(u => {
+                  const name     = (u.displayName || '').trim() || 'Customer'
+                  const mobile   = u.mobile || u.authPhone || ''
+                  const existing = threads.some(t => t.id === u.id)
+                  return (
+                    <button
+                      key={u.id}
+                      onClick={() => startChatWith(u.id)}
+                      className="w-full flex items-center gap-3 px-6 py-3 border-b border-cream-border/60 text-left hover:bg-cream/60 transition-colors"
+                    >
+                      <div className="w-9 h-9 rounded-full bg-maroon/10 flex items-center justify-center text-maroon font-bold text-sm shrink-0">
+                        {name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 truncate">{name}</p>
+                        {mobile && <p className="text-[11px] text-gray-400 font-mono">{mobile}</p>}
+                      </div>
+                      {existing && (
+                        <span className="text-[10px] font-semibold text-maroon bg-maroon/10 rounded-full px-2 py-0.5 shrink-0">
+                          Existing chat
+                        </span>
+                      )}
+                    </button>
+                  )
+                })
+              )}
+            </div>
+            <div className="p-4 border-t border-cream-border">
+              <button
+                onClick={() => { setShowNewChat(false); setNewChatSearch('') }}
+                className="w-full py-2.5 rounded-xl border border-cream-border text-sm font-semibold text-gray-600 hover:bg-cream transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Broadcast modal ─────────────────────────────────────── */}
       {showBroadcast && (
