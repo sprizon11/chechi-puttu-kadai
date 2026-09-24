@@ -75,11 +75,27 @@ class _AdminChatsScreenState extends State<AdminChatsScreen> {
   }
 
   Future<void> _openThread(_ChatThread t) async {
-    await chechiFirestore.collection('support_inbox').doc(t.uid).set({
-      'customer_uid': t.uid,
-      'unread_customer_to_admin': 0,
-      'updated_at': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    // Open first, then mark read. This used to await the write before
+    // navigating, and a Firestore set() only completes once the server
+    // acknowledges it — seconds on a slow connection, with nothing on screen
+    // changing meanwhile. On Android the admin would press back, landing on
+    // the dashboard, and when the write finally landed the mounted check
+    // below skipped the push, so the chat never opened. iPhone has no back
+    // button, so it waited and looked fine. Marking read is bookkeeping; it
+    // must not gate opening the conversation.
+    unawaited(
+      chechiFirestore
+          .collection('support_inbox')
+          .doc(t.uid)
+          .set({
+            'customer_uid': t.uid,
+            'unread_customer_to_admin': 0,
+            'updated_at': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true))
+          .catchError((Object e) {
+            debugPrint('Mark chat read failed for ${t.uid}: $e');
+          }),
+    );
     if (!mounted) return;
     await Navigator.of(context).push(
       ChechiPageRoute<void>(
