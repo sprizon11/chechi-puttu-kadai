@@ -1,4 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { doc, onSnapshot } from 'firebase/firestore'
+import { signOut } from 'firebase/auth'
+import { db, auth } from '../firebase'
 import { Outlet, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import Sidebar from './Sidebar'
@@ -52,12 +55,47 @@ function Aurora() {
   )
 }
 
+/** Remote payment gate: app_access/status, written only by the developer. */
+function useAppAccess() {
+  const [access, setAccess] = useState({ state: 'ok' })
+  useEffect(() => onSnapshot(
+    doc(db, 'app_access', 'status'),
+    (snap) => setAccess(snap.exists() ? snap.data() : { state: 'ok' }),
+    () => setAccess({ state: 'ok' }), // never lock a shop over a flaky connection
+  ), [])
+  return access
+}
+
+const DEFAULT_ACCESS_MESSAGE =
+  'The final payment for this app is still pending. Please clear the balance with Hephora Tech to continue using the admin panel.'
+
+function AccessLocked({ access }) {
+  return (
+    <div className="min-h-screen bg-cream flex items-center justify-center p-6">
+      <div className="max-w-md text-center space-y-4">
+        <h1 className="font-display font-bold text-2xl text-maroon-deep">Payment pending</h1>
+        <p className="text-gray-700">{access.message?.trim() || DEFAULT_ACCESS_MESSAGE}</p>
+        {typeof access.amountDue === 'number' && (
+          <p className="font-semibold text-maroon">Balance due: ₹{access.amountDue.toLocaleString('en-IN')}</p>
+        )}
+        {access.contact?.trim() && <p className="font-semibold">Contact: {access.contact.trim()}</p>}
+        <button onClick={() => signOut(auth)} className="px-4 py-2 rounded-xl border border-gray-300 text-sm">
+          Sign out
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function Layout({ user }) {
   const { isAdmin, staff } = useRole()
+  const access = useAppAccess()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
   const title = titles[location.pathname] ?? 'Admin'
   const initial = (staff?.name || user?.email || 'A').charAt(0).toUpperCase()
+
+  if (access.state === 'locked') return <AccessLocked access={access} />
 
   return (
     <div className="relative flex h-screen overflow-hidden">
@@ -66,6 +104,11 @@ export default function Layout({ user }) {
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="relative flex-1 flex flex-col min-w-0 overflow-hidden">
+        {access.state === 'reminder' && (
+          <div className="bg-amber-700 text-white text-sm px-4 py-2 shrink-0">
+            {access.message?.trim() || DEFAULT_ACCESS_MESSAGE}
+          </div>
+        )}
         {/* Top bar */}
         <header className="glass-white px-6 py-3 flex items-center gap-4 shrink-0 sticky top-0 z-20
                            border-b border-white/60">

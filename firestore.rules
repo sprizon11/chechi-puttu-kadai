@@ -48,6 +48,13 @@ service cloud.firestore {
              .hasOnly(['customCategoryIds', 'customCategoryIdsUpdatedAt']);
     }
 
+    // Payment gate for the admin apps. Read by admin/staff; written only with
+    // the service account (scripts/set_app_access.cjs), never from a client.
+    match /app_access/{docId} {
+      allow read: if isAdminOrStaff();
+      allow write: if false;
+    }
+
     match /staff/{staffUid} {
       allow read: if isAdmin() || (isSignedIn() && request.auth.uid == staffUid);
       allow write: if false; // Cloud Functions only

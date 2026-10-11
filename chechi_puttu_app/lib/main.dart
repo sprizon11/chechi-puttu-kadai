@@ -15,6 +15,7 @@ import 'package:chechi_puttu_app/delivery_location_sheet.dart';
 import 'package:chechi_puttu_app/services/advance_order_schedule.dart';
 import 'package:chechi_puttu_app/menu_catalog.dart';
 import 'package:chechi_puttu_app/firebase_options.dart';
+import 'package:chechi_puttu_app/services/app_access_service.dart';
 import 'package:chechi_puttu_app/services/auth_service.dart';
 import 'package:chechi_puttu_app/services/customer_menu_overrides.dart';
 import 'package:chechi_puttu_app/services/customer_menu_section_overrides.dart';
@@ -719,9 +720,12 @@ class _AuthGateHomeState extends State<_AuthGateHome> {
         }
         _signedInUid = user.uid;
         if (isChechiAdminUser(user)) {
-          return AdminDashboardScreen(
-            onToggleTheme: widget.onToggleTheme,
-            navIndexNotifier: _adminNavIndexNotifier,
+          return AppAccessGate(
+            onSignOut: () => FirebaseAuth.instance.signOut(),
+            child: AdminDashboardScreen(
+              onToggleTheme: widget.onToggleTheme,
+              navIndexNotifier: _adminNavIndexNotifier,
+            ),
           );
         }
         _ensureOrderTypeGateState(user);
