@@ -89,22 +89,81 @@ class AppAccessGate extends StatelessWidget {
           case AppAccessState.locked:
             return AppAccessLockedScreen(access: access, onSignOut: onSignOut);
           case AppAccessState.reminder:
-            return Column(
-              children: [
-                _ReminderBanner(access: access),
-                Expanded(
-                  child: MediaQuery.removePadding(
-                    context: context,
-                    removeTop: true,
-                    child: child,
-                  ),
-                ),
-              ],
-            );
+            return _ReminderShell(access: access, child: child);
           case AppAccessState.ok:
             return child;
         }
       },
+    );
+  }
+}
+
+/// Banner on top of the admin screens, plus a popup shown once per launch.
+class _ReminderShell extends StatefulWidget {
+  const _ReminderShell({required this.access, required this.child});
+
+  final AppAccess access;
+  final Widget child;
+
+  @override
+  State<_ReminderShell> createState() => _ReminderShellState();
+}
+
+class _ReminderShellState extends State<_ReminderShell> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final a = widget.access;
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(Icons.warning_amber_rounded,
+              color: Color(0xFFB45309), size: 40),
+          title: const Text('Payment reminder'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(a.shownMessage, textAlign: TextAlign.center),
+              if (a.amountDue != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Balance due: ₹${a.amountDue!.toStringAsFixed(a.amountDue! % 1 == 0 ? 0 : 2)}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ],
+              if (a.contact.trim().isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('Contact: ${a.contact.trim()}',
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK, understood'),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _ReminderBanner(access: widget.access),
+        Expanded(
+          child: MediaQuery.removePadding(
+            context: context,
+            removeTop: true,
+            child: widget.child,
+          ),
+        ),
+      ],
     );
   }
 }

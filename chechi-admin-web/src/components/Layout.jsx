@@ -87,9 +87,30 @@ function AccessLocked({ access }) {
   )
 }
 
+function AccessReminderModal({ access, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl text-center space-y-4">
+        <div className="mx-auto w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-2xl font-bold">!</div>
+        <h2 className="font-display font-bold text-xl text-maroon-deep">Payment reminder</h2>
+        <p className="text-gray-700">{access.message?.trim() || DEFAULT_ACCESS_MESSAGE}</p>
+        {typeof access.amountDue === 'number' && (
+          <p className="font-semibold text-maroon">Balance due: ₹{access.amountDue.toLocaleString('en-IN')}</p>
+        )}
+        {access.contact?.trim() && <p className="font-semibold">Contact: {access.contact.trim()}</p>}
+        <button onClick={onClose}
+          className="w-full px-4 py-2.5 rounded-xl bg-maroon text-white font-semibold">
+          OK, understood
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function Layout({ user }) {
   const { isAdmin, staff } = useRole()
   const access = useAppAccess()
+  const [reminderClosed, setReminderClosed] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
   const title = titles[location.pathname] ?? 'Admin'
@@ -99,6 +120,9 @@ export default function Layout({ user }) {
 
   return (
     <div className="relative flex h-screen overflow-hidden">
+      {access.state === 'reminder' && !reminderClosed && (
+        <AccessReminderModal access={access} onClose={() => setReminderClosed(true)} />
+      )}
       <Aurora />
 
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
