@@ -110,11 +110,27 @@ class _ReminderShell extends StatefulWidget {
 }
 
 class _ReminderShellState extends State<_ReminderShell> {
+  Timer? _timer;
+  bool _showing = false;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showReminder());
+    // Comes back every 15 minutes while the app stays open.
+    _timer = Timer.periodic(const Duration(minutes: 15), (_) => _showReminder());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _showReminder() {
+    {
+      if (!mounted || _showing) return;
+      _showing = true;
       final a = widget.access;
       showDialog<void>(
         context: context,
@@ -147,8 +163,8 @@ class _ReminderShellState extends State<_ReminderShell> {
             ),
           ],
         ),
-      );
-    });
+      ).whenComplete(() => _showing = false);
+    }
   }
 
   @override

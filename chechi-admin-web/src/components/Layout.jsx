@@ -111,6 +111,13 @@ export default function Layout({ user }) {
   const { isAdmin, staff } = useRole()
   const access = useAppAccess()
   const [reminderClosed, setReminderClosed] = useState(false)
+
+  // Once dismissed, the reminder comes back every 15 minutes.
+  useEffect(() => {
+    if (!reminderClosed) return undefined
+    const t = setTimeout(() => setReminderClosed(false), 15 * 60 * 1000)
+    return () => clearTimeout(t)
+  }, [reminderClosed])
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
   const title = titles[location.pathname] ?? 'Admin'
