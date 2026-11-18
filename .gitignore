@@ -27,3 +27,7 @@ firebase-debug.*.log
 
 # Local tooling
 .cursor/
+
+# Function env vars (Razorpay keys) — never commit
+functions/.env
+functions/.env.*
