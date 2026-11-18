@@ -16,6 +16,7 @@ import 'package:chechi_puttu_app/services/advance_order_schedule.dart';
 import 'package:chechi_puttu_app/menu_catalog.dart';
 import 'package:chechi_puttu_app/firebase_options.dart';
 import 'package:chechi_puttu_app/services/app_access_service.dart';
+import 'package:chechi_puttu_app/services/app_update_service.dart';
 import 'package:chechi_puttu_app/services/auth_service.dart';
 import 'package:chechi_puttu_app/services/customer_menu_overrides.dart';
 import 'package:chechi_puttu_app/services/customer_menu_section_overrides.dart';
@@ -90,7 +91,8 @@ class _ChechiPuttuAppState extends State<ChechiPuttuApp> {
       themeAnimationCurve: Curves.easeOutCubic,
       builder: (context, child) {
         if (child == null) return const SizedBox.shrink();
-        return child;
+        // "Update the app" prompt over every screen, set from admin web.
+        return AppUpdateGate(child: child);
       },
       home: _StartupSplashGate(
         firebaseInitError: widget.firebaseInitError,

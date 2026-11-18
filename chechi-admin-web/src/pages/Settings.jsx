@@ -61,6 +61,98 @@ function Modal({ title, sub, onClose, children }) {
 }
 
 
+// ── App update prompt ────────────────────────────────────────────────────────
+// admin_public/app_update: { latest_build, min_build, message }. The app
+// compares its own build number (the part after "+" in the version, which is
+// also the Play Store version code) and shows "Update available" — or, with
+// force on, a screen that cannot be closed — with a button to the Play Store.
+const UPDATE_MAX_MESSAGE = 300
+
+function AppUpdateModal({ upd, setUpd, onSave, onTurnOff, onClose, saving, saved }) {
+  const { latest, force, message } = upd
+  const n = parseInt(latest, 10)
+  const valid = Number.isInteger(n) && n > 0
+  return (
+    <Modal
+      title="App update"
+      sub="Ask customers on an older app to update from the Play Store"
+      onClose={onClose}
+    >
+      <div className="space-y-4">
+        <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-900 leading-relaxed">
+          Set this only <b>after</b> the new version is live on the Play Store,
+          or customers will tap Update and find nothing new.
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+            New version build number
+          </label>
+          <input
+            type="number"
+            min="1"
+            inputMode="numeric"
+            className="input"
+            placeholder="e.g. 60"
+            value={latest}
+            onChange={e => setUpd(u => ({ ...u, latest: e.target.value }))}
+          />
+          <p className="text-[11px] text-gray-400 mt-1">
+            The number after “+” in the app version (1.6.4+<b>60</b> → 60). Everyone
+            on a lower number is asked to update.
+          </p>
+        </div>
+
+        <label className="flex items-start gap-3 cursor-pointer select-none">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={force}
+            onClick={() => setUpd(u => ({ ...u, force: !u.force }))}
+            className={`mt-0.5 w-11 h-6 rounded-full shrink-0 transition-colors relative ${
+              force ? 'bg-maroon' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
+              style={{ left: force ? '1.375rem' : '0.125rem' }}
+            />
+          </button>
+          <span>
+            <span className="block text-sm font-bold text-gray-900">Must update</span>
+            <span className="block text-xs text-gray-400 mt-0.5">
+              {force
+                ? 'Older apps cannot be used until they update. Use for important fixes.'
+                : 'Customers can tap “Later” and are asked again next time they open the app.'}
+            </span>
+          </span>
+        </label>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+            Message (optional)
+          </label>
+          <textarea
+            className="input h-24 resize-y"
+            maxLength={UPDATE_MAX_MESSAGE}
+            placeholder="A new version is available with important improvements. Please update to keep ordering smoothly."
+            value={message}
+            onChange={e => setUpd(u => ({ ...u, message: e.target.value }))}
+          />
+          <p className="text-[11px] text-gray-400 mt-1">{message.length} / {UPDATE_MAX_MESSAGE}</p>
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button className="btn-ghost flex-1" onClick={onTurnOff} disabled={saving}>Turn off</button>
+          <button className="btn-primary flex-1" onClick={onSave} disabled={saving || !valid}>
+            {saving ? 'Saving…' : saved ? 'Saved' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 // ── Order hold ────────────────────────────────────────────────────────────────
 // Mirrors the Flutter admin app exactly: admin_public/order_hold with
 // { active, message, resume_on, updatedAt, updatedBy }. A resume date lifts
@@ -342,6 +434,56 @@ export default function Settings() {
   // resumeOn is kept as a yyyy-mm-dd string for <input type="date">; it is
   // converted to a Timestamp only on save, to match what the app writes.
   const [hold, setHold] = useState({ active: false, message: '', resumeOn: '', allowAdvance: false })
+  // latest is kept as a string for the number input.
+  const [upd, setUpd] = useState({ latest: '', force: false, message: '' })
+
+  useEffect(() => {
+    getDoc(doc(db, 'admin_public', 'app_update'))
+      .then(snap => {
+        if (!snap.exists()) return
+        const d = snap.data()
+        const latest = Number(d.latest_build) || 0
+        setUpd({
+          latest: latest > 0 ? String(latest) : '',
+          force: latest > 0 && Number(d.min_build) >= latest,
+          message: typeof d.message === 'string' ? d.message : '',
+        })
+      })
+      .catch(() => {})
+  }, [])
+
+  async function writeUpdate(data, after) {
+    setSaving(true); setSaved(false)
+    try {
+      await setDoc(doc(db, 'admin_public', 'app_update'), {
+        ...data,
+        updatedAt: serverTimestamp(),
+        updatedBy: auth.currentUser?.uid || null,
+      }, { merge: true })
+      after?.()
+      setSaved(true)
+      setTimeout(() => { setSaved(false); setModal(null) }, 700)
+    } catch (e) {
+      alert('Could not save. Check your connection and try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function saveUpdate() {
+    const latest = parseInt(upd.latest, 10)
+    if (!Number.isInteger(latest) || latest <= 0) return
+    writeUpdate({
+      latest_build: latest,
+      min_build: upd.force ? latest : 0,
+      message: upd.message.trim().slice(0, UPDATE_MAX_MESSAGE),
+    })
+  }
+
+  function turnOffUpdate() {
+    writeUpdate({ latest_build: 0, min_build: 0 }, () =>
+      setUpd(u => ({ ...u, latest: '', force: false })))
+  }
 
   useEffect(() => {
     Promise.all([
@@ -507,6 +649,11 @@ export default function Settings() {
           title="Order hold"
           sub={holdLabel}
           onClick={() => openAdminModal('hold', 'Order hold')} />
+        <Tile icon="📲" iconBg="#EDE7F6" title="App update"
+          sub={upd.latest
+            ? `Asking for build ${upd.latest}${upd.force ? ' · must update' : ''}`
+            : 'Off · prompt customers to update the app'}
+          onClick={() => openAdminModal('update', 'App update')} />
         <Tile icon="🍽️" iconBg="#E3F2FD" title="Menu Management"
           sub="Manage dishes, categories and pricing"
           onClick={() => navigate('/menu')} />
@@ -551,6 +698,7 @@ export default function Settings() {
           <StaffManager />
         </Modal>
       )}
+      {modal === 'update'    && <AppUpdateModal upd={upd} setUpd={setUpd} onSave={saveUpdate} onTurnOff={turnOffUpdate} onClose={() => setModal(null)} saving={saving} saved={saved} />}
       {modal === 'hold'      && <OrderHoldModal hold={hold}  setHold={setHold} onSave={saveHold} onClose={() => setModal(null)} saving={saving} saved={saved} />}
     </div>
   )
