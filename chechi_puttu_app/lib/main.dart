@@ -7494,9 +7494,13 @@ String _orderHoldDayLabel(DateTime d) {
 }
 
 /// Shown when the customer tries to check out while the kitchen is on hold.
-Future<void> _showOrderHoldDialog(BuildContext context, OrderHold hold) {
+///
+/// Returns true when the customer chose to go on and book a delivery from the
+/// resume date — offered only when admin allowed advance bookings.
+Future<bool> _showOrderHoldDialog(BuildContext context, OrderHold hold) async {
   final resume = hold.resumeOn;
-  return showDialog<void>(
+  final canBookAhead = hold.takesAdvanceBookings;
+  final choice = await showDialog<bool>(
     context: context,
     builder: (ctx) {
       final cs = Theme.of(ctx).colorScheme;
@@ -7520,7 +7524,7 @@ Future<void> _showOrderHoldDialog(BuildContext context, OrderHold hold) {
             ),
             const SizedBox(height: 14),
             Text(
-              'Not accepting orders',
+              canBookAhead ? 'Advance bookings only' : 'Not accepting orders',
               textAlign: TextAlign.center,
               style: GoogleFonts.playfairDisplay(
                 fontSize: 20,
@@ -7557,7 +7561,9 @@ Future<void> _showOrderHoldDialog(BuildContext context, OrderHold hold) {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      'Opens ${_orderHoldDayLabel(resume)}',
+                      canBookAhead
+                          ? 'Book for delivery from ${_orderHoldDayLabel(resume)}'
+                          : 'Opens ${_orderHoldDayLabel(resume)}',
                       style: GoogleFonts.poppins(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -7571,24 +7577,54 @@ Future<void> _showOrderHoldDialog(BuildContext context, OrderHold hold) {
           ],
         ),
         actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            style: FilledButton.styleFrom(
-              backgroundColor: _AppColors.primary,
-              minimumSize: const Size.fromHeight(46),
-            ),
-            child: Text(
-              'OK',
-              style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
+          if (canBookAhead) ...[
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: _AppColors.primary,
+                minimumSize: const Size.fromHeight(46),
+              ),
+              child: Text(
+                'Book in advance',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
               ),
             ),
-          ),
+            const SizedBox(height: 6),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              style: TextButton.styleFrom(
+                minimumSize: const Size.fromHeight(42),
+              ),
+              child: Text(
+                'Not now',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ] else
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              style: FilledButton.styleFrom(
+                backgroundColor: _AppColors.primary,
+                minimumSize: const Size.fromHeight(46),
+              ),
+              child: Text(
+                'OK',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
         ],
+        actionsOverflowDirection: VerticalDirection.down,
+        actionsAlignment: MainAxisAlignment.center,
       );
     },
   );
+  return canBookAhead && choice == true;
 }
 
 /// Home banner telling customers the kitchen is not taking orders, so they
@@ -7639,7 +7675,10 @@ class _OrderHoldBanner extends StatelessWidget {
                       ),
                       if (resume != null)
                         Text(
-                          'Orders open again ${_orderHoldDayLabel(resume)}',
+                          hold.takesAdvanceBookings
+                              ? 'Advance bookings open for delivery from '
+                                  '${_orderHoldDayLabel(resume)}'
+                              : 'Orders open again ${_orderHoldDayLabel(resume)}',
                           style: GoogleFonts.poppins(
                             fontSize: 11,
                             color: const Color(0xFFA1673B),
@@ -8586,10 +8625,10 @@ class _OrderUiModel {
       case 'placed':
       case 'new':
       case 'accepted':
-      case 'preparing':
-      case 'ready':
         return true;
       default:
+        // From "preparing" on the food is being made; the customer contacts
+        // support instead (the cancelOrder function enforces the same rule).
         return false;
     }
   }
@@ -9059,9 +9098,13 @@ class _CartTabState extends State<_CartTab> {
     // slot or a payment method, so nothing is half-filled when they are told.
     final hold = await _resolveOrderHold();
     if (!context.mounted) return;
+    // While held, the only way through is an advance booking for the resume
+    // date onwards, and only if admin allowed it.
+    DateTime? bookNotBefore;
     if (hold.isHoldingAt()) {
-      await _showOrderHoldDialog(context, hold);
-      return;
+      final bookAhead = await _showOrderHoldDialog(context, hold);
+      if (!context.mounted || !bookAhead) return;
+      bookNotBefore = hold.resumeDay;
     }
 
     // Upper-funnel signal for the ad campaigns: the customer has a cart and
@@ -9084,7 +9127,10 @@ class _CartTabState extends State<_CartTab> {
     final deliveryLine = await _ensureDeliveryLineForCheckout(context);
     if (!context.mounted || deliveryLine == null) return;
 
-    final booking = await AdvanceOrderSchedule.pickMealBooking(context);
+    final booking = await AdvanceOrderSchedule.pickMealBooking(
+      context,
+      notBefore: bookNotBefore,
+    );
     if (!context.mounted || booking == null) return;
 
     final pay = await showModalBottomSheet<_CheckoutPaymentMode>(
@@ -9179,10 +9225,11 @@ class _CartTabState extends State<_CartTab> {
       return;
     }
 
-    // Persist COD order for notifications + admin status updates.
+    // The server prices the cart and saves the order (placeCashOrder).
     final String codOrderId;
+    final int codTotal;
     try {
-      codOrderId = await _orders.createOrder(
+      final placed = await _orders.createCashOrder(
         items: [
           for (final li in lines)
             {
@@ -9192,25 +9239,31 @@ class _CartTabState extends State<_CartTab> {
               'qty': li.qty,
             },
         ],
-        totalRupees: total,
-        itemTotalRupees: _lineSum(lines),
-        deliveryChargeRupees: _deliveryFeeFor(lines),
-        packingChargeRupees: _packagingFeeFor(lines),
         deliveryLine: deliveryLine,
-        paymentMode: 'cash_on_delivery',
         scheduleLine: scheduleLine,
         scheduledAt: scheduledAt,
       );
+      codOrderId = placed.orderId;
+      codTotal = placed.totalRupees > 0 ? placed.totalRupees : total;
     } catch (e) {
       // Booking failed to save — tell the customer and keep the cart so they
       // can retry. Never show a fake "Order placed" confirmation.
       if (!context.mounted) return;
+      if (e is FirebaseFunctionsException && e.code == 'failed-precondition') {
+        // Orders went on hold while the customer was checking out.
+        final fresh = await _resolveOrderHold();
+        if (!context.mounted) return;
+        await _showOrderHoldDialog(context, fresh);
+        return;
+      }
+      final message = e is FirebaseFunctionsException &&
+              e.code == 'invalid-argument'
+          ? 'Some items in your cart have changed. Please refresh the menu '
+              'and try again.'
+          : 'Could not place your order. Please check your internet and try again.';
       messenger.showSnackBar(
         SnackBar(
-          content: Text(
-            'Could not place your order. Please check your internet and try again.',
-            style: GoogleFonts.poppins(),
-          ),
+          content: Text(message, style: GoogleFonts.poppins()),
         ),
       );
       return;
@@ -9221,7 +9274,7 @@ class _CartTabState extends State<_CartTab> {
     // should see their confirmation without waiting on analytics.
     unawaited(
       MetaEvents.logPurchase(
-        totalRupees: total,
+        totalRupees: codTotal,
         itemCount: lines.fold<int>(0, (qtySoFar, li) => qtySoFar + li.qty),
         paymentMode: 'cash_on_delivery',
         orderId: codOrderId,
@@ -9229,7 +9282,7 @@ class _CartTabState extends State<_CartTab> {
     );
     unawaited(
       AppAnalytics.logPurchase(
-        totalRupees: total,
+        totalRupees: codTotal,
         itemCount: lines.fold<int>(0, (qtySoFar, li) => qtySoFar + li.qty),
         paymentMode: 'cash_on_delivery',
         orderId: codOrderId,
@@ -9242,7 +9295,7 @@ class _CartTabState extends State<_CartTab> {
       builder: (ctx) => _OrderSuccessDialog(
         scheduleLine: scheduleLine,
         deliveryLine: deliveryLine,
-        total: total,
+        total: codTotal,
         paymentLabel: 'Pay ₹$total cash on delivery',
         onTrackOrder: widget.onGoToOrders,
       ),

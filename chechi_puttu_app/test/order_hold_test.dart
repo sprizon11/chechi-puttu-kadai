@@ -80,4 +80,51 @@ void main() {
       expect(hold.message.length, OrderHold.maxMessageLength);
     });
   });
+
+  group('OrderHold advance bookings', () {
+    final hold = OrderHold(
+      active: true,
+      resumeOn: DateTime(2026, 12, 1),
+      allowAdvanceBooking: true,
+    );
+    final now = DateTime(2026, 11, 18, 10);
+
+    test('refuses delivery days before the resume date', () {
+      expect(hold.allowsDeliveryOn(DateTime(2026, 11, 30), now), false);
+    });
+
+    test('accepts the resume day and later', () {
+      expect(hold.allowsDeliveryOn(DateTime(2026, 12, 1), now), true);
+      expect(hold.allowsDeliveryOn(DateTime(2026, 12, 9), now), true);
+    });
+
+    test('refuses every day when advance bookings are off', () {
+      final strict = hold.copyWith(allowAdvanceBooking: false);
+      expect(strict.allowsDeliveryOn(DateTime(2026, 12, 5), now), false);
+      expect(strict.takesAdvanceBookings, false);
+    });
+
+    test('an open-ended hold never takes advance bookings', () {
+      const open = OrderHold(active: true, allowAdvanceBooking: true);
+      expect(open.takesAdvanceBookings, false);
+      expect(open.allowsDeliveryOn(DateTime(2027, 1, 1), now), false);
+    });
+
+    test('every day is fine once the hold has lifted', () {
+      expect(
+        hold.allowsDeliveryOn(DateTime(2026, 12, 2), DateTime(2026, 12, 1, 7)),
+        true,
+      );
+    });
+
+    test('reads allow_advance_booking from Firestore', () {
+      final read = OrderHold.fromMap({
+        'active': true,
+        'resume_on': '2026-12-01T00:00:00.000',
+        'allow_advance_booking': true,
+      });
+      expect(read.takesAdvanceBookings, true);
+      expect(read.resumeDay, DateTime(2026, 12, 1));
+    });
+  });
 }

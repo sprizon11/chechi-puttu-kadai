@@ -66,7 +66,7 @@ function Modal({ title, sub, onClose, children }) {
 // { active, message, resume_on, updatedAt, updatedBy }. A resume date lifts
 // the hold by itself that morning, so a planned pause does not depend on
 // somebody remembering to switch it back on.
-const HOLD_MAX_MESSAGE = 300
+const HOLD_MAX_MESSAGE = 500
 
 /** Date -> "yyyy-mm-dd" in local time, which is what <input type="date"> wants. */
 function toDateInput(d) {
@@ -88,7 +88,7 @@ function isHoldingNow(hold) {
 }
 
 function OrderHoldModal({ hold, setHold, onSave, onClose, saving, saved }) {
-  const { active, message, resumeOn } = hold
+  const { active, message, resumeOn, allowAdvance } = hold
   return (
     <Modal
       title="Order hold"
@@ -124,15 +124,18 @@ function OrderHoldModal({ hold, setHold, onSave, onClose, saving, saved }) {
             Message shown to customers
           </label>
           <textarea
-            className="input h-24 resize-none disabled:opacity-50"
+            className="input h-32 resize-y disabled:opacity-50"
             maxLength={HOLD_MAX_MESSAGE}
             disabled={!active}
             placeholder="Orders are full for the next 2 days. We will accept new orders from Thursday."
             value={message}
             onChange={e => setHold(h => ({ ...h, message: e.target.value }))}
           />
-          <p className="text-[11px] text-gray-400 mt-1">
+          <p className={`text-[11px] mt-1 ${
+            message.length >= HOLD_MAX_MESSAGE ? 'text-maroon font-semibold' : 'text-gray-400'
+          }`}>
             {message.length} / {HOLD_MAX_MESSAGE}
+            {message.length >= HOLD_MAX_MESSAGE && ' — limit reached, the rest is cut off'}
           </p>
         </div>
 
@@ -145,7 +148,7 @@ function OrderHoldModal({ hold, setHold, onSave, onClose, saving, saved }) {
             className="input disabled:opacity-50"
             disabled={!active}
             value={resumeOn}
-            min={new Date().toISOString().slice(0, 10)}
+            min={toDateInput(new Date())}
             onChange={e => setHold(h => ({ ...h, resumeOn: e.target.value }))}
           />
           <p className="text-[11px] text-gray-400 mt-1">
@@ -163,6 +166,34 @@ function OrderHoldModal({ hold, setHold, onSave, onClose, saving, saved }) {
             </button>
           )}
         </div>
+
+        {resumeOn && (
+          <label className={`flex items-start gap-3 select-none ${active ? 'cursor-pointer' : 'opacity-50'}`}>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!!allowAdvance}
+              disabled={!active}
+              onClick={() => setHold(h => ({ ...h, allowAdvance: !h.allowAdvance }))}
+              className={`mt-0.5 w-11 h-6 rounded-full shrink-0 transition-colors relative ${
+                allowAdvance ? 'bg-maroon' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
+                style={{ left: allowAdvance ? '1.375rem' : '0.125rem' }}
+              />
+            </button>
+            <span>
+              <span className="block text-sm font-bold text-gray-900">Take advance bookings</span>
+              <span className="block text-xs text-gray-400 mt-0.5">
+                Customers can book now for delivery from{' '}
+                {startOfDayLocal(resumeOn).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}{' '}
+                onwards
+              </span>
+            </span>
+          </label>
+        )}
 
         <div className="flex gap-2 pt-1">
           <button className="btn-ghost flex-1" onClick={onClose}>Cancel</button>
@@ -310,7 +341,7 @@ export default function Settings() {
   const [pwMsg,  setPwMsg]  = useState('')
   // resumeOn is kept as a yyyy-mm-dd string for <input type="date">; it is
   // converted to a Timestamp only on save, to match what the app writes.
-  const [hold, setHold] = useState({ active: false, message: '', resumeOn: '' })
+  const [hold, setHold] = useState({ active: false, message: '', resumeOn: '', allowAdvance: false })
 
   useEffect(() => {
     Promise.all([
@@ -328,6 +359,7 @@ export default function Settings() {
             active: h.active === true,
             message: typeof h.message === 'string' ? h.message : '',
             resumeOn: date && !isNaN(date) ? toDateInput(date) : '',
+            allowAdvance: h.allow_advance_booking === true,
           })
         }
         setForm(f => {
@@ -354,6 +386,7 @@ export default function Settings() {
         resume_on: hold.active && hold.resumeOn
           ? Timestamp.fromDate(startOfDayLocal(hold.resumeOn))
           : null,
+        allow_advance_booking: !!(hold.active && hold.resumeOn && hold.allowAdvance),
         updatedAt: serverTimestamp(),
         updatedBy: auth.currentUser?.uid || null,
       }, { merge: true })
@@ -422,7 +455,7 @@ export default function Settings() {
   const holdingNow = isHoldingNow(hold)
   const holdLabel = holdingNow
     ? (hold.resumeOn
-        ? `On · accepting again ${startOfDayLocal(hold.resumeOn).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}`
+        ? `On · accepting again ${startOfDayLocal(hold.resumeOn).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}${hold.allowAdvance ? ' · advance bookings open' : ''}`
         : 'On · orders paused until you turn this off')
     : (hold.active
         ? 'Resumed — orders are being accepted again'

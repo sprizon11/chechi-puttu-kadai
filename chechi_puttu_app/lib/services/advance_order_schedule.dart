@@ -200,10 +200,34 @@ class AdvanceOrderSchedule {
     return '${day.day}/${day.month}/${day.year}';
   }
 
+  /// Earliest day from [notBefore] (or today) that has an open slot.
+  static DateTime earliestDeliveryDayFrom(DateTime? notBefore, [DateTime? from]) {
+    final now = from ?? DateTime.now();
+    final earliest = earliestDeliveryDay(now);
+    if (notBefore == null) return earliest;
+    final floor = DateTime(notBefore.year, notBefore.month, notBefore.day);
+    if (!floor.isAfter(earliest)) return earliest;
+    var day = floor;
+    for (var i = 0; i <= maxBookAheadDays; i++) {
+      if (availableSlotsFor(day, now).isNotEmpty) return day;
+      day = day.add(const Duration(days: 1));
+    }
+    return floor;
+  }
+
   /// Date picker + meal sheet. Days with no open slot are not selectable.
-  static Future<AdvanceMealBooking?> pickMealBooking(BuildContext context) async {
+  ///
+  /// [notBefore] keeps earlier days out of reach — used while orders are on
+  /// hold but advance bookings from the resume date are allowed.
+  static Future<AdvanceMealBooking?> pickMealBooking(
+    BuildContext context, {
+    DateTime? notBefore,
+  }) async {
     final now = DateTime.now();
-    final firstDay = earliestDeliveryDay(now);
+    final floor = notBefore == null
+        ? null
+        : DateTime(notBefore.year, notBefore.month, notBefore.day);
+    final firstDay = earliestDeliveryDayFrom(floor, now);
     final lastDay = firstDay.add(const Duration(days: maxBookAheadDays));
 
     final date = await showDatePicker(
@@ -211,10 +235,14 @@ class AdvanceOrderSchedule {
       initialDate: firstDay,
       firstDate: firstDay,
       lastDate: lastDay,
-      helpText: 'Pick delivery day',
+      helpText: floor == null
+          ? 'Pick delivery day'
+          : 'Pick delivery day (from ${floor.day}/${floor.month})',
       cancelText: 'Cancel',
       confirmText: 'Next',
-      selectableDayPredicate: (d) => availableSlotsFor(d, now).isNotEmpty,
+      selectableDayPredicate: (d) =>
+          (floor == null || !d.isBefore(floor)) &&
+          availableSlotsFor(d, now).isNotEmpty,
       builder: (ctx, child) {
         return Theme(
           data: Theme.of(ctx).copyWith(

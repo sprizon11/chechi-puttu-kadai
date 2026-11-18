@@ -63,10 +63,10 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if isAdminOrStaff();
       allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
-      allow create: if isSignedIn()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.payment_mode == 'cash_on_delivery'
-        && request.resource.data.status == 'placed';
+      // Orders are created only by Cloud Functions (placeCashOrder and the
+      // Razorpay functions), which price the cart on the server. A client
+      // write would let a modified app pick its own total.
+      allow create: if false;
       allow update: if isAdmin() || isStaffOrderStatusUpdate();
       allow delete: if false;
     }
@@ -82,7 +82,11 @@ service cloud.firestore {
     }
 
     match /push_tokens/{docId} {
-      allow create, update: if isSignedIn()
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid;
+      // Must already be yours: someone else's token doc cannot be taken over.
+      allow update: if isSignedIn()
+        && resource.data.uid == request.auth.uid
         && request.resource.data.uid == request.auth.uid;
       allow read, delete: if isSignedIn()
         && resource.data.uid == request.auth.uid;
@@ -118,8 +122,13 @@ service cloud.firestore {
     match /order_reviews/{reviewId} {
       allow read: if isAdminOrStaff();
       allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      // Only for an order that is yours.
       allow create: if isSignedIn()
-        && request.resource.data.uid == request.auth.uid;
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.order_id is string
+        && exists(/databases/$(database)/documents/orders/$(request.resource.data.order_id))
+        && get(/databases/$(database)/documents/orders/$(request.resource.data.order_id)).data.uid
+             == request.auth.uid;
       allow update, delete: if false;
     }
 
@@ -134,6 +143,20 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Set by Cloud Functions when a customer floods the chat; the customer may
+    // not touch them, or the pause could simply be cleared.
+    function rateLimitKeys() {
+      return ['is_rate_limited', 'rate_limited_at', 'rate_limited_until', 'rate_limit_reason'];
+    }
+
+    // False while the flood guard has this customer's chat paused.
+    function customerChatOpen(customerUid) {
+      let path = /databases/$(database)/documents/support_inbox/$(customerUid);
+      return !exists(path)
+        || get(path).data.get('rate_limited_until', null) == null
+        || request.time > get(path).data.rate_limited_until;
+    }
+
     // Chat thread summary doc used by admin/customer chat list.
     match /support_inbox/{customerUid} {
       allow read: if isAdminOrStaff()
@@ -141,8 +164,11 @@ service cloud.firestore {
 
       allow create, update: if
         isSignedIn()
-        && (isAdminOrStaff() || request.auth.uid == customerUid)
-        && request.resource.data.customer_uid == customerUid;
+        && request.resource.data.customer_uid == customerUid
+        && (isAdminOrStaff()
+          || (request.auth.uid == customerUid
+            && !request.resource.data.diff(resource == null ? {} : resource.data)
+                 .affectedKeys().hasAny(rateLimitKeys())));
 
       allow delete: if isAdmin();
     }
@@ -161,6 +187,7 @@ service cloud.firestore {
           && request.resource.data.text.size() <= 4000)
         || (isSignedIn()
           && request.auth.uid == customerUid
+          && customerChatOpen(customerUid)
           && request.resource.data.sender == 'customer'
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0

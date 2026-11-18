@@ -94,6 +94,7 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
     final messageCtrl = TextEditingController(text: current.message);
     var active = current.active;
     DateTime? resumeOn = current.resumeOn;
+    var allowAdvance = current.allowAdvanceBooking;
 
     final save = await showDialog<bool>(
       context: context,
@@ -139,7 +140,8 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
                     TextField(
                       controller: messageCtrl,
                       enabled: active,
-                      maxLines: 3,
+                      minLines: 3,
+                      maxLines: 6,
                       maxLength: OrderHold.maxMessageLength,
                       style: GoogleFonts.poppins(fontSize: 13),
                       decoration: InputDecoration(
@@ -159,11 +161,21 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
                           ? null
                           : () async {
                               final now = DateTime.now();
+                              final today =
+                                  DateTime(now.year, now.month, now.day);
+                              final tomorrow =
+                                  today.add(const Duration(days: 1));
+                              // A saved date already in the past would sit
+                              // before firstDate and break the picker.
+                              final saved = resumeOn;
+                              final initial =
+                                  saved == null || saved.isBefore(today)
+                                      ? tomorrow
+                                      : saved;
                               final chosen = await showDatePicker(
                                 context: ctx,
-                                initialDate: resumeOn ??
-                                    now.add(const Duration(days: 1)),
-                                firstDate: now,
+                                initialDate: initial,
+                                firstDate: today,
                                 lastDate: now.add(const Duration(days: 365)),
                                 helpText: 'Accepting orders again from',
                               );
@@ -202,6 +214,32 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
                         color: cs.onSurfaceVariant,
                       ),
                     ),
+                    if (picked != null) ...[
+                      const SizedBox(height: 4),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        value: allowAdvance,
+                        onChanged: !active
+                            ? null
+                            : (v) => setDialog(() => allowAdvance = v),
+                        title: Text(
+                          'Take advance bookings',
+                          style: GoogleFonts.poppins(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Customers can book now for delivery from '
+                          '${_shortDate(picked)} onwards',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11.5,
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -235,6 +273,7 @@ class _AdminSettingsBodyState extends State<AdminSettingsBody> {
       active: active,
       message: messageCtrl.text.trim(),
       resumeOn: active ? resumeOn : null,
+      allowAdvanceBooking: active && resumeOn != null && allowAdvance,
     );
     messageCtrl.dispose();
     try {

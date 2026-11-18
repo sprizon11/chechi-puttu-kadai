@@ -1,69 +1,56 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:chechi_puttu_app/services/chechi_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class OrdersService {
-  OrdersService({FirebaseFirestore? firestore, FirebaseAuth? auth})
-      : _db = firestore ?? chechiFirestore,
-        _auth = auth ?? FirebaseAuth.instance;
+  OrdersService({
+    FirebaseFirestore? firestore,
+    FirebaseAuth? auth,
+    FirebaseFunctions? functions,
+  })  : _db = firestore ?? chechiFirestore,
+        _auth = auth ?? FirebaseAuth.instance,
+        _fn = functions ?? FirebaseFunctions.instance;
 
   final FirebaseFirestore _db;
   final FirebaseAuth _auth;
+  final FirebaseFunctions _fn;
 
-  Future<String> createOrder({
+  /// Places a cash-on-delivery order through the `placeCashOrder` function,
+  /// which prices the cart on the server and checks the order hold. Firestore
+  /// rules no longer accept orders written from the app.
+  ///
+  /// Returns the order id and the total the server charged. Throws
+  /// [FirebaseFunctionsException] — `failed-precondition` while orders are on
+  /// hold (its message is the admin's hold message).
+  Future<({String orderId, int totalRupees})> createCashOrder({
     required List<Map<String, Object?>> items,
-    required int totalRupees,
     required String deliveryLine,
-    required String paymentMode,
     required String scheduleLine,
     DateTime? scheduledAt,
-    int itemTotalRupees = 0,
-    int deliveryChargeRupees = 0,
-    int packingChargeRupees = 0,
   }) async {
-    final user = _auth.currentUser;
-    if (user == null) {
+    if (_auth.currentUser == null) {
       throw StateError('Not signed in');
     }
-
-    String? customerName = user.displayName?.trim();
-    String? customerMobile = user.phoneNumber?.trim();
-    try {
-      final userSnap = await _db.collection('users').doc(user.uid).get();
-      final um = userSnap.data();
-      if (um != null) {
-        final fromProfileName = (um['displayName'] as String?)?.trim();
-        final fromProfileMobile = (um['mobile'] as String?)?.trim();
-        if (fromProfileName != null && fromProfileName.isNotEmpty) {
-          customerName = fromProfileName;
-        }
-        if (fromProfileMobile != null && fromProfileMobile.isNotEmpty) {
-          customerMobile = fromProfileMobile;
-        }
-      }
-    } catch (_) {
-      // Best effort only; order should still be placed.
-    }
-
-    final doc = await _db.collection('orders').add({
-      'uid': user.uid,
-      'customer_name': customerName,
-      'customer_mobile': customerMobile,
-      'status': 'placed',
-      'total_rupees': totalRupees,
-      'item_total_rupees': itemTotalRupees,
-      'delivery_charge_rupees': deliveryChargeRupees,
-      'packing_charge_rupees': packingChargeRupees,
-      'delivery_line': deliveryLine,
-      'payment_mode': paymentMode,
-      'schedule_line': scheduleLine,
-      if (scheduledAt != null)
-        'scheduled_at': Timestamp.fromDate(scheduledAt),
+    // Same id on a retry, so a call that timed out after the order was saved
+    // cannot create it twice.
+    final requestId = _db.collection('orders').doc().id;
+    final res = await _fn.httpsCallable('placeCashOrder').call({
+      'requestId': requestId,
       'items': items,
-      'created_at': FieldValue.serverTimestamp(),
+      'deliveryLine': deliveryLine,
+      'scheduleLine': scheduleLine,
+      'scheduledAtIso': scheduledAt?.toUtc().toIso8601String(),
     });
-
-    return doc.id;
+    final data = Map<String, dynamic>.from(res.data as Map);
+    final orderId = (data['orderId'] as String?) ?? '';
+    if (orderId.isEmpty) {
+      throw StateError('Invalid response from order server');
+    }
+    return (
+      orderId: orderId,
+      totalRupees: (data['totalRupees'] as num?)?.toInt() ?? 0,
+    );
   }
 
   /// Admin kitchen flow — requires Firestore rules allowing admin updates.

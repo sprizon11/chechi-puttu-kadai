@@ -11,6 +11,7 @@ class OrderHold {
     this.active = false,
     this.message = '',
     this.resumeOn,
+    this.allowAdvanceBooking = false,
   });
 
   static const off = OrderHold();
@@ -21,7 +22,7 @@ class OrderHold {
 
   /// Longest message admin can save — long enough for a real explanation,
   /// short enough to read in a dialog.
-  static const maxMessageLength = 300;
+  static const maxMessageLength = 500;
 
   /// Admin flipped the switch on. Not the same as [isHoldingAt] — a hold with
   /// a [resumeOn] date in the past is over.
@@ -34,6 +35,30 @@ class OrderHold {
   /// hold stays until admin turns it off by hand.
   final DateTime? resumeOn;
 
+  /// While held, customers may still book a delivery on or after [resumeOn].
+  /// Ignored when there is no resume date — an open-ended hold refuses all.
+  final bool allowAdvanceBooking;
+
+  /// Midnight on the resume day, or null.
+  DateTime? get resumeDay {
+    final r = resumeOn;
+    return r == null ? null : DateTime(r.year, r.month, r.day);
+  }
+
+  /// True when a held kitchen still takes bookings for [resumeDay] onwards.
+  bool get takesAdvanceBookings => allowAdvanceBooking && resumeOn != null;
+
+  /// Whether a delivery on [deliveryDay] can be booked at [now]. Outside a
+  /// hold every day is fine; inside one only days from [resumeDay] on, and
+  /// only when [allowAdvanceBooking] is on.
+  bool allowsDeliveryOn(DateTime deliveryDay, [DateTime? now]) {
+    if (!isHoldingAt(now)) return true;
+    final resume = resumeDay;
+    if (!allowAdvanceBooking || resume == null) return false;
+    final day = DateTime(deliveryDay.year, deliveryDay.month, deliveryDay.day);
+    return !day.isBefore(resume);
+  }
+
   /// The text a customer should actually be shown.
   String get customerMessage =>
       message.trim().isEmpty ? defaultMessage : message.trim();
@@ -45,8 +70,7 @@ class OrderHold {
     if (!active) return false;
     final resume = resumeOn;
     if (resume == null) return true;
-    final today = DateTime.now();
-    final at = now ?? today;
+    final at = now ?? DateTime.now();
     final startOfResumeDay = DateTime(resume.year, resume.month, resume.day);
     return at.isBefore(startOfResumeDay);
   }
@@ -56,11 +80,13 @@ class OrderHold {
     String? message,
     DateTime? resumeOn,
     bool clearResumeOn = false,
+    bool? allowAdvanceBooking,
   }) {
     return OrderHold(
       active: active ?? this.active,
       message: message ?? this.message,
       resumeOn: clearResumeOn ? null : (resumeOn ?? this.resumeOn),
+      allowAdvanceBooking: allowAdvanceBooking ?? this.allowAdvanceBooking,
     );
   }
 
@@ -85,6 +111,7 @@ class OrderHold {
             )
           : '',
       resumeOn: resume,
+      allowAdvanceBooking: data['allow_advance_booking'] == true,
     );
   }
 }
@@ -145,6 +172,7 @@ class OrderHoldService {
           : Timestamp.fromDate(
               DateTime(resume.year, resume.month, resume.day),
             ),
+      'allow_advance_booking': hold.allowAdvanceBooking && resume != null,
       'updatedAt': FieldValue.serverTimestamp(),
       if (updatedByUid != null && updatedByUid.isNotEmpty)
         'updatedBy': updatedByUid,
@@ -153,6 +181,7 @@ class OrderHoldService {
       active: hold.active,
       message: message,
       resumeOn: resume,
+      allowAdvanceBooking: hold.allowAdvanceBooking && resume != null,
     );
   }
 }

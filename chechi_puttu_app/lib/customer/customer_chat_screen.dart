@@ -104,12 +104,19 @@ class _CustomerChatScreenState extends State<CustomerChatScreen> {
       _input.clear();
       _focus.requestFocus();
       _scrollToBottom();
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
+      // permission-denied here means the flood guard has paused this chat
+      // (Firestore rules refuse messages until rate_limited_until).
+      final paused =
+          e is FirebaseException && e.code == 'permission-denied';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Unable to send message. Try again.',
+            paused
+                ? 'You have sent a lot of messages in a short time. Please '
+                    'wait a few minutes — our team will reply soon.'
+                : 'Unable to send message. Try again.',
             style: GoogleFonts.poppins(),
           ),
         ),

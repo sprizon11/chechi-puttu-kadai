@@ -156,23 +156,69 @@ async function computeServerOrder(items, dbRef) {
   };
 }
 
-exports.createRazorpayCheckout = onCall(async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Sign in required");
-  }
-  const uid = request.auth.uid;
-  const {keyId, keySecret} = razorpayKeys();
-  if (!keyId || !keySecret) {
-    throw new HttpsError("failed-precondition", "Razorpay keys not configured");
-  }
+// ── Order hold ────────────────────────────────────────────────────────────────
+// admin_public/order_hold: { active, message, resume_on, allow_advance_booking }.
+// The app checks this before checkout, but only the server can make it stick:
+// an old app build, or a modified one, would otherwise order straight through.
 
-  const body = request.data || {};
+const HOLD_DEFAULT_MESSAGE =
+  "We are not accepting new orders right now. Please check back soon.";
+
+/**
+ * Throws failed-precondition while orders are on hold. With a resume date and
+ * allow_advance_booking on, a booking for delivery on or after that date is
+ * let through — the kitchen is closed now but will cook it then.
+ */
+async function assertOrderingOpen(scheduledAt) {
+  let hold = {};
+  try {
+    const snap = await db.collection("admin_public").doc("order_hold").get();
+    hold = snap.exists ? snap.data() || {} : {};
+  } catch (e) {
+    // A failed read must not shut the shop; the app has already checked.
+    console.error("order_hold read failed:", e.message);
+    return;
+  }
+  if (hold.active !== true) return;
+  const raw = hold.resume_on;
+  const resume = raw && typeof raw.toDate === "function" ? raw.toDate() : null;
+  if (resume && Date.now() >= resume.getTime()) return;
+  if (resume && hold.allow_advance_booking === true &&
+      scheduledAt && scheduledAt.getTime() >= resume.getTime()) {
+    return;
+  }
+  const message = typeof hold.message === "string" && hold.message.trim() ?
+    hold.message.trim() : HOLD_DEFAULT_MESSAGE;
+  throw new HttpsError("failed-precondition", message, {reason: "order_hold"});
+}
+
+/** Delivery slot start sent by the app. Null when absent; rejects nonsense. */
+function parseScheduledAt(raw) {
+  if (raw == null || raw === "") return null;
+  const d = new Date(String(raw));
+  if (isNaN(d.getTime())) {
+    throw new HttpsError("invalid-argument", "Invalid delivery time");
+  }
+  const now = Date.now();
+  // Slots are picked up to 30 days ahead — or 30 days past an order-hold
+  // resume date, which can be up to a year out. Allow a little clock skew.
+  if (d.getTime() < now - 6 * 3600 * 1000 ||
+      d.getTime() > now + 400 * 24 * 3600 * 1000) {
+    throw new HttpsError("invalid-argument", "Invalid delivery time");
+  }
+  return d;
+}
+
+/** Shared checks for both payment paths. */
+async function validateCheckoutRequest(body) {
   const deliveryLine = String(body.deliveryLine ?? "").trim();
   const scheduleLine =
-    body.scheduleLine == null ? null : String(body.scheduleLine).trim();
+    body.scheduleLine == null ? null : String(body.scheduleLine).trim().slice(0, 200);
   if (!deliveryLine || deliveryLine.length > 500) {
     throw new HttpsError("invalid-argument", "Invalid delivery");
   }
+  const scheduledAt = parseScheduledAt(body.scheduledAtIso);
+  await assertOrderingOpen(scheduledAt);
 
   let computed;
   try {
@@ -184,6 +230,92 @@ exports.createRazorpayCheckout = onCall(async (request) => {
     }
     throw new HttpsError("invalid-argument", "Invalid cart");
   }
+  return {deliveryLine, scheduleLine, scheduledAt, computed};
+}
+
+/** Name and mobile copied onto the order, as the app used to write them. */
+async function customerContact(request) {
+  const uid = request.auth.uid;
+  let name = String(request.auth.token?.name || "").trim() || null;
+  let mobile = String(request.auth.token?.phone_number || "").trim() || null;
+  try {
+    const snap = await db.collection("users").doc(uid).get();
+    const u = snap.exists ? snap.data() || {} : {};
+    if (typeof u.displayName === "string" && u.displayName.trim()) {
+      name = u.displayName.trim();
+    }
+    if (typeof u.mobile === "string" && u.mobile.trim()) {
+      mobile = u.mobile.trim();
+    }
+  } catch (e) {
+    console.error("customerContact: profile read failed", e.message);
+  }
+  return {name, mobile};
+}
+
+// Cash on delivery. Orders used to be written straight from the app, which let
+// a modified client choose its own prices; now the server prices the cart the
+// same way it does for Razorpay. `requestId` makes a retried call idempotent.
+exports.placeCashOrder = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  const uid = request.auth.uid;
+  const body = request.data || {};
+  const requestId = String(body.requestId ?? "").trim();
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(requestId)) {
+    throw new HttpsError("invalid-argument", "Missing request id");
+  }
+
+  const {deliveryLine, scheduleLine, scheduledAt, computed} =
+    await validateCheckoutRequest(body);
+  const {name, mobile} = await customerContact(request);
+
+  const orderId = `cod_${uid.slice(0, 12)}_${requestId}`;
+  const ref = db.collection("orders").doc(orderId);
+  try {
+    await ref.create({
+      uid,
+      customer_name: name,
+      customer_mobile: mobile,
+      status: "placed",
+      total_rupees: computed.totalRupees,
+      item_total_rupees: computed.itemTotalRupees,
+      delivery_charge_rupees: computed.deliveryRupees,
+      packing_charge_rupees: computed.packagingRupees,
+      delivery_line: deliveryLine,
+      payment_mode: "cash_on_delivery",
+      schedule_line: scheduleLine,
+      ...(scheduledAt ? {scheduled_at: admin.firestore.Timestamp.fromDate(scheduledAt)} : {}),
+      items: computed.lines,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    if (e.code === 6 || e.code === "already-exists") {
+      const existing = await ref.get();
+      if (existing.exists && existing.data().uid === uid) {
+        return {orderId, totalRupees: existing.data().total_rupees};
+      }
+    }
+    console.error("placeCashOrder failed:", e);
+    throw new HttpsError("internal", "Could not place order");
+  }
+  return {orderId, totalRupees: computed.totalRupees};
+});
+
+exports.createRazorpayCheckout = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  const uid = request.auth.uid;
+  const {keyId, keySecret} = razorpayKeys();
+  if (!keyId || !keySecret) {
+    throw new HttpsError("failed-precondition", "Razorpay keys not configured");
+  }
+
+  const {deliveryLine, scheduleLine, scheduledAt, computed} =
+    await validateCheckoutRequest(request.data || {});
+  const {name: customerName, mobile: customerMobile} = await customerContact(request);
 
   const sessionRef = db.collection("checkout_sessions").doc();
   const sessionId = sessionRef.id;
@@ -199,6 +331,9 @@ exports.createRazorpayCheckout = onCall(async (request) => {
     total_paise: computed.totalPaise,
     delivery_line: deliveryLine,
     schedule_line: scheduleLine,
+    scheduled_at: scheduledAt ? admin.firestore.Timestamp.fromDate(scheduledAt) : null,
+    customer_name: customerName,
+    customer_mobile: customerMobile,
     payment_mode: "razorpay",
     created_at: admin.firestore.FieldValue.serverTimestamp(),
     updated_at: admin.firestore.FieldValue.serverTimestamp(),
@@ -323,6 +458,9 @@ exports.razorpayWebhook = onRequest(async (req, res) => {
         razorpay_payment_id: paymentId,
         checkout_session_id: sessionId,
         schedule_line: s.schedule_line,
+        ...(s.scheduled_at ? {scheduled_at: s.scheduled_at} : {}),
+        customer_name: s.customer_name ?? null,
+        customer_mobile: s.customer_mobile ?? null,
         items: s.items,
         created_at: admin.firestore.FieldValue.serverTimestamp(),
       });
@@ -427,6 +565,9 @@ exports.verifyRazorpayPayment = onCall(async (request) => {
       razorpay_payment_id: paymentId,
       checkout_session_id: sessionId,
       schedule_line: s.schedule_line,
+      ...(s.scheduled_at ? {scheduled_at: s.scheduled_at} : {}),
+      customer_name: s.customer_name ?? null,
+      customer_mobile: s.customer_mobile ?? null,
       items: s.items,
       created_at: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -447,6 +588,18 @@ exports.verifyRazorpayPayment = onCall(async (request) => {
 
   return {status: "paid", orderId: firestoreOrderId};
 });
+
+/** Staff: the { staff: true } claim AND a live staff/{uid} doc, as in the rules. */
+async function isStaffRequest(request) {
+  if (!request.auth || request.auth.token?.staff !== true) return false;
+  try {
+    const snap = await db.collection("staff").doc(request.auth.uid).get();
+    return snap.exists;
+  } catch (e) {
+    console.error("isStaffRequest failed", e.message);
+    return false;
+  }
+}
 
 function isAdminRequest(request) {
   if (!request.auth) return false;
@@ -895,8 +1048,10 @@ exports.nightlyDataCleanup = onSchedule("every day 03:15", async () => {
 // ownership and that the order is still in a cancellable state. The
 // onOrderStatusChangedChatMessage trigger then posts the "was cancelled"
 // system message and push automatically.
+// Once the kitchen starts cooking ("preparing"), the food is made either way,
+// so the customer can no longer cancel on their own — they contact support.
 const CANCELLABLE_STATUSES = new Set([
-  "", "placed", "new", "accepted", "preparing", "ready",
+  "", "placed", "new", "accepted",
 ]);
 
 exports.cancelOrder = onCall(async (request) => {
@@ -910,9 +1065,9 @@ exports.cancelOrder = onCall(async (request) => {
   }
   const reason = String(request.data?.reason ?? "").trim().slice(0, 300);
 
-  const orderRef = db.collection("orders").doc(orderId);
-  return db.runTransaction(async (tx) => {
-    const snap = await tx.get(orderRef);
+  const docRef = db.collection("orders").doc(orderId);
+  const result = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(docRef);
     if (!snap.exists) {
       throw new HttpsError("not-found", "Order not found");
     }
@@ -930,15 +1085,41 @@ exports.cancelOrder = onCall(async (request) => {
         "This order can no longer be cancelled. Please contact support.",
       );
     }
-    tx.update(orderRef, {
+    // A paid online order needs its money back. Nothing refunds it
+    // automatically, so mark it for the admin's refund list and alert them.
+    const paidOnline = String(o.payment_mode || "") === "razorpay" &&
+      String(o.payment_status || "") === "captured";
+    tx.update(docRef, {
       status: "cancelled",
       cancelled_by: "customer",
       cancel_reason: reason || null,
       cancelled_at: admin.firestore.FieldValue.serverTimestamp(),
       updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      ...(paidOnline ? {refund_status: "pending"} : {}),
     });
-    return {ok: true, cancelled: true};
+    return {ok: true, cancelled: true, refundPending: paidOnline,
+      totalRupees: Number(o.total_rupees || 0)};
   });
+
+  if (result.refundPending) {
+    try {
+      const aUid = await adminUid();
+      if (aUid) {
+        await sendPush({
+          uid: aUid,
+          title: "Refund needed",
+          body: `${orderRef(orderId)} was cancelled by the customer after paying ` +
+            `₹${result.totalRupees} online. Refund it from the Razorpay dashboard.`,
+          data: {type: "admin_refund_needed", orderId},
+        });
+      }
+    } catch (e) {
+      console.error("cancelOrder: refund alert failed", e);
+    }
+  }
+  return {ok: true, cancelled: result.cancelled === true,
+    alreadyCancelled: result.alreadyCancelled === true,
+    refundPending: result.refundPending === true};
 });
 
 // Chat push notifications. A Firestore trigger can't do this job on a named
@@ -957,9 +1138,11 @@ exports.notifyChatMessage = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Missing fields");
   }
   const callerIsAdmin = isAdminRequest(request);
+  // Staff answer chats too (Firestore rules let them write sender "admin").
+  const callerIsStaff = !callerIsAdmin && await isStaffRequest(request);
 
   if (sender === "admin") {
-    if (!callerIsAdmin) {
+    if (!callerIsAdmin && !callerIsStaff) {
       throw new HttpsError("permission-denied", "Admins only");
     }
     await sendPush({
@@ -975,6 +1158,12 @@ exports.notifyChatMessage = onCall(async (request) => {
   // admin acting on their behalf) may trigger it.
   if (callerUid !== customerUid && !callerIsAdmin) {
     throw new HttpsError("permission-denied", "Not allowed");
+  }
+  // The Firestore trigger guard may not run on this named database, so the
+  // flood check also runs here, after every customer message.
+  if (callerUid === customerUid) {
+    const limited = await applyChatRateLimit(customerUid);
+    if (limited) return {ok: true, rateLimited: true};
   }
   const aUid = await adminUid();
   if (aUid) {
@@ -1215,6 +1404,59 @@ exports.ensureBirthdayChatWish = onCall(async (request) => {
   return {sent: posted, reason: posted ? null : "already_sent"};
 });
 
+// ── Chat flood guard ─────────────────────────────────────────────────────────
+// 15+ customer messages in 2 minutes pauses that customer's chat for 10
+// minutes. Firestore rules refuse their messages until rate_limited_until.
+const CHAT_FLOOD_LIMIT = 15;
+const CHAT_FLOOD_WINDOW_MS = 2 * 60 * 1000;
+const CHAT_PAUSE_MS = 10 * 60 * 1000;
+
+async function markChatRateLimited(customerUid, count) {
+  const ref = db.collection("support_inbox").doc(customerUid);
+  const snap = await ref.get();
+  const until = snap.exists ? snap.data().rate_limited_until : null;
+  const alreadyLimited = until && typeof until.toMillis === "function" &&
+    until.toMillis() > Date.now();
+  if (alreadyLimited) return;
+  await ref.set({
+    customer_uid: customerUid,
+    is_rate_limited: true,
+    rate_limited_at: admin.firestore.FieldValue.serverTimestamp(),
+    rate_limited_until: admin.firestore.Timestamp.fromMillis(Date.now() + CHAT_PAUSE_MS),
+    rate_limit_reason: "too_many_messages_short_window",
+  }, {merge: true});
+
+  const aUid = await adminUid();
+  if (!aUid) return;
+  await sendPush({
+    uid: aUid,
+    title: "Potential chat abuse detected",
+    body: `User ${customerUid} sent ${count} messages in ~2 minutes. ` +
+      "Their chat is paused for 10 minutes.",
+    data: {type: "support_abuse_alert", customer_uid: customerUid},
+  });
+}
+
+/** Counts recent customer messages; pauses the chat if over the limit. */
+async function applyChatRateLimit(customerUid) {
+  try {
+    const since = admin.firestore.Timestamp.fromMillis(Date.now() - CHAT_FLOOD_WINDOW_MS);
+    const recent = await db.collection("support_inbox").doc(customerUid)
+        .collection("messages")
+        .where("created_at", ">=", since)
+        .limit(40)
+        .get();
+    const count = recent.docs.filter((d) =>
+      String(d.data().sender || "").trim().toLowerCase() === "customer").length;
+    if (count < CHAT_FLOOD_LIMIT) return false;
+    await markChatRateLimited(customerUid, count);
+    return true;
+  } catch (e) {
+    console.error("applyChatRateLimit failed", e.message);
+    return false;
+  }
+}
+
 exports.onSupportAbuseGuard = onDocumentCreated(
     {
       document: "support_inbox/{customerUid}/messages/{messageId}",
@@ -1242,22 +1484,8 @@ exports.onSupportAbuseGuard = onDocumentCreated(
         return s === "customer";
       }).length;
 
-      if (recentCustomerCount < 15) return;
-
-      await db.collection("support_inbox").doc(customerUid).set({
-        is_rate_limited: true,
-        rate_limited_at: admin.firestore.FieldValue.serverTimestamp(),
-        rate_limit_reason: "too_many_messages_short_window",
-      }, {merge: true});
-
-      const aUid = await adminUid();
-      if (!aUid) return;
-      await sendPush({
-        uid: aUid,
-        title: "Potential chat abuse detected",
-        body: `User ${customerUid} sent ${recentCustomerCount} messages in ~2 minutes.`,
-        data: {type: "support_abuse_alert", customer_uid: customerUid},
-      });
+      if (recentCustomerCount < CHAT_FLOOD_LIMIT) return;
+      await markChatRateLimited(customerUid, recentCustomerCount);
     },
 );
 
