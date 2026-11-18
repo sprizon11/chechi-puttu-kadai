@@ -1,4 +1,6 @@
-storePassword=chechiputtukadai
-keyPassword=chechiputtukadai
-keyAlias=chechi
+# Copy to key.properties (not committed) for a local signed release build.
+# Codemagic writes this file itself from the chechi_upload_key keystore.
+storePassword=YOUR_STORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=YOUR_KEY_ALIAS
 storeFile=chechi-upload-keystore.jks
